@@ -1,0 +1,131 @@
+# Docker Compose cho bản 1 (mục 08 tài liệu kỹ thuật).
+# Dev: `pnpm db:up` chỉ bật postgres, redis, vault; api/worker/web chạy bằng pnpm dev.
+# Cổng host lệch khỏi mặc định để không đụng dịch vụ khác trên máy.
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: vala
+      POSTGRES_USER: vala_owner
+      POSTGRES_PASSWORD: vala_owner
+    ports: ["5441:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vala_owner -d vala"]
+      interval: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports: ["6391:6379"]
+
+  vault:
+    image: hashicorp/vault:1.17
+    cap_add: [IPC_LOCK]
+    environment:
+      VAULT_DEV_ROOT_TOKEN_ID: dev-root-token
+      VAULT_DEV_LISTEN_ADDRESS: 0.0.0.0:8200
+    ports: ["8201:8200"]
+
+  api:
+    profiles: [full]
+    build: { context: ., dockerfile: apps/api/Dockerfile }
+    env_file: .env
+    environment:
+      DATABASE_READER_URL: postgres://vala_reader:vala_reader@postgres:5432/vala
+      DATABASE_WRITER_URL: postgres://vala_writer:vala_writer@postgres:5432/vala
+      REDIS_URL: redis://redis:6379
+      VAULT_ADDR: http://vault:8200
+    ports: ["3000:3000"]
+    depends_on: [postgres, redis, vault]
+
+  worker:
+    profiles: [full]
+    build: { context: ., dockerfile: apps/worker/Dockerfile }
+    env_file: .env
+    environment:
+      DATABASE_WRITER_URL: postgres://vala_writer:vala_writer@postgres:5432/vala
+      REDIS_URL: redis://redis:6379
+      VAULT_ADDR: http://vault:8200
+    depends_on: [postgres, redis, vault]
+
+  # ---------------------------------------------------------------------
+  # Crawlab — nơi QUẢN TRỊ quản lý script Python crawl và lịch chạy.
+  # Chỉ mở cho kỹ sư vận hành (cổng 8080), KHÔNG cho người dùng cuối.
+  # Dữ liệu crawl KHÔNG lưu vào MongoDB của Crawlab: spider gửi về API qua vala_sdk.
+  # Dev dùng mạng host để spider gọi được API :3000 và eGov giả lập :4010 bằng localhost.
+  # ---------------------------------------------------------------------
+  crawlab-mongo:
+    image: mongo:5
+    ports: ["27018:27017"]
+    volumes: [crawlab-mongo:/data/db]
+
+  crawlab:
+    image: crawlabteam/crawlab:latest
+    network_mode: host
+    environment:
+      CRAWLAB_NODE_MASTER: "Y"
+      CRAWLAB_MONGO_HOST: "127.0.0.1"
+      CRAWLAB_MONGO_PORT: "27018"
+      # Cron của lịch chạy theo giờ Việt Nam, khớp SCHEDULE_PRESETS.
+      TZ: Asia/Ho_Chi_Minh
+    volumes:
+      - crawlab-data:/root/.crawlab
+      - crawlab-workspace:/root/crawlab_workspace
+    depends_on: [crawlab-mongo]
+
+  # ---------------------------------------------------------------------
+  # Dev hot-reload — MỘT lệnh chạy cả API + worker + web (thay cho pnpm dev thủ công).
+  #   pnpm dev:up   → bật postgres/redis/vault + api-dev + worker-dev + web-dev
+  # Dùng mạng host để trùng các URL localhost trong .env (postgres :5441, redis :6391,
+  # vault :8201, api :3000); mount toàn bộ mã nguồn + node_modules của máy nên không cài
+  # lại gì, sửa code tự nạp lại (tsx watch / vite). Chạy dưới uid 1000 để file cache
+  # (node_modules/.vite…) vẫn thuộc quyền người dùng máy, không bị root chiếm.
+  # ---------------------------------------------------------------------
+  api-dev:
+    profiles: [dev]
+    image: node:18.20.5-bookworm-slim
+    network_mode: host
+    user: "1000:1000"
+    working_dir: /app/apps/api
+    environment: { HOME: /tmp }
+    volumes: [".:/app"]
+    command: ["/app/apps/api/node_modules/.bin/tsx", "watch", "src/main.ts"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_started }
+      vault: { condition: service_started }
+
+  worker-dev:
+    profiles: [dev]
+    image: node:18.20.5-bookworm-slim
+    network_mode: host
+    user: "1000:1000"
+    working_dir: /app/apps/worker
+    environment: { HOME: /tmp }
+    volumes: [".:/app"]
+    command: ["/app/apps/worker/node_modules/.bin/tsx", "watch", "src/main.ts"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_started }
+      vault: { condition: service_started }
+
+  web-dev:
+    profiles: [dev]
+    image: node:18.20.5-bookworm-slim
+    network_mode: host
+    user: "1000:1000"
+    working_dir: /app/apps/web
+    environment: { HOME: /tmp }
+    volumes: [".:/app"]
+    # --host để lắng nghe mọi giao diện; proxy /api mặc định trỏ http://localhost:3000 (api-dev).
+    command: ["/app/apps/web/node_modules/.bin/vite", "--host", "--port", "5173"]
+    depends_on: [api-dev]
+
+  # minio: thêm ở giai đoạn xuất file bất đồng bộ.
+
+volumes:
+  pgdata:
+  crawlab-mongo:
+  crawlab-data:
+  crawlab-workspace:

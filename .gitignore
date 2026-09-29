@@ -1,0 +1,10 @@
+node_modules
+dist
+.env
+.env.etask
+.env.*.local
+.data
+coverage
+*.log
+
+__pycache__/

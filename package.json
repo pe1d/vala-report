@@ -1,0 +1,19 @@
+{
+  "name": "vala-reporting",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "pnpm@12.5.1",
+  "scripts": {
+    "db:up": "docker compose up -d postgres redis vault",
+    "db:migrate": "pnpm --filter @vala/core migrate",
+    "db:seed": "pnpm --filter @vala/core seed",
+    "dev:api": "pnpm --filter @vala/api dev",
+    "dev:worker": "pnpm --filter @vala/worker dev",
+    "dev:web": "pnpm --filter @vala/web dev",
+    "dev:up": "docker compose up postgres redis vault api-dev worker-dev web-dev",
+    "dev:up:d": "docker compose up -d postgres redis vault api-dev worker-dev web-dev",
+    "dev:down": "docker compose down",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r --workspace-concurrency=1 test"
+  }
+}
