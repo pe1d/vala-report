@@ -16,7 +16,7 @@ const PENDING_TTL_MS = 15 * 60_000;
 const timers = new Map<string, ReturnType<typeof setTimeout>>();
 
 /** Một lượt kết nối đang chờ người dùng đăng nhập (storage.session: mất khi đóng trình duyệt). */
-interface Pending { loginTabId?: number; returnTabId?: number; at: number }
+interface Pending { loginTabId?: number; returnTabId?: number; at: number; /** Mở từ thông báo "hết phiên": không kéo người dùng đi đâu, chỉ báo kết quả. */ quiet?: boolean }
 
 async function sha256(s: string): Promise<string> {
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s));
@@ -90,6 +90,7 @@ async function readCookies(src: Source): Promise<Record<string, string> | null> 
 async function syncSource(src: Source, force = false): Promise<SyncStatus['result']> {
   const result = await pushSource(src, force);
   if (result === 'sent' || result === 'unchanged') await finishPending(src, true);
+  await checkExpiry(src, result);
   return result;
 }
 
@@ -113,9 +114,20 @@ async function pushSource(src: Source, force: boolean): Promise<SyncStatus['resu
     const r = await api<{ status: string; message?: string }>('PUT', `/ext/sources/${src.code}/session`, { cookies });
     await chrome.storage.local.set({ [key]: { hash, ok: true } });
     if (r.status !== 'active') return setStatus(src.code, { result: 'managed', message: r.message ?? 'Máy chủ không cần phiên này' });
-    // Lần đầu kết nối / nối lại sau khi hết hạn ⇒ báo cho người dùng biết đã xong.
-    if (src.state !== 'active') notify(`Đã kết nối ${src.ten}`, 'Vala đã nhận phiên đăng nhập. Hệ thống sẽ lấy dữ liệu thay bạn theo lịch.');
+    // Lần đầu kết nối / nối lại sau khi hết hạn ⇒ báo cho người dùng biết đã xong. Vừa đăng nhập ở tab
+    // do tiện ích mở ⇒ kèm lời nhắc lưu mật khẩu (trình duyệt không cho tiện ích tự lưu).
+    const pend = (await chrome.storage.session.get(pendingKey(src.code)))[pendingKey(src.code)] as Pending | undefined;
+    if (src.state !== 'active') {
+      const again = src.state === 'expired' || src.state === 'failed';
+      const hint = pend?.loginTabId !== undefined ? await passwordHint(src.code) : '';
+      notify(again ? `Đã kết nối lại ${src.ten}` : `Đã kết nối ${src.ten}`,
+        `Vala đã nhận phiên đăng nhập, dữ liệu sẽ được lấy tiếp theo lịch.${hint}`);
+    }
     src.state = 'active';
+    // Cập nhật cả bản cache (không đợi lần làm mới 15 phút) để cookie đổi tiếp theo không báo "đã kết nối" lặp lại.
+    const cached = await getCachedSources();
+    const c = cached.find((x) => x.code === src.code);
+    if (c && c.state !== 'active') { c.state = 'active'; await chrome.storage.local.set({ sources: cached }); }
     return setStatus(src.code, { result: 'sent', message: 'Đã gửi phiên cho Vala' });
   } catch (e) {
     const err = e instanceof ApiError ? e : new ApiError(0, 'internal', 'Lỗi không xác định');
@@ -128,8 +140,46 @@ async function pushSource(src: Source, force: boolean): Promise<SyncStatus['resu
   }
 }
 
-function notify(title: string, message: string) {
-  chrome.notifications.create({ type: 'basic', iconUrl: 'icons/vala-128.png', title, message, priority: 1 });
+function notify(title: string, message: string, opts: { id?: string; sticky?: boolean } = {}) {
+  const o: chrome.notifications.NotificationOptions<true> = {
+    type: 'basic', iconUrl: 'icons/vala-128.png', title, message, priority: opts.sticky ? 2 : 1, requireInteraction: !!opts.sticky };
+  if (opts.id) chrome.notifications.create(opts.id, o);
+  else chrome.notifications.create(o);
+}
+
+/** Lời nhắc lưu mật khẩu — tối đa 2 lần cho mỗi hệ thống (không biết được người dùng đã lưu hay chưa). */
+async function passwordHint(code: string): Promise<string> {
+  const key = `pwhint:${code}`;
+  const n = ((await chrome.storage.local.get(key))[key] as number | undefined) ?? 0;
+  if (n >= 2) return '';
+  await chrome.storage.local.set({ [key]: n + 1 });
+  return ' Mẹo: khi trình duyệt hỏi, bấm "Lưu mật khẩu" — lần sau đăng nhập lại chỉ cần một cú bấm.';
+}
+
+// ---------------------------------------------------------------------------------------------
+// Báo hết phiên: nguồn đang kết nối bằng tiện ích mà phiên phía máy chủ đã chết và trình duyệt không có
+// phiên mới để gửi ⇒ một thông báo (bấm để đăng nhập lại). Mỗi đợt báo một lần, nhắc lại sau 24 giờ.
+// ---------------------------------------------------------------------------------------------
+const EXPIRY_REMIND_MS = 24 * 3600_000;
+const expiryKey = (code: string) => `expired-notice:${code}`;
+const reloginId = (code: string) => `relogin:${code}`;
+
+async function checkExpiry(src: Source, result: SyncStatus['result']) {
+  const key = expiryKey(src.code);
+  if (result === 'sent' || result === 'unchanged' || result === 'managed') {
+    await chrome.storage.local.remove(key);
+    chrome.notifications.clear(reloginId(src.code));
+    return;
+  }
+  if (src.auth_method !== 'extension') return;                      // chưa từng kết nối bằng tiện ích ⇒ không làm phiền
+  const dead = src.state === 'expired' || src.state === 'failed' || result === 'rejected';
+  if (!dead) return;                                                 // máy chủ vẫn còn phiên dùng được
+  if ((await chrome.storage.session.get(pendingKey(src.code)))[pendingKey(src.code)]) return;   // đang đăng nhập lại
+  const last = (await chrome.storage.local.get(key))[key] as number | undefined;
+  if (last && Date.now() - last < EXPIRY_REMIND_MS) return;
+  await chrome.storage.local.set({ [key]: Date.now() });
+  notify(`Phiên ${src.ten} đã hết hạn`, 'Vala không lấy được dữ liệu mới. Bấm vào đây để đăng nhập lại — xong tiện ích tự gửi phiên.',
+    { id: reloginId(src.code), sticky: true });
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -137,12 +187,12 @@ function notify(title: string, message: string) {
 // ---------------------------------------------------------------------------------------------
 const pendingKey = (code: string) => `pending:${code}`;
 
-async function startConnect(code: string, returnTabId?: number): Promise<{ status: string; message?: string }> {
+async function startConnect(code: string, returnTabId?: number, quiet = false): Promise<{ status: string; message?: string }> {
   let sources: Source[];
   try { sources = await refreshSources(); } catch { sources = await getCachedSources(); }
   const src = sources.find((s) => s.code === code);
   if (!src) return { status: 'unknown_source', message: 'Tiện ích chưa đăng nhập hoặc không có hệ thống này' };
-  await chrome.storage.session.set({ [pendingKey(code)]: { returnTabId, at: Date.now() } satisfies Pending });
+  await chrome.storage.session.set({ [pendingKey(code)]: { returnTabId, at: Date.now(), quiet } satisfies Pending });
 
   const r = await syncSource(src, true);
   if (r === 'sent' || r === 'unchanged') return { status: 'connected' };
@@ -154,7 +204,7 @@ async function startConnect(code: string, returnTabId?: number): Promise<{ statu
   }
   // Chưa đăng nhập / phiên hỏng ⇒ mở trang đăng nhập nguồn; cookie đổi sẽ kích hoạt gửi (onChanged).
   const tab = await chrome.tabs.create({ url: src.login_url, active: true });
-  await chrome.storage.session.set({ [pendingKey(code)]: { loginTabId: tab.id, returnTabId, at: Date.now() } satisfies Pending });
+  await chrome.storage.session.set({ [pendingKey(code)]: { loginTabId: tab.id, returnTabId, at: Date.now(), quiet } satisfies Pending });
   return { status: 'login_opened', message: `Đăng nhập ${src.ten} trong tab vừa mở — xong tiện ích tự đưa bạn quay lại` };
 }
 
@@ -168,6 +218,8 @@ async function finishPending(src: Source, ok: boolean, message?: string) {
   const ev: ConnectEvent = ok ? { type: 'connected', code: src.code, ten: src.ten }
     : { type: 'connect-failed', code: src.code, ten: src.ten, message: message ?? 'Kết nối không thành công' };
   if (!ok) notify(`Chưa kết nối được ${src.ten}`, ev.type === 'connect-failed' ? ev.message : '');
+  // Đăng nhập lại từ thông báo: người dùng ở lại trang nguồn đang dùng; kết quả đã báo bằng thông báo.
+  if (p.quiet) return;
 
   const back = p.returnTabId !== undefined ? await chrome.tabs.get(p.returnTabId).catch(() => null) : null;
   if (back?.id !== undefined) {
@@ -265,3 +317,11 @@ chrome.runtime.onMessage.addListener((msg: Message, sender, reply) => {
 });
 
 chrome.permissions.onAdded.addListener(() => { void registerBridge(); void syncAll(); });
+
+// Bấm thông báo "phiên hết hạn" ⇒ mở trang đăng nhập nguồn (trình duyệt tự điền nếu đã lưu mật khẩu).
+chrome.notifications.onClicked.addListener((id) => {
+  const m = /^relogin:(.+)$/.exec(id);
+  if (!m) return;
+  chrome.notifications.clear(id);
+  void startConnect(m[1]!, undefined, true);
+});

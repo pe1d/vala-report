@@ -291,7 +291,8 @@ export function Options() {
           action={done.type === 'connected' && settings.serverUrl
             ? { label: 'Về Vala Reporting', onClick: () => void chrome.tabs.create({ url: `${settings.serverUrl}/uy-quyen` }).then(() => setDone(null)) } : undefined}>
           {done.type === 'connected'
-            ? 'Vala đã nhận phiên đăng nhập. Hệ thống sẽ lấy dữ liệu thay bạn theo lịch — bạn không phải đăng nhập lại hay dán cookie.'
+            ? <>Vala đã nhận phiên đăng nhập và sẽ lấy dữ liệu thay bạn theo lịch.
+                <span className="mt-2 block text-sm">Mẹo: khi trình duyệt hỏi, bấm <strong>“Lưu mật khẩu”</strong>. Lần sau phiên hết hạn, tiện ích sẽ báo — bấm vào thông báo là trình duyệt tự điền, bạn chỉ cần bấm Đăng nhập.</span></>
             : done.message}
         </SuccessDialog>
       )}
