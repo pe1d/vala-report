@@ -29,10 +29,13 @@ export interface SpiderDeps {
 export interface SpiderRow {
   code: string;
   ten: string;
+  mo_ta?: string | null;
   source_system: string;
-  entity: 'documents' | 'tasks';
+  entity: 'documents' | 'tasks' | 'records';
   is_enabled: boolean;
   crawlab_spider_id: string | null;
+  /** Mã main.py lưu trong CSDL (sửa trên cổng). NULL = chưa chép từ repo. */
+  main_py?: string | null;
 }
 
 interface RunRow {

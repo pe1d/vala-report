@@ -6,7 +6,7 @@
  *   VALA_API_URL, VALA_INTERNAL_TOKEN                  →  biến môi trường toàn cục của Crawlab
  * Người dùng đổi lịch KHÔNG gọi Crawlab: spider chạy theo preset rồi tự hỏi API ai đã đặt preset đó.
  */
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { withTenant, type Db } from './db/index.js';
 import { REPO_ROOT } from './env.js';
@@ -93,18 +93,21 @@ export class CrawlabClient {
 export const CRAWLERS_DIR = join(REPO_ROOT, 'crawlers');
 const SDK_FILE = join(CRAWLERS_DIR, '_sdk', 'vala_sdk.py');
 
-/** Tệp của một spider trong repo: mọi tệp trong crawlers/<code>/ (không đệ quy) + vala_sdk.py. */
-export function spiderFiles(code: string, dir = CRAWLERS_DIR): Record<string, string> {
-  const d = join(dir, code);
-  if (!existsSync(d)) throw new Error(`Không có thư mục ${d}`);
-  const files: Record<string, string> = {};
-  for (const f of readdirSync(d)) {
-    const p = join(d, f);
-    if (statSync(p).isFile() && !f.endsWith('.pyc')) files[f] = readFileSync(p, 'utf8');
-  }
-  if (!files['main.py']) throw new Error(`${code}: thiếu main.py`);
-  files['vala_sdk.py'] = readFileSync(SDK_FILE, 'utf8');
-  return files;
+/**
+ * Mã main.py của spider: ưu tiên bản trong CSDL (quản trị viết/sửa trên cổng). Chưa có thì lấy mẫu trong
+ * repo (crawlers/<mã>/main.py) nếu có — chỉ để khởi tạo spider cũ; spider mới viết thẳng trên cổng.
+ */
+export function spiderMainPy(row: { code: string; main_py?: string | null }, dir = CRAWLERS_DIR): string | null {
+  if (row.main_py) return row.main_py;
+  const p = join(dir, row.code, 'main.py');
+  return existsSync(p) && statSync(p).isFile() ? readFileSync(p, 'utf8') : null;
+}
+
+/** Tệp đẩy lên Crawlab cho một spider: main.py (từ CSDL, hoặc mẫu repo) + vala_sdk.py (thư viện chung, theo backend). */
+export function spiderFiles(row: { code: string; main_py?: string | null }, dir = CRAWLERS_DIR): Record<string, string> {
+  const main = spiderMainPy(row, dir);
+  if (!main) throw new Error(`${row.code}: chưa có mã main.py — viết mã cho spider này trên trang "Script crawl"`);
+  return { 'main.py': main, 'vala_sdk.py': readFileSync(SDK_FILE, 'utf8') };
 }
 
 export interface SyncOptions {
@@ -132,7 +135,9 @@ export async function syncCrawlab(db: Db, client: CrawlabClient, opts: SyncOptio
     if (id) await client.updateSpider(id, meta);
     else id = (await client.createSpider(meta))._id;
 
-    const files = spiderFiles(sp.code);
+    const files = spiderFiles(sp);
+    // Spider cũ chưa có mã trong CSDL: chép mẫu repo vào CSDL, từ đó quản trị sửa trên cổng.
+    if (!sp.main_py) await withTenant(db, (t) => t.none('UPDATE core.crawl_spiders SET main_py = $2 WHERE code = $1 AND main_py IS NULL', [sp.code, files['main.py']]));
     for (const [path, data] of Object.entries(files)) await client.saveFile(id, path, data);
 
     let n = 0;

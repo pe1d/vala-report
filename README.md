@@ -43,14 +43,14 @@ pnpm test           # bộ test cũ (phụ thuộc eGov/eTask giả lập) đã 
 | `packages/core` | CSDL (2 pool), phân quyền, adapter runtime, pipeline nạp, vault, hàng đợi fan-out |
 | `apps/api` | Fastify, theo `openapi.yaml` |
 | `apps/worker` | Bảo trì: làm mới phiên sắp hết hạn, phân vùng lớp thô, lớp tổng hợp. (Hàng đợi crawl nội bộ giữ lại làm dự phòng khi không có Crawlab) |
-| `crawlers/` | **Script crawl Python** chạy trên Crawlab: `_sdk/vala_sdk.py` (thư viện chung) + mỗi spider một thư mục `<mã>/main.py` |
+| `crawlers/` | Chỉ còn thư viện chung `_sdk/vala_sdk.py`. **Mã spider (`main.py`) lưu trong CSDL**, quản trị viết/sửa trên trang *Script crawl* |
 | `apps/web` | React + Tailwind 3, 6 màn hình, chuyển sáng/tối/theo hệ thống |
 | `apps/extension` | **Tiện ích Chrome/Edge** (Manifest V3, React + Tailwind): tự gửi phiên eGov/eTask… về cổng khi người dùng đăng nhập |
 
 ## Crawlab và script crawl (cập nhật 26/09/2026)
 
 ```
-Quản trị    crawlers/<mã>/main.py (Python + vala_sdk) ──"Đồng bộ Crawlab"──▶ spider + lịch cố định (spider × preset)
+Quản trị    Script crawl: main.py lưu CSDL (Python + vala_sdk) ──"Đồng bộ Crawlab"──▶ spider + lịch cố định (spider × preset)
 Người dùng  "Tài khoản nguồn": tự cấp cookie/phiên hoặc tài khoản/mật khẩu (lưu trong vault)
 Người dùng  đặt lịch cho báo cáo (chọn preset, không nhập cron)
 Crawlab     đến giờ: python main.py --preset P
@@ -70,11 +70,11 @@ Cổng        dashboard có sẵn đọc từ kho, vd "Việc của tôi hôm na
 
 **Viết spider mới cho một trang:**
 1. `adapters/<nguồn>.yaml`: cách đăng nhập (`auth.password_login`), cookie phiên (`cookies_required`), ánh xạ trường (`output_schema`), trường để phát hiện lệch schema.
-2. `crawlers/<mã>/main.py`: chỉ lo "gọi trang nào, lấy gì" bằng `run.get()/run.post()` rồi `run.save(capability, items)`. SDK tự lấy phiên mới khi bị chuyển hướng/401.
+2. `main.py` của spider (viết trên trang *Script crawl*, lưu CSDL): chỉ lo "gọi trang nào, lấy gì" bằng `run.get()/run.post()` rồi `run.save(capability, items)`. SDK tự lấy phiên mới khi bị chuyển hướng/401.
 3. Thêm dòng vào `core.crawl_spiders`, bảng đích vào `SINKS` (`packages/core/src/ingest/crawl.ts`), báo cáo vào `report_catalog` + `apps/api/src/reports/`.
 4. *Script crawl* → **Đồng bộ Crawlab** → **Chạy thử** cho một người.
 
-Sửa script trực tiếp trên Crawlab được, nhưng lần đồng bộ sau sẽ ghi đè bằng bản trong repo — chép về repo trước.
+Sửa mã trên trang *Script crawl* rồi đồng bộ. Đừng sửa trực tiếp trên Crawlab: lần đồng bộ sau sẽ ghi đè bằng bản trong CSDL.
 
 ## Đăng nhập và kết nối dữ liệu (cập nhật 25/09/2026)
 
@@ -114,7 +114,7 @@ Bảng màu lấy theo palette tham chiếu của skill dataviz ([apps/web/src/v
 
 Kết nối qua tiện ích xong thì Tổng quan tự gọi "Lấy dữ liệu ngay", rồi làm mới mỗi 5 giây trong 1 phút.
 
-**Hệ thống nguồn** (`/he-thong-nguon`, chỉ quản trị): thêm hệ thống mới ngay trên cổng, không chỉ có eGov/eTask cố định. Khai mã, tên, địa chỉ, cách kết nối cho phép, cookie phiên (tên thay thế ngăn bằng `|`), cookie tuỳ chọn, tên miền cookie, trang kiểm tra phiên và mẫu regex nhận diện tài khoản; phần này lưu ở `core.source_systems.auth_profile`. Hệ thống mới tự hiện ở *Kết nối dữ liệu*, *Tài khoản nguồn* và trong tiện ích. Người dùng kết nối được ngay bằng tiện ích hoặc dán cookie; mật khẩu và SSO cần adapter YAML có cách tự đăng nhập. Muốn có **báo cáo** từ hệ thống mới thì vẫn cần thêm spider (`crawlers/<mã>/`) và báo cáo. Với eGov/eTask (adapter YAML) chỉ sửa được tên, địa chỉ, bật/tắt và cách kết nối. Hệ thống không xoá được, chỉ tắt, vì dữ liệu và lịch sử chạy tham chiếu tới nó.
+**Hệ thống nguồn** (`/he-thong-nguon`, chỉ quản trị): thêm hệ thống mới ngay trên cổng, không chỉ có eGov/eTask cố định. Khai mã, tên, địa chỉ, cách kết nối cho phép, cookie phiên (tên thay thế ngăn bằng `|`), cookie tuỳ chọn, tên miền cookie, trang kiểm tra phiên và mẫu regex nhận diện tài khoản; phần này lưu ở `core.source_systems.auth_profile`. Hệ thống mới tự hiện ở *Kết nối dữ liệu*, *Tài khoản nguồn* và trong tiện ích. Người dùng kết nối được ngay bằng tiện ích hoặc dán cookie; mật khẩu và SSO cần adapter YAML có cách tự đăng nhập. Muốn có **báo cáo** từ hệ thống mới: thêm spider ngay trên trang *Script crawl* (viết `main.py`, không cần sửa code) rồi tạo báo cáo. Với eGov/eTask (adapter YAML) chỉ sửa được tên, địa chỉ, bật/tắt và cách kết nối. Hệ thống không xoá được, chỉ tắt, vì dữ liệu và lịch sử chạy tham chiếu tới nó.
 
 **Cấu hình nằm trong CSDL, không nằm trong code (cập nhật 28/09/2026).** Mỗi hệ thống, kể cả eGov và eTask, có một *cấu hình adapter* (YAML) trong `core.source_systems.adapter_yaml`. Quản trị sửa ở *Hệ thống nguồn → Cấu hình adapter*, có nút **Kiểm tra** trước khi **Lưu**. Cấu hình gồm:
 - xác thực: cookie phiên, tên miền cookie, trang kiểm tra phiên, cách tự đăng nhập;

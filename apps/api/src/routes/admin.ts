@@ -1,15 +1,40 @@
 /**
  * Khu quản trị (is_ops_admin):
  *   - Kết nối dữ liệu: cấu hình hộ người dùng (tài khoản/mật khẩu hoặc cookie hệ thống nguồn).
- *   - Script crawl: danh sách spider, đồng bộ repo → Crawlab, chạy thử cho một người.
+ *   - Script crawl: thêm/sửa mã spider trên cổng (lưu CSDL), đồng bộ lên Crawlab, chạy thử cho một người.
  * Bí mật chỉ vào vault; không endpoint nào trả lại mật khẩu hay cookie.
  */
 import type { FastifyPluginAsync } from 'fastify';
-import { Problem, getSpider, syncCrawlab, withTenant } from '@vala/core';
+import { Problem, getSpider, spiderMainPy, syncCrawlab, withTenant } from '@vala/core';
+import { audit } from '../audit.js';
 import { configureConnection, connectionBodySchema, deleteConnection, listConnections, testConnection, type ConnectionBody } from '../connections.js';
 import type { ApiDeps } from '../deps.js';
 import { adminReportRoutes } from './adminReports.js';
 import { adminSourceRoutes } from './adminSources.js';
+
+interface SpiderBody {
+  ten: string; mo_ta?: string | null; source_system: string;
+  entity: 'documents' | 'tasks' | 'records'; is_enabled?: boolean; main_py: string;
+}
+const spiderBodySchema = {
+  type: 'object', additionalProperties: false,
+  properties: {
+    ten: { type: 'string', minLength: 1, maxLength: 200 },
+    mo_ta: { type: ['string', 'null'], maxLength: 1000 },
+    source_system: { type: 'string', minLength: 1, maxLength: 64 },
+    entity: { type: 'string', enum: ['documents', 'tasks', 'records'] },
+    is_enabled: { type: 'boolean' },
+    main_py: { type: 'string', minLength: 1, maxLength: 200_000 },
+  },
+} as const;
+
+/** Lỗi ràng buộc CSDL ⇒ thông báo dễ hiểu cho quản trị (trùng mã, sai hệ thống nguồn, sai loại dữ liệu). */
+function spiderDbError(e: { code?: string; constraint?: string }): never {
+  if (e.code === '23505') throw new Problem('invalid_params', 'Mã spider đã tồn tại');
+  if (e.code === '23503') throw new Problem('invalid_params', 'Không có hệ thống nguồn này');
+  if (e.code === '23514') throw new Problem('invalid_params', 'Dữ liệu spider không hợp lệ', e.constraint);
+  throw e;
+}
 
 export const adminRoutes = (deps: ApiDeps): FastifyPluginAsync => async (app) => {
   app.addHook('onRequest', async (req) => {
@@ -66,12 +91,44 @@ export const adminRoutes = (deps: ApiDeps): FastifyPluginAsync => async (app) =>
     }
   });
 
-  app.patch<{ Params: { code: string }; Body: { is_enabled: boolean } }>('/admin/spiders/:code', {
-    schema: { body: { type: 'object', required: ['is_enabled'], properties: { is_enabled: { type: 'boolean' } } } },
+  // Mã spider nằm trong CSDL: quản trị viết/sửa ngay trên cổng, thêm hệ thống nguồn mới không cần sửa code.
+  // main_py là mã Python chạy trên Crawlab — chỉ quản trị vận hành (hook ở trên), mọi lần sửa ghi audit.
+  app.get<{ Params: { code: string } }>('/admin/spiders/:code', async (req) => {
+    const s = await getSpider(deps.writer, req.params.code);
+    const main = spiderMainPy(s);
+    return { code: s.code, ten: s.ten, mo_ta: s.mo_ta ?? null, source_system: s.source_system, entity: s.entity,
+      is_enabled: s.is_enabled, main_py: main ?? '', from_repo: !s.main_py && !!main };
+  });
+
+  app.post<{ Body: SpiderBody & { code: string } }>('/admin/spiders', {
+    schema: { body: { ...spiderBodySchema, required: ['code', 'ten', 'source_system', 'entity', 'main_py'],
+      properties: { ...spiderBodySchema.properties, code: { type: 'string', pattern: '^[a-z][a-z0-9_]{1,62}$' } } } },
+  }, async (req, reply) => {
+    const b = req.body;
+    await withTenant(deps.writer, async (t) => {
+      await t.none(
+        `INSERT INTO core.crawl_spiders (code, ten, mo_ta, source_system, entity, is_enabled, main_py, updated_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+        [b.code, b.ten, b.mo_ta ?? null, b.source_system, b.entity, b.is_enabled ?? true, b.main_py, req.user.id]).catch(spiderDbError);
+      await audit(t, req, 'source_change', { type: 'spider', id: b.code }, { op: 'create', source_system: b.source_system });
+    });
+    return reply.status(201).send({ code: b.code, note: 'Bấm "Đồng bộ Crawlab" để đẩy spider lên Crawlab và tạo lịch.' });
+  });
+
+  app.patch<{ Params: { code: string }; Body: Partial<SpiderBody> }>('/admin/spiders/:code', {
+    schema: { body: spiderBodySchema },
   }, async (req) => {
-    await getSpider(deps.writer, req.params.code);
-    await withTenant(deps.writer, (t) => t.none('UPDATE core.crawl_spiders SET is_enabled = $2 WHERE code = $1', [req.params.code, req.body.is_enabled]));
-    return { code: req.params.code, is_enabled: req.body.is_enabled, note: 'Bấm "Đồng bộ Crawlab" để bật/tắt lịch bên Crawlab' };
+    const cur = await getSpider(deps.writer, req.params.code);
+    const b = req.body;
+    await withTenant(deps.writer, async (t) => {
+      await t.none(
+        `UPDATE core.crawl_spiders SET ten = $2, mo_ta = $3, entity = $4, is_enabled = $5, main_py = $6,
+                updated_at = now(), updated_by = $7 WHERE code = $1`,
+        [cur.code, b.ten ?? cur.ten, b.mo_ta !== undefined ? b.mo_ta : cur.mo_ta ?? null, b.entity ?? cur.entity,
+         b.is_enabled ?? cur.is_enabled, b.main_py !== undefined ? b.main_py : cur.main_py ?? null, req.user.id]).catch(spiderDbError);
+      if (b.main_py !== undefined) await audit(t, req, 'source_change', { type: 'spider', id: cur.code }, { op: 'edit_code', bytes: b.main_py.length });
+    });
+    return { code: cur.code, note: 'Đã lưu. Bấm "Đồng bộ Crawlab" để áp dụng lên Crawlab.' };
   });
 
   /** Chạy thử spider cho một người dùng ngay bây giờ (không cần người đó đặt lịch). */
