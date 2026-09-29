@@ -1,0 +1,401 @@
+openapi: 3.0.3
+info:
+  title: Scheduled Reporting Platform — API nội bộ
+  version: "1.0.0"
+  description: |
+    API giữa frontend (React/TypeScript) và backend (Node/TypeScript).
+
+    Nguyên tắc chung:
+      * Mọi endpoint yêu cầu đăng nhập qua Bkav SSO; backend nhận access token ở
+        header `Authorization: Bearer <token>` và đổi ra app_user.
+      * Backend LUÔN mở transaction và đặt biến phiên trước mỗi truy vấn dữ liệu:
+        `SET LOCAL app.user_id`, `app.org_units_allowed`, `app.scope`.
+        Không đặt = row-level security trả về rỗng. Đây là hành vi đúng, không phải lỗi.
+      * Không endpoint nào trả về giá trị cookie/token của hệ thống nguồn.
+      * Mọi truy cập dữ liệu và mọi lần xuất file đều ghi vào audit_log.
+
+servers:
+  - url: /api/v1
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: Phiên & uỷ quyền
+  - name: Danh mục báo cáo
+  - name: Lịch chạy
+  - name: Dữ liệu báo cáo
+  - name: Vận hành
+
+paths:
+
+  /me:
+    get:
+      tags: [Phiên & uỷ quyền]
+      summary: Thông tin người dùng hiện tại và phạm vi xem
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: integer, example: 42 }
+                  ho_ten: { type: string, example: "Huỳnh Tuấn Dũng" }
+                  email: { type: string, example: "dunght@bkav.com" }
+                  org_units:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: { type: integer }
+                        ten: { type: string }
+                        vai_tro: { type: string, enum: [thanh_vien, truong_don_vi] }
+                  scopes:
+                    type: array
+                    description: Phạm vi người này được phép chọn khi xem báo cáo
+                    items: { type: string, enum: [ca_nhan, don_vi] }
+
+  /grants:
+    get:
+      tags: [Phiên & uỷ quyền]
+      summary: Trạng thái uỷ quyền của tôi với từng hệ thống nguồn
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Grant" }
+
+  /grants/{source_system}:
+    parameters:
+      - { name: source_system, in: path, required: true, schema: { type: string, enum: [egov, etask] } }
+    post:
+      tags: [Phiên & uỷ quyền]
+      summary: Bắt đầu uỷ quyền cho một hệ thống
+      description: |
+        Trả về URL để chuyển hướng người dùng sang SSO xin đồng ý. Sau khi người dùng
+        đồng ý, backend lưu phiên vào vault và tạo bản ghi source_grants.
+        Nếu SSO không hỗ trợ uỷ quyền, trả về `flow: "extension"` kèm hướng dẫn cài extension.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                scope_capabilities:
+                  type: array
+                  items: { type: string }
+                  example: ["documents_by_node"]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  flow: { type: string, enum: [authorization_code, extension] }
+                  redirect_url: { type: string, nullable: true }
+    delete:
+      tags: [Phiên & uỷ quyền]
+      summary: Thu hồi uỷ quyền
+      description: |
+        Đặt revoked_at, xoá phiên khỏi vault ngay lập tức, huỷ mọi lịch fan-out của
+        người dùng này với hệ thống đó. Dữ liệu đã crawl KHÔNG bị xoá theo mặc định;
+        muốn xoá phải gọi thêm endpoint xoá dữ liệu (cần xác nhận hai bước).
+      responses:
+        "204": { description: Đã thu hồi }
+
+  /reports:
+    get:
+      tags: [Danh mục báo cáo]
+      summary: Danh mục báo cáo người dùng được phép chạy
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/ReportDefinition" }
+
+  /reports/{code}/preview:
+    post:
+      tags: [Dữ liệu báo cáo]
+      summary: Xem dữ liệu báo cáo (đọc từ kho, không chạm hệ thống nguồn)
+      parameters:
+        - { name: code, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                params:
+                  type: object
+                  description: Phải hợp lệ theo param_schema của báo cáo
+                  example: { tu_ngay: "2026-09-01", den_ngay: "2026-09-30", node_ids: [32] }
+                scope: { type: string, enum: [ca_nhan, don_vi], default: ca_nhan }
+                page: { type: integer, default: 1 }
+                page_size: { type: integer, default: 50, maximum: 500 }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReportResult" }
+        "403": { description: Không có quyền với scope đã chọn }
+        "422": { description: Tham số không hợp lệ theo param_schema }
+
+  /reports/{code}/export:
+    post:
+      tags: [Dữ liệu báo cáo]
+      summary: Xuất báo cáo ra Excel hoặc PDF
+      parameters:
+        - { name: code, in: path, required: true, schema: { type: string } }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                params: { type: object }
+                scope: { type: string, enum: [ca_nhan, don_vi] }
+                format: { type: string, enum: [xlsx, pdf] }
+      responses:
+        "202":
+          description: Đã nhận, file sinh bất đồng bộ
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  job_id: { type: string }
+        "200":
+          description: File nhỏ, trả trực tiếp
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+
+  /subscriptions:
+    get:
+      tags: [Lịch chạy]
+      summary: Danh sách lịch chạy của tôi
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Subscription" }
+    post:
+      tags: [Lịch chạy]
+      summary: Đặt lịch chạy cho một báo cáo
+      description: |
+        Người dùng chọn một preset; backend chỉ ghi `schedule_preset` vào report_subscriptions.
+        KHÔNG gọi API Crawlab, KHÔNG tạo task mới: các task Crawlab là tĩnh, mỗi
+        (capability × preset) một task, tạo sẵn lúc triển khai (xem core.crawl_tasks).
+        Khi task đó chạy, spider tự gom những người dùng đang đăng ký preset tương ứng.
+        Người dùng KHÔNG nhập cron trực tiếp ở bản 1.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [report_code, schedule_preset]
+              properties:
+                report_code: { type: string, example: "van_ban_ket_thuc_theo_phong" }
+                params: { type: object }
+                schedule_preset:
+                  type: string
+                  enum: [hang_ngay_07, hang_tuan_t2_08, hang_thang_ngay1_08, moi_2h_gio_hanh_chinh]
+      responses:
+        "201":
+          description: Đã tạo
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Subscription" }
+
+  /subscriptions/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    patch:
+      tags: [Lịch chạy]
+      summary: Sửa lịch hoặc bật/tắt
+      description: |
+        Đổi lịch = đổi schedule_preset. Không có lời gọi nào sang Crawlab, nên thao tác
+        này luôn thành công ngay và không thể rơi vào trạng thái lệch giữa hai hệ thống.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                schedule_preset: { type: string }
+                params: { type: object }
+                is_enabled: { type: boolean }
+      responses:
+        "200": { description: OK }
+    delete:
+      tags: [Lịch chạy]
+      summary: Xoá lịch
+      responses:
+        "204": { description: Đã xoá }
+
+  /subscriptions/{id}/run-now:
+    post:
+      tags: [Lịch chạy]
+      summary: Chạy ngay, không chờ lịch
+      description: |
+        Kích hoạt task Crawlab tương ứng với (capability × preset) của lịch này, truyền
+        tham số lọc chỉ chạy cho đúng người dùng gọi. Giới hạn 1 lần / 5 phút / lịch.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "202":
+          description: Đã đẩy vào hàng đợi Crawlab
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  crawl_run_id: { type: integer }
+
+  /freshness:
+    get:
+      tags: [Vận hành]
+      summary: Độ tươi dữ liệu — nguồn cho dòng "số liệu tính đến ..."
+      description: Mọi dashboard và file xuất ra đều phải hiển thị thông tin từ endpoint này.
+      parameters:
+        - { name: source_system, in: query, schema: { type: string } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  source_system: { type: string }
+                  last_success_at: { type: string, format: date-time }
+                  status: { type: string, enum: [ok, stale, failed, no_grant] }
+                  message: { type: string, example: "Số liệu tính đến 07:02 ngày 25/09/2026" }
+
+  /ops/runs:
+    get:
+      tags: [Vận hành]
+      summary: Nhật ký chạy (chỉ vai trò quản trị)
+      parameters:
+        - { name: status, in: query, schema: { type: string, enum: [running, ok, failed, skipped] } }
+        - { name: source_system, in: query, schema: { type: string } }
+        - { name: from, in: query, schema: { type: string, format: date-time } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/CrawlRun" }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    Grant:
+      type: object
+      properties:
+        source_system: { type: string, example: egov }
+        session_state:
+          type: string
+          enum: [pending, active, expired, revoked, failed]
+        granted_at: { type: string, format: date-time, nullable: true }
+        session_expires_at: { type: string, format: date-time, nullable: true }
+        scope_capabilities: { type: array, items: { type: string } }
+        can_crawl: { type: boolean, description: "true khi state=active và chưa thu hồi" }
+
+    ReportDefinition:
+      type: object
+      properties:
+        code: { type: string }
+        ten: { type: string }
+        mo_ta: { type: string }
+        source_system: { type: string }
+        param_schema: { type: object, description: "JSON Schema cho form tham số" }
+        view_template: { type: string, enum: [bang, bang_kem_bieu_do, tong_hop] }
+        required_scope: { type: string, enum: [ca_nhan, don_vi, toan_don_vi] }
+        requires_grant: { type: boolean }
+
+    ReportResult:
+      type: object
+      properties:
+        columns:
+          type: array
+          items:
+            type: object
+            properties:
+              field: { type: string, example: trich_yeu }
+              label: { type: string, example: "Trích yếu" }
+              type: { type: string, enum: [string, int, date, money] }
+              width: { type: integer }
+        rows:
+          type: array
+          items: { type: object, additionalProperties: true }
+        total_rows: { type: integer }
+        page: { type: integer }
+        page_size: { type: integer }
+        freshness:
+          type: object
+          properties:
+            last_success_at: { type: string, format: date-time }
+            message: { type: string }
+        charts:
+          type: array
+          description: Chỉ có khi view_template = bang_kem_bieu_do
+          items:
+            type: object
+            properties:
+              kind: { type: string, enum: [line, bar] }
+              title: { type: string }
+              x_field: { type: string }
+              series: { type: array, items: { type: object } }
+
+    Subscription:
+      type: object
+      properties:
+        id: { type: integer }
+        report_code: { type: string }
+        params: { type: object }
+        schedule_preset: { type: string }
+        schedule_preset: { type: string, enum: [hang_ngay_07, hang_tuan_t2_08, hang_thang_ngay1_08, moi_2h_gio_hanh_chinh] }
+        cron_expr: { type: string, description: "Suy ra từ core.crawl_tasks. Chỉ hiển thị cho vai trò quản trị" }
+        is_enabled: { type: boolean }
+        next_run_at: { type: string, format: date-time }
+        last_run_at: { type: string, format: date-time, nullable: true }
+        last_status: { type: string, enum: [ok, failed, running], nullable: true }
+
+    CrawlRun:
+      type: object
+      properties:
+        id: { type: integer }
+        source_system: { type: string }
+        capability: { type: string }
+        app_user_id: { type: integer, nullable: true }
+        trigger_type: { type: string, enum: [schedule, manual, backfill] }
+        started_at: { type: string, format: date-time }
+        finished_at: { type: string, format: date-time, nullable: true }
+        status: { type: string, enum: [running, ok, failed, skipped] }
+        records_seen: { type: integer, nullable: true }
+        records_changed: { type: integer, nullable: true }
+        error_code: { type: string, nullable: true }

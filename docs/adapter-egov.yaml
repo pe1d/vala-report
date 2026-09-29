@@ -1,0 +1,220 @@
+# ---------------------------------------------------------------------------
+# adapter-egov.yaml — Đặc tả adapter eGov, phiên bản 2.0.0
+#
+# TRẠNG THÁI KIỂM CHỨNG
+#   Ba endpoint dưới đây đã được gọi thật trên egov.bkav.com bằng phiên đăng nhập
+#   hợp lệ và trả về đúng dữ liệu hiển thị trên giao diện. Mọi thứ đánh dấu
+#   "CHƯA KIỂM CHỨNG" là suy đoán, phải xác minh trước khi code.
+#
+# MÔ HÌNH XÁC THỰC: phiên uỷ quyền theo từng người dùng (delegated_session).
+#   eGov chỉ cho mỗi tài khoản thấy hàng đợi của chính nó ⇒ không dùng được
+#   tài khoản dịch vụ. Mỗi lần chạy gắn với đúng một app_user đã uỷ quyền.
+# ---------------------------------------------------------------------------
+
+adapter:
+  id: egov.documents
+  version: "2.0.0"
+  source_system: egov
+
+  target_system:
+    ten: "Bkav eGov"
+    base_url: "https://egov.bkav.com"
+    vendor: "Bkav"
+    ghi_chu: "ASP.NET MVC, giao diện chính nằm trong iframe #documents trỏ tới /Home/Index"
+
+  execution: server          # server | extension
+  transport: http_api        # http_api | dom_read
+
+  # -------------------------------------------------------------------------
+  # XÁC THỰC
+  # -------------------------------------------------------------------------
+  auth:
+    type: delegated_session
+    sso:
+      provider: "Bkav SSO"
+      # CHƯA KIỂM CHỨNG — phải hỏi đội SSO. Thứ tự ưu tiên:
+      #   1. Authorization Code flow: cổng đăng ký làm client, người dùng bấm đồng ý,
+      #      nhận refresh_token ⇒ làm mới phiên không cần người dùng có mặt. ĐƯỜNG SẠCH NHẤT.
+      #   2. Extension đồng bộ cookie theo danh sách domain cho phép.
+      #   3. KHÔNG dùng: lưu mật khẩu người dùng rồi đăng nhập lại bằng headless.
+      preferred_flow: authorization_code
+      fallback_flow: browser_extension_sync
+    vault_ref: "vault://{tenant}/users/{app_user_id}/egov"
+    cookies_required:                 # quan sát được trên phiên thật
+      - egov_sid
+      - bkavAuthen
+      - BkavSSOv2
+    session_probe:
+      request:
+        method: GET
+        path: /Home/Index
+      extract:
+        puid:
+          type: regex
+          pattern: 'egov\.userid\s*=\s*(\d+)\s*;'
+          group: 1
+      on_success: "lưu puid vào user_source_accounts.source_user_id"
+      on_failure: "đánh dấu source_grants.session_state = 'expired', dừng run, không thử lại trong cùng task"
+
+  # -------------------------------------------------------------------------
+  # CHỐT CHẶN — runtime từ chối mọi request không nằm trong danh sách này.
+  # Phiên đăng nhập là bearer token không thu hẹp được, đây là rào duy nhất.
+  # -------------------------------------------------------------------------
+  allowed_endpoints:
+    - { method: GET,  path: "/Home/Index" }
+    - { method: GET,  path: "/Home/GetFunctionByParentId" }
+    - { method: POST, path: "/home/GetDocuments" }
+
+  rate_limit:
+    max_requests_per_minute: 30
+    delay_between_calls_ms: 300
+    ghi_chu: "Fan-out theo người dùng ⇒ phải rải task, xem mục 'scheduling' bên dưới"
+
+  # -------------------------------------------------------------------------
+  # CÁC CAPABILITY
+  # -------------------------------------------------------------------------
+  capabilities:
+
+    # -- 1. Liệt kê cây thư mục văn bản của người dùng ----------------------
+    - id: list_nodes
+      ten: "Danh sách thư mục xử lý văn bản"
+      steps:
+        - id: get_tree
+          request:
+            method: GET
+            path: /Home/GetFunctionByParentId
+            query:
+              parentId: 0
+              puid: "{{session.puid}}"
+          extract:
+            nodes: "$[*]"
+      output_schema:
+        - { source: functionId,           field: node_id,      type: int }
+        - { source: name,                 field: node_ten,     type: string }
+        - { source: params,               field: params_query, type: string }
+        - { source: totalDocument,        field: tong_so,      type: int }
+        - { source: totalDocumentUnread,  field: chua_doc,     type: int }
+      # Kết quả thật trên tài khoản khảo sát (puid=3058), dùng làm fixture test:
+      #   222 Văn bản chờ xử lý          13  Văn bản đang dự thảo
+      #   221 Văn bản đang theo dõi      223 Văn bản thông báo
+      #   32  Văn bản mới kết thúc       33  Văn bản được ủy quyền xử lý
+      #   34  Văn bản ủy quyền vừa xử lý 258 Văn bản chờ phát hành
+
+    # -- 2. Lấy văn bản trong một thư mục ----------------------------------
+    - id: documents_by_node
+      ten: "Danh sách văn bản theo thư mục"
+      input_schema:
+        - { name: node_id,      type: int,    required: true }
+        - { name: params_query, type: string, default: "[]" }
+      steps:
+        - id: fetch
+          request:
+            method: POST
+            path: /home/GetDocuments
+            body_encoding: form          # application/x-www-form-urlencoded
+            body:
+              id: "{{input.node_id}}"
+              paramsQuery: "{{input.params_query}}"
+              puid: "{{session.puid}}"
+          extract:
+            items: "$.documents[*]"
+            meta:
+              page: "$.page"
+              page_size: "$.pageSize"
+              total: "$.totalDocuments"
+      output_schema:
+        - { source: DocumentCopyId,       field: ma_van_ban,      type: string, key: true }
+        - { source: Compendium,           field: trich_yeu,       type: string }
+        - { source: DocCode,              field: so_ky_hieu,      type: string }
+        - { source: InOutCode,            field: so_den_di,       type: string }
+        - { source: DateReceived,         field: ngay_nhan,       type: date, format: "DD/MM/YYYY" }
+        - { source: DateCreated,          field: ngay_tao,        type: date, format: "DD/MM/YYYY" }
+        - { source: UserCurrentFullName,  field: nguoi_tao,       type: string }
+        - { source: UserCurrentId,        field: nguoi_xu_ly_id,  type: int }
+        - { source: DocTypeId,            field: loai_van_ban_id, type: string }
+        - { source: DocCopyStatus,        field: trang_thai,      type: string }
+      content_hash_fields:
+        [ma_van_ban, trich_yeu, so_ky_hieu, so_den_di, ngay_nhan, ngay_tao, nguoi_tao, trang_thai]
+      pagination:
+        strategy: unknown
+        # CHƯA KIỂM CHỨNG. Response trả page=1, pageSize=25 nhưng tài khoản khảo sát
+        # chỉ có 4 bản ghi nên không kích hoạt được phân trang.
+        # /Home/GetDocumentPaging/{id}?params=[]&page=2 trả 404 ⇒ sai định dạng.
+        # VIỆC PHẢI LÀM: test trên tài khoản có >25 văn bản trong một node trước khi
+        # tin rằng đã lấy đủ. Tạm thời: nếu len(items) >= pageSize thì ghi cảnh báo
+        # vào crawl_runs.error_code = 'pagination_unverified'.
+      cache:
+        scope: per_user
+        ttl_seconds: 600
+
+  # -------------------------------------------------------------------------
+  # LỊCH CHẠY — fan-out theo người dùng
+  # -------------------------------------------------------------------------
+  scheduling:
+    mode: fan_out_per_user
+    executor: crawlab
+    task_granularity: capability_x_preset
+    # Crawlab giữ một tập task TĨNH: mỗi (capability × schedule_preset) một task,
+    # tạo một lần lúc triển khai. KHÔNG tạo task theo từng người dùng — 200 người
+    # dùng sẽ thành 200 task và giao diện Crawlab trở nên vô dụng.
+    # Fan-out nằm BÊN TRONG một lần chạy của spider, không phải ở hàng đợi riêng.
+    selector: >
+      SELECT DISTINCT s.app_user_id
+        FROM report_subscriptions rs
+        JOIN report_catalog rc ON rc.code = rs.report_code
+        JOIN source_grants  s  ON s.app_user_id = rs.app_user_id
+                              AND s.source_system = rc.source_system
+       WHERE rc.capability = :capability
+         AND rs.schedule_preset = :preset          -- preset của task đang chạy
+         AND rs.is_enabled
+         AND s.revoked_at IS NULL
+         AND s.session_state = 'active'
+         AND rc.capability = ANY(s.scope_capabilities)
+    nodes_per_user: all            # lặp qua kết quả của capability list_nodes
+    stagger: "rải đều trong cửa sổ 30 phút, tối đa 5 người dùng chạy song song"
+    per_user_isolation: >
+      Lỗi của một người dùng KHÔNG được làm hỏng cả lần chạy: bắt lỗi trong vòng lặp,
+      ghi crawl_runs riêng cho người đó với status='failed', rồi đi tiếp. Task Crawlab
+      chỉ báo failed khi tỉ lệ người dùng lỗi vượt ngưỡng (mặc định 50%).
+    idempotency: >
+      Chạy lại toàn bộ task phải an toàn: content_hash đảm bảo không sinh dòng lịch sử
+      thừa cho bản ghi không đổi.
+    default_cron: "0 6 * * *"
+    ghi_chu: >
+      Với N người dùng và 8 node, mỗi lần chạy là N×(1+8) request. 200 người dùng
+      ⇒ 1.800 request mỗi lượt. Bắt buộc phải rải và giới hạn song song, nếu không
+      sẽ tạo đỉnh tải bất thường lên eGov và bị đội quản trị cảnh báo.
+
+  # -------------------------------------------------------------------------
+  # GIÁM SÁT
+  # -------------------------------------------------------------------------
+  monitoring:
+    mode: passive
+    schema_baseline_fields:
+      [DocumentCopyId, Compendium, DocCode, DateReceived, DateCreated, UserCurrentFullName]
+    alert_when:
+      - "tỉ lệ run failed > 10% trong 1 giờ"
+      - "thiếu bất kỳ trường nào trong schema_baseline_fields"
+      - "session_state = 'expired' cho > 20% người dùng đã uỷ quyền"
+      - "một người dùng không có run thành công nào trong 48 giờ"
+
+  compliance:
+    data_classification: internal_confidential
+    consent_required: true
+    consent_text_ref: "ui/consent/egov.md"
+    audit_events: [grant, revoke, crawl_run, view_report, export]
+
+  # -------------------------------------------------------------------------
+  # CẢNH BÁO AN NINH — đọc trước khi code
+  # -------------------------------------------------------------------------
+  security_notes:
+    - >
+      Tham số puid do client gửi lên trong body. Trong quá trình kiểm thử, nếu phát hiện
+      server chấp nhận puid của người khác mà không kiểm tra phiên, ĐÂY LÀ LỖ HỔNG PHÂN
+      QUYỀN CỦA eGOV: phải báo đội phát triển eGov, tuyệt đối không xây tính năng dựa
+      trên nó. Adapter luôn gửi đúng puid của phiên đang dùng.
+    - >
+      Không log giá trị cookie hay nội dung header Cookie ở bất kỳ đâu, kể cả log lỗi.
+    - >
+      Lớp thô lưu nguyên response nên có thể chứa trường không nằm trong output_schema.
+      Áp dụng chính sách phân loại dữ liệu trước khi cho phép truy vấn trực tiếp raw_records.
