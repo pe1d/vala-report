@@ -4,14 +4,15 @@ import { ChartView } from '../components/Charts';
 import { DataTable } from '../components/DataTable';
 import { StatTiles } from '../components/StatTiles';
 import { Empty, ErrorBox, Loading } from '../components/States';
-import { Badge, Banner, Button, Field, Input, Muted, PageTitle, Select, Table, Td, Th } from '../components/ui';
+import { Badge, Banner, Button, Field, Input, Menu, Muted, PageTitle, Select, Table, Td, Th } from '../components/ui';
 import { useAsync } from '../hooks';
 
 // ---- kiểu định nghĩa (khớp apps/api/src/reports/defined.ts) --------------------------------------
 type FieldType = 'string' | 'int' | 'date';
 interface FieldInfo { name: string; label: string; type: FieldType }
 interface DatasetInfo { dataset: 'documents' | 'tasks' | 'records'; capability: string; label: string }
-type Op = 'eq' | 'neq' | 'in' | 'contains' | 'gt' | 'gte' | 'lt' | 'lte' | 'is_null' | 'not_null' | 'truoc_hom_nay' | 'tu_hom_nay';
+type Op = 'eq' | 'neq' | 'in' | 'contains' | 'gt' | 'gte' | 'lt' | 'lte' | 'is_null' | 'not_null' | 'truoc_hom_nay' | 'tu_hom_nay' | 'hom_nay' | 'den_hom_nay';
+const TODAY_OPS: Op[] = ['truoc_hom_nay', 'tu_hom_nay', 'hom_nay', 'den_hom_nay'];
 interface Filter { field: string; op: Op; value?: string | number }
 interface Measure { fn: 'count' | 'count_distinct' | 'sum' | 'avg' | 'min' | 'max'; field?: string; label: string; filters: Filter[] }
 interface Tile extends Measure { warn_if_gt?: number; err_if_gt?: number }
@@ -24,7 +25,7 @@ interface Definition {
   sort?: { by: string; dir: 'asc' | 'desc' };
 }
 interface ReportRow {
-  code: string; ten: string; mo_ta: string | null; source_system: string; source_ten: string; kind: 'code' | 'config' | 'missing';
+  code: string; ten: string; mo_ta: string | null; source_system: string; source_ten: string; kind: 'config' | 'missing';
   required_scope: 'ca_nhan' | 'don_vi'; is_active: boolean; show_on_dashboard: boolean; dashboard_order: number;
   definition: Definition | null; lich: number; updated_at: string;
 }
@@ -32,7 +33,7 @@ interface ReportRow {
 const OPS: Array<[Op, string, boolean]> = [
   ['eq', 'bằng', true], ['neq', 'khác', true], ['contains', 'chứa', true], ['gt', 'lớn hơn', true], ['gte', 'từ', true],
   ['lt', 'nhỏ hơn', true], ['lte', 'đến', true], ['is_null', 'trống', false], ['not_null', 'có giá trị', false],
-  ['truoc_hom_nay', 'trước hôm nay', false], ['tu_hom_nay', 'từ hôm nay trở đi', false],
+  ['truoc_hom_nay', 'trước hôm nay', false], ['hom_nay', 'đúng hôm nay', false], ['den_hom_nay', 'đến hết hôm nay', false], ['tu_hom_nay', 'từ hôm nay trở đi', false],
 ];
 const FNS: Array<[Measure['fn'], string]> = [['count', 'Đếm'], ['count_distinct', 'Đếm khác nhau'], ['sum', 'Tổng'], ['avg', 'Trung bình'], ['min', 'Nhỏ nhất'], ['max', 'Lớn nhất']];
 const PERIODS: Array<[string, string]> = [['thang_hien_tai', 'Tháng hiện tại'], ['thang_truoc', 'Tháng trước'], ['quy_hien_tai', 'Quý hiện tại'],
@@ -58,6 +59,15 @@ export function AdminReportsPage() {
     setNote(msg);
     list.reload();
   };
+  const remove = async (r: ReportRow) => {
+    const lich = r.lich ? `\n\n${r.lich} lịch chạy đang bật của báo cáo này cũng bị xoá.` : '';
+    if (!confirm(`Xoá hẳn báo cáo “${r.ten}”?${lich}\n\nDữ liệu đã lấy về không bị ảnh hưởng. Không hoàn tác được.`)) return;
+    try {
+      await api.del(`/admin/reports/${r.code}`);
+      setNote(`Đã xoá báo cáo “${r.ten}”.`);
+      list.reload();
+    } catch (e) { setNote(ERR(e)); }
+  };
 
   return (
     <>
@@ -78,7 +88,7 @@ export function AdminReportsPage() {
               <tr key={r.code} className={r.is_active ? '' : 'opacity-60'}>
                 <Td><div className="font-medium">{r.ten}</div><Muted className="font-mono text-xs">{r.code}</Muted></Td>
                 <Td>{r.source_ten}</Td>
-                <Td><Badge tone={r.kind === 'config' ? 'info' : 'neutral'}>{r.kind === 'config' ? 'Cấu hình' : 'Có sẵn (code)'}</Badge></Td>
+                <Td>{r.kind === 'config' ? <Badge tone="info">Cấu hình</Badge> : <Badge tone="warn">Chưa có định nghĩa</Badge>}</Td>
                 <Td>{r.required_scope === 'ca_nhan' ? 'Cá nhân' : 'Đơn vị'}</Td>
                 <Td>
                   <label className="flex items-center gap-2 text-sm">
@@ -92,6 +102,7 @@ export function AdminReportsPage() {
                   <div className="flex justify-end gap-1.5">
                     <Button onClick={() => { setEditing(r); setNote(null); }}>Sửa</Button>
                     <Button onClick={() => void patch(r, { is_active: !r.is_active }, `Đã ${r.is_active ? 'tắt' : 'bật'} “${r.ten}”.`)}>{r.is_active ? 'Tắt' : 'Bật'}</Button>
+                    <Menu label={`Thêm thao tác cho ${r.ten}`} items={[{ label: 'Xoá báo cáo', danger: true, onClick: () => void remove(r) }]} />
                   </div>
                 </Td>
               </tr>
@@ -108,7 +119,7 @@ export function AdminReportsPage() {
 // ---------------------------------------------------------------------------------------------
 function ReportEditor({ report, onClose, onSaved }: { report: ReportRow | null; onClose: () => void; onSaved: (m: string) => void }) {
   const isNew = !report;
-  const configurable = isNew || report.kind === 'config';
+  const configurable = true;   // mọi báo cáo là báo cáo cấu hình
   const sources = useAsync(() => api.get<AdminSource[]>('/admin/sources'), []);
   const [code, setCode] = useState('');
   const [ten, setTen] = useState(report?.ten ?? '');
@@ -174,7 +185,7 @@ function ReportEditor({ report, onClose, onSaved }: { report: ReportRow | null; 
         {/* Thân: cấu hình bên trái, xem thử dính bên phải (xuống dòng dọc khi màn hình hẹp) */}
         <div className="flex flex-1 flex-col lg:min-h-0 lg:flex-row">
           <div className="px-5 py-4 lg:min-w-0 lg:flex-1 lg:overflow-y-auto">
-            {!configurable && <Banner tone="info">Báo cáo có sẵn (viết trong code): chỉ sửa được tên, mô tả và cách hiện trên Tổng quan. Muốn đổi cách tính, hãy tạo một báo cáo cấu hình mới.</Banner>}
+            {report?.kind === 'missing' && <Banner tone="warn">Báo cáo này chưa có định nghĩa — dựng lại bên dưới rồi lưu, hoặc xoá nó.</Banner>}
 
             <div className="grid gap-x-4 gap-y-3 sm:grid-cols-2">
               {isNew && <Field label="Mã báo cáo"><Input value={code} onChange={(e) => setCode(e.target.value.toLowerCase())} placeholder="vd phieu_theo_trang_thai" /></Field>}
@@ -225,7 +236,7 @@ function ReportEditor({ report, onClose, onSaved }: { report: ReportRow | null; 
             </div>
             <div className="grow p-4 lg:overflow-y-auto">
               {err && <Banner tone="err">{err}</Banner>}
-              {!err && !preview && <Empty>{configurable ? 'Bấm “Xem thử” để chạy báo cáo trên dữ liệu hiện có của bạn và kiểm tra trước khi lưu.' : 'Báo cáo có sẵn — xem trực tiếp ở trang Báo cáo.'}</Empty>}
+              {!err && !preview && <Empty>Bấm “Xem thử” để chạy báo cáo trên dữ liệu hiện có của bạn và kiểm tra trước khi lưu.</Empty>}
               {preview && <PreviewBody r={preview} />}
             </div>
           </aside>
@@ -355,7 +366,7 @@ function Section({ title, hint, children }: { title: string; hint?: string; chil
 
 function FilterRow({ f, fields, onChange, onRemove }: { f: Filter; fields: FieldInfo[]; onChange: (f: Filter) => void; onRemove: () => void }) {
   const type = fields.find((x) => x.name === f.field)?.type;
-  const ops = OPS.filter(([o]) => (o === 'truoc_hom_nay' || o === 'tu_hom_nay' ? type === 'date' : o === 'contains' ? type === 'string' : true));
+  const ops = OPS.filter(([o]) => (TODAY_OPS.includes(o) ? type === 'date' : o === 'contains' ? type === 'string' : true));
   const needValue = OPS.find(([o]) => o === f.op)?.[2];
   return (
     <div className="flex flex-wrap items-center gap-2">

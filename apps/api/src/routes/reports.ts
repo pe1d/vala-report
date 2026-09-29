@@ -8,7 +8,7 @@ import { toXlsx } from '../export.js';
 import { computeFreshness, type Freshness } from '../freshness.js';
 import { validateParams } from '../params.js';
 import { paramOptions, runDefinition } from '../reports/defined.js';
-import { REPORTS, type ReportOutput } from '../reports/index.js';
+import type { ReportOutput } from '../reports/index.js';
 
 interface CatalogRow {
   code: string;
@@ -20,13 +20,13 @@ interface CatalogRow {
   default_params: object;
   view_template: string;
   required_scope: 'ca_nhan' | 'don_vi' | 'toan_don_vi';
-  /** Báo cáo cấu hình (không viết code) — xem reports/defined.ts. */
+  /** Định nghĩa báo cáo cấu hình (reports/defined.ts). Mọi báo cáo đều là báo cáo cấu hình. */
   definition: unknown | null;
 }
 
 export async function loadCatalogEntry(t: Tx, code: string): Promise<CatalogRow> {
   const r = await t.oneOrNone<CatalogRow>('SELECT * FROM report_catalog WHERE code = $1 AND is_active', [code]);
-  if (!r || (!REPORTS[code] && !r.definition)) throw new Problem('not_found', 'Không có báo cáo này');
+  if (!r || !r.definition) throw new Problem('not_found', 'Không có báo cáo này');
   return r;
 }
 
@@ -60,7 +60,7 @@ export async function runReport(deps: ApiDeps, req: FastifyRequest, code: string
     }
     await audit(t, req, action, { type: 'report', id: code }, { scope, params, page, page_size: pageSize });
     const input = { params, scope, page, pageSize };
-    const out: ReportOutput = REPORTS[code] ? await REPORTS[code]!.run(t, input) : await runDefinition(t, entry.source_system, entry.definition, input);
+    const out: ReportOutput = await runDefinition(t, entry.source_system, entry.definition, input);
     return { entry, scope, params, freshness, out, page, pageSize };
   });
 }

@@ -1,14 +1,13 @@
 /**
  * Quản trị — Cấu hình báo cáo. Tạo báo cáo mới trên dữ liệu của bất kỳ hệ thống nguồn nào (văn bản, công việc,
- * dữ liệu chung) mà không viết code/SQL, chọn có hiện trên Tổng quan không. Báo cáo viết trong code (có sẵn)
- * chỉ sửa được tên, mô tả, bật/tắt, hiện trên Tổng quan và thứ tự.
+ * dữ liệu chung) mà không viết code/SQL, chọn có hiện trên Tổng quan không. Mọi báo cáo đều là báo cáo cấu hình:
+ * sửa được toàn bộ định nghĩa, và xoá được (kèm lịch chạy của nó).
  */
 import type { FastifyPluginAsync } from 'fastify';
 import { Problem, resolveUserContext, withTenant, withUserContext, type Scope } from '@vala/core';
 import { audit } from '../audit.js';
 import type { ApiDeps } from '../deps.js';
 import { checkDefinition, datasetFields, runDefinition, sourceDatasets, type Dataset } from '../reports/defined.js';
-import { REPORTS } from '../reports/index.js';
 
 interface ReportBody {
   code?: string;
@@ -54,7 +53,8 @@ export const adminReportRoutes = (deps: ApiDeps): FastifyPluginAsync => async (a
               (SELECT count(*)::int FROM report_subscriptions s WHERE s.report_code = rc.code AND s.is_enabled) AS lich
          FROM report_catalog rc JOIN core.source_systems ss ON ss.code = rc.source_system
         ORDER BY rc.dashboard_order, rc.ten`);
-    return rows.map((r) => ({ ...r, kind: r.definition ? 'config' : REPORTS[r.code] ? 'code' : 'missing' }));
+    // Mọi báo cáo là báo cáo cấu hình; 'missing' = dòng cũ chưa có định nghĩa (cần sửa hoặc xoá).
+    return rows.map((r) => ({ ...r, kind: r.definition ? 'config' : 'missing' }));
   }));
 
   /** Tập dữ liệu của một hệ thống + trường của tập đang chọn — cho form dựng báo cáo. */
@@ -85,7 +85,7 @@ export const adminReportRoutes = (deps: ApiDeps): FastifyPluginAsync => async (a
     const b = req.body;
     if (!deps.sources.get(b.source_system!)) throw new Problem('not_found', 'Không có hệ thống nguồn này');
     const exists = await withTenant(deps.writer, (t) => t.oneOrNone('SELECT 1 FROM report_catalog WHERE code = $1', [b.code]));
-    if (exists || REPORTS[b.code!]) throw new Problem('invalid_params', 'Mã báo cáo đã tồn tại', b.code);
+    if (exists) throw new Problem('invalid_params', 'Mã báo cáo đã tồn tại', b.code);
     const c = checkDefinition(b.source_system!, b.definition);
     const w = await wiring(b.source_system!, c.def.dataset, c.def.capability);
     await withTenant(deps.writer, async (t) => {
@@ -106,9 +106,6 @@ export const adminReportRoutes = (deps: ApiDeps): FastifyPluginAsync => async (a
     if (!cur) throw new Problem('not_found', 'Không có báo cáo này');
     const b = req.body;
     if (b.code && b.code !== req.params.code) throw new Problem('invalid_params', 'Không đổi được mã báo cáo');
-    if (!cur.definition && (b.definition !== undefined || b.source_system !== undefined)) {
-      throw new Problem('invalid_params', 'Báo cáo này viết trong code', 'Chỉ sửa được tên, mô tả, bật/tắt, hiện trên Tổng quan và thứ tự');
-    }
     const source = b.source_system ?? cur.source_system;
     if (!deps.sources.get(source)) throw new Problem('not_found', 'Không có hệ thống nguồn này');
     const c = b.definition !== undefined || b.source_system !== undefined ? checkDefinition(source, b.definition ?? cur.definition) : null;
@@ -130,5 +127,17 @@ export const adminReportRoutes = (deps: ApiDeps): FastifyPluginAsync => async (a
       await audit(t, req, 'source_change', { type: 'report', id: req.params.code }, { op: 'update', fields: Object.keys(b) });
     });
     return { code: req.params.code, updated: true };
+  });
+
+  /** Xoá hẳn một báo cáo cùng các lịch chạy của nó (một transaction). Dữ liệu đã lấy về không bị ảnh hưởng. */
+  app.delete<{ Params: { code: string } }>('/admin/reports/:code', async (req) => {
+    return withTenant(deps.writer, async (t) => {
+      const cur = await t.oneOrNone<{ ten: string }>('SELECT ten FROM report_catalog WHERE code = $1', [req.params.code]);
+      if (!cur) throw new Problem('not_found', 'Không có báo cáo này');
+      const subs = await t.result('DELETE FROM report_subscriptions WHERE report_code = $1', [req.params.code], (r) => r.rowCount);
+      await t.none('DELETE FROM report_catalog WHERE code = $1', [req.params.code]);
+      await audit(t, req, 'source_change', { type: 'report', id: req.params.code }, { op: 'delete', ten: cur.ten, subscriptions_deleted: subs });
+      return { code: req.params.code, deleted: true, subscriptions_deleted: subs };
+    });
   });
 };

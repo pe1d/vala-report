@@ -77,7 +77,7 @@ const FieldName = z.string().regex(/^[A-Za-z][A-Za-z0-9_]{0,60}$/);
 const Value = z.union([z.string().max(200), z.number(), z.boolean()]);
 const FilterSchema = z.object({
   field: FieldName,
-  op: z.enum(['eq', 'neq', 'in', 'contains', 'gt', 'gte', 'lt', 'lte', 'is_null', 'not_null', 'truoc_hom_nay', 'tu_hom_nay']),
+  op: z.enum(['eq', 'neq', 'in', 'contains', 'gt', 'gte', 'lt', 'lte', 'is_null', 'not_null', 'truoc_hom_nay', 'tu_hom_nay', 'hom_nay', 'den_hom_nay']),
   value: z.union([Value, z.array(Value).max(50)]).optional(),
 });
 const MeasureSchema = z.object({
@@ -87,6 +87,8 @@ const MeasureSchema = z.object({
   /** Chỉ đếm/tính trên các dòng thoả điều kiện này (vd "quá hạn"). */
   filters: z.array(FilterSchema).max(5).default([]),
 });
+/** Điều kiện so với hôm nay (giờ Việt Nam) — không cần giá trị, chỉ dùng cho trường ngày. */
+const TODAY_OPS: string[] = ['truoc_hom_nay', 'tu_hom_nay', 'hom_nay', 'den_hom_nay'];
 export const PERIODS = ['thang_hien_tai', 'thang_truoc', 'quy_hien_tai', '30_ngay_qua', '12_thang_qua', 'tat_ca', 'tuy_chon'] as const;
 
 export const DefinitionSchema = z.object({
@@ -135,8 +137,8 @@ export function checkDefinition(source: string, raw: unknown) {
   };
   const checkFilters = (fs: Definition['filters'], where: string) => fs.forEach((f, i) => {
     const fd = need(f.field, `${where}[${i}]`);
-    if ((f.op === 'truoc_hom_nay' || f.op === 'tu_hom_nay') && fd.type !== 'date') throw new Problem('invalid_params', 'Định nghĩa báo cáo chưa hợp lệ', `${where}[${i}]: so với hôm nay chỉ dùng cho trường ngày`);
-    if (!['is_null', 'not_null', 'truoc_hom_nay', 'tu_hom_nay'].includes(f.op) && f.value === undefined) throw new Problem('invalid_params', 'Định nghĩa báo cáo chưa hợp lệ', `${where}[${i}]: cần giá trị`);
+    if (TODAY_OPS.includes(f.op) && fd.type !== 'date') throw new Problem('invalid_params', 'Định nghĩa báo cáo chưa hợp lệ', `${where}[${i}]: so với hôm nay chỉ dùng cho trường ngày`);
+    if (!['is_null', 'not_null', ...TODAY_OPS].includes(f.op) && f.value === undefined) throw new Problem('invalid_params', 'Định nghĩa báo cáo chưa hợp lệ', `${where}[${i}]: cần giá trị`);
   });
   const checkMeasure = (m: Definition['measures'][number], where: string) => {
     if (m.fn !== 'count' && !m.field) throw new Problem('invalid_params', 'Định nghĩa báo cáo chưa hợp lệ', `${where}: phép ${m.fn} cần chọn trường`);
@@ -205,6 +207,8 @@ function filterSql(q: Sql, f: Definition['filters'][number], fd: FieldDef): stri
     case 'not_null': return `${e} IS NOT NULL`;
     case 'truoc_hom_nay': return `${e} < ${TODAY}`;
     case 'tu_hom_nay': return `${e} >= ${TODAY}`;
+    case 'hom_nay': return `${e} = ${TODAY}`;
+    case 'den_hom_nay': return `${e} <= ${TODAY}`;
     case 'contains': return `${e}::text ILIKE '%' || ${q.param(String(f.value), 'string')} || '%'`;
     case 'in': return `${e} = ANY(${q.params(Array.isArray(f.value) ? f.value : [f.value], fd.type)})`;
     default: {
@@ -310,23 +314,17 @@ export async function runDefinition(t: Tx, source: string, raw: unknown, input: 
 }
 
 /**
- * Danh sách lựa chọn cho một tham số lọc (x-options): giá trị có thật trong dữ liệu người xem được phép thấy.
- * Báo cáo cấu hình: {field}. Báo cáo viết trong code: {dataset, value, label}. Tên trường đều tra trong danh mục.
+ * Danh sách lựa chọn cho một tham số lọc (x-options {field}): giá trị có thật trong dữ liệu người xem được
+ * phép thấy. Tên trường tra trong danh mục trường của tập dữ liệu.
  */
 export async function paramOptions(t: Tx, source: string, definition: unknown | null, xo: unknown): Promise<Array<{ value: unknown; label: string }>> {
-  const o = (xo ?? {}) as { field?: string; dataset?: Dataset; value?: string; label?: string };
-  let dataset: Dataset;
-  let capability: string | undefined;
-  let valueF: string;
-  let labelF: string;
-  if (definition) {
-    const { def } = checkDefinition(source, definition);
-    dataset = def.dataset; capability = def.capability;
-    valueF = labelF = o.field ?? '';
-  } else {
-    if (o.dataset !== 'documents' && o.dataset !== 'tasks') throw new Problem('invalid_params', 'x-options không hợp lệ');
-    dataset = o.dataset; valueF = o.value ?? ''; labelF = o.label ?? valueF;
-  }
+  const o = (xo ?? {}) as { field?: string };
+  if (!definition) throw new Problem('not_found', 'Không có báo cáo này');
+  const { def } = checkDefinition(source, definition);
+  const dataset: Dataset = def.dataset;
+  const capability = def.capability;
+  const valueF = o.field ?? '';
+  const labelF = valueF;
   const fields = new Map(datasetFields(dataset, source, capability).map((f) => [f.name, f]));
   const v = fields.get(valueF);
   const l = fields.get(labelF);
