@@ -56,9 +56,9 @@ export function Overview({ data, onConnect, busy }: { data: OverviewData; onConn
   );
 }
 
-function DocSection({ d, today, onConnect, busy }: { d: DocStats; today: string; onConnect: (s: SourceInfo) => void; busy: boolean }) {
+export function DocSection({ d, today, onConnect, busy, showTitle = true }: { d: DocStats; today: string; onConnect: (s: SourceInfo) => void; busy: boolean; showTitle?: boolean }) {
   return (
-    <Section title="Văn bản" source={d.source} hasData={d.tong > 0} onConnect={onConnect} busy={busy}>
+    <Section title="Văn bản" source={d.source} hasData={d.tong > 0} onConnect={onConnect} busy={busy} showTitle={showTitle}>
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Kpi label="Nhận tháng này" value={d.thang_nay} delta={{ now: d.thang_nay, before: d.thang_truoc, vs: 'tháng trước' }}
           trend={d.by_month.map((x) => x.so)} />
@@ -82,9 +82,9 @@ function DocSection({ d, today, onConnect, busy }: { d: DocStats; today: string;
   );
 }
 
-function TaskSection({ t, today, onConnect, busy }: { t: TaskStats; today: string; onConnect: (s: SourceInfo) => void; busy: boolean }) {
+export function TaskSection({ t, today, onConnect, busy, showTitle = true }: { t: TaskStats; today: string; onConnect: (s: SourceInfo) => void; busy: boolean; showTitle?: boolean }) {
   return (
-    <Section title="Công việc" source={t.source} hasData={t.tong > 0} onConnect={onConnect} busy={busy}>
+    <Section title="Công việc" source={t.source} hasData={t.tong > 0} onConnect={onConnect} busy={busy} showTitle={showTitle}>
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Kpi label="Quá hạn" value={t.qua_han} status={t.qua_han ? ['err', 'Cần xử lý ngay'] : ['ok', 'Không có việc quá hạn']} />
         <Kpi label="Đến hạn 7 ngày tới" value={t.den_han_7} hint={t.den_han_hom_nay ? `${fmtN(t.den_han_hom_nay)} việc đến hạn hôm nay` : 'Không có việc đến hạn hôm nay'} />
@@ -103,8 +103,8 @@ function TaskSection({ t, today, onConnect, busy }: { t: TaskStats; today: strin
   );
 }
 
-function Section({ title, source, hasData, onConnect, busy, children }: {
-  title: string; source: SourceInfo; hasData: boolean; onConnect: (s: SourceInfo) => void; busy?: boolean; children: ReactNode;
+function Section({ title, source, hasData, onConnect, busy, showTitle = true, children }: {
+  title: string; source: SourceInfo; hasData: boolean; onConnect: (s: SourceInfo) => void; busy?: boolean; showTitle?: boolean; children: ReactNode;
 }) {
   const [tone, label] = STATE_BADGE[source.state] ?? ['neutral', source.state];
   const connected = source.state === 'active';
@@ -112,8 +112,8 @@ function Section({ title, source, hasData, onConnect, busy, children }: {
   return (
     <section className="grid gap-3" aria-label={title}>
       <div className="flex flex-wrap items-center gap-2">
-        <h2 className="text-base font-semibold">{title}</h2>
-        <Muted className="text-sm">· {source.ten}</Muted>
+        {showTitle && <h2 className="text-base font-semibold">{title}</h2>}
+        <Muted className="text-sm">{showTitle ? '· ' : ''}{source.ten}</Muted>
         <Badge tone={tone}>{label}</Badge>
         <span className="flex-1" />
         {(!connected || needFix) && source.enabled && (

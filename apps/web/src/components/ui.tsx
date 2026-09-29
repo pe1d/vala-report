@@ -82,6 +82,55 @@ export function Badge({ tone, children }: { tone: Tone; children: ReactNode }) {
   );
 }
 
+const DOT: Record<Tone, string> = {
+  ok: 'bg-emerald-500', warn: 'bg-amber-500', err: 'bg-red-500', neutral: 'bg-slate-400', info: 'bg-blue-500',
+};
+
+export interface TabItem {
+  id: string; label: string;
+  /** Chấm trạng thái cạnh nhãn; `dotLabel` là chữ cho trình đọc màn hình (màu không đứng một mình). */
+  dot?: Tone; dotLabel?: string;
+  count?: { n: number; tone?: Tone; label?: string };
+}
+/** Thanh tab ngang (cuộn ngang khi hẹp). Mũi tên trái/phải, Home/End để chuyển tab. */
+export function Tabs({ items, value, onChange, label }: { items: TabItem[]; value: string; onChange: (id: string) => void; label: string }) {
+  const move = (i: number) => {
+    const t = items[(i + items.length) % items.length]!;
+    onChange(t.id);
+    document.getElementById(`tab-${t.id}`)?.focus();
+  };
+  return (
+    <div role="tablist" aria-label={label} className="mb-5 flex gap-1 overflow-x-auto border-b border-slate-200 dark:border-slate-800">
+      {items.map((t, i) => {
+        const sel = t.id === value;
+        return (
+          <button key={t.id} id={`tab-${t.id}`} type="button" role="tab" aria-selected={sel} aria-controls={`panel-${t.id}`} tabIndex={sel ? 0 : -1}
+            onClick={() => onChange(t.id)}
+            onKeyDown={(e) => {
+              if (e.key === 'ArrowRight') { e.preventDefault(); move(i + 1); }
+              else if (e.key === 'ArrowLeft') { e.preventDefault(); move(i - 1); }
+              else if (e.key === 'Home') { e.preventDefault(); move(0); }
+              else if (e.key === 'End') { e.preventDefault(); move(items.length - 1); }
+            }}
+            className={cx('-mb-px flex shrink-0 items-center gap-2 whitespace-nowrap border-b-2 px-3.5 py-2.5 text-sm font-medium transition-colors',
+              'focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-blue-600',
+              sel ? 'border-blue-700 text-blue-700 dark:border-blue-400 dark:text-blue-300'
+                : 'border-transparent text-slate-600 hover:border-slate-300 hover:text-slate-900 dark:text-slate-400 dark:hover:border-slate-600 dark:hover:text-slate-100')}>
+            {t.dot && <span aria-hidden className={cx('h-2 w-2 shrink-0 rounded-full', DOT[t.dot])} />}
+            {t.label}
+            {t.dot && t.dotLabel && <span className="sr-only">({t.dotLabel})</span>}
+            {t.count && t.count.n > 0 && (
+              <span className={cx('rounded-full px-1.5 py-px text-xs font-semibold tabular-nums', BADGE[t.count.tone ?? 'neutral'])}>
+                {t.count.n}{t.count.label && <span className="sr-only"> {t.count.label}</span>}
+              </span>
+            )}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 const BANNER: Record<Tone, string> = {
   ok: 'border-emerald-200 bg-emerald-50 text-emerald-900 dark:border-emerald-900 dark:bg-emerald-950/60 dark:text-emerald-200',
   warn: 'border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-900 dark:bg-amber-950/60 dark:text-amber-200',

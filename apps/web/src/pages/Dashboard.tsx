@@ -1,11 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { ApiProblem, DASH, api, fmtDate, fmtDateTime, fmtInt, type Column, type DashboardWidget, type WidgetStatus } from '../api';
 import { ChartView } from '../components/Charts';
-import { Overview, type OverviewData, type SourceInfo } from '../components/Overview';
+import { DocSection, TaskSection, type OverviewData, type SourceInfo } from '../components/Overview';
 import { StatTiles } from '../components/StatTiles';
 import { ErrorBox, Loading } from '../components/States';
-import { Badge, Banner, Button, Card, Muted, PageTitle, ResultDialog, type Tone } from '../components/ui';
+import { Badge, Banner, Button, Card, Muted, PageTitle, ResultDialog, Tabs, type TabItem, type Tone } from '../components/ui';
 import { useValaExtension, type ExtensionEvent } from '../extension';
 import { useAsync } from '../hooks';
 
@@ -78,18 +78,37 @@ export function DashboardPage() {
   const needConnectOther = needConnect.filter((w) => !inOverview.has(w.source_system));
   const withData = widgets.filter((w) => w.status === 'ok').length;
 
-  return (
-    <>
-      <PageTitle title="Tổng quan"
-        subtitle={widgets.length ? `${withData}/${widgets.length} báo cáo có số liệu${needConnect.length ? ` · ${needConnect.length} hệ thống cần kết nối` : ''}` : 'Toàn bộ báo cáo của bạn trên một trang.'} />
-      {note && <Banner tone={note.tone} role="status">{note.text}</Banner>}
-      {overview.error ? <ErrorBox error={overview.error} onRetry={overview.reload} /> : null}
-      {overview.loading && !overview.data && <Loading />}
-      {overview.data && (
-        <Overview data={overview.data} busy={busy} onConnect={(s: SourceInfo) => connectSource(s.code)} />
-      )}
+  // ---- tab: mỗi hệ thống có văn bản / công việc một tab, cộng tab "Báo cáo của bạn" ----
+  const ov = overview.data;
+  const docs = ov?.documents ?? [];
+  const taskSrcs = ov?.tasks ?? [];
+  const onConnect = (s: SourceInfo) => connectSource(s.code);
+  const srcDot = (s: SourceInfo): Pick<TabItem, 'dot' | 'dotLabel'> =>
+    !s.enabled || s.state === 'active' ? {}
+      : s.state === 'expired' || s.state === 'failed' ? { dot: 'err', dotLabel: 'phiên hết hạn' } : { dot: 'warn', dotLabel: 'chưa kết nối' };
+  const tabs: Array<TabItem & { render: () => ReactNode }> = [
+    ...docs.map((d) => ({
+      id: `van-ban-${d.source.code}`, label: docs.length > 1 ? `Văn bản · ${d.source.ten}` : 'Văn bản', ...srcDot(d.source),
+      render: () => <DocSection d={d} today={ov!.today} onConnect={onConnect} busy={busy === d.source.code} showTitle={false} />,
+    })),
+    ...taskSrcs.map((t) => ({
+      id: `cong-viec-${t.source.code}`, label: taskSrcs.length > 1 ? `Công việc · ${t.source.ten}` : 'Công việc', ...srcDot(t.source),
+      count: t.qua_han > 0 ? { n: t.qua_han, tone: 'err' as Tone, label: 'việc quá hạn' } : undefined,
+      render: () => <TaskSection t={t} today={ov!.today} onConnect={onConnect} busy={busy === t.source.code} showTitle={false} />,
+    })),
+    { id: 'bao-cao', label: 'Báo cáo của bạn', count: widgets.length ? { n: widgets.length, label: 'báo cáo' } : undefined, render: () => reports },
+  ];
+  const [params, setParams] = useSearchParams();
+  const TAB_KEY = 'vala.tong-quan.tab';
+  const saved = (() => { try { return localStorage.getItem(TAB_KEY); } catch { return null; } })();
+  const active = tabs.find((t) => t.id === (params.get('tab') ?? saved)) ?? tabs[0]!;
+  const choose = (id: string) => {
+    setParams((p) => { const n = new URLSearchParams(p); n.set('tab', id); return n; }, { replace: true });
+    try { localStorage.setItem(TAB_KEY, id); } catch { /* bỏ qua */ }
+  };
 
-      <h2 className="mb-3 mt-8 text-base font-semibold">Báo cáo của bạn</h2>
+  const reports = (
+    <>
       {needConnectOther.length > 0 && (
         <Card className="mb-4 border-amber-300 dark:border-amber-800">
           <div className="flex flex-wrap items-center gap-3">
@@ -114,6 +133,22 @@ export function DashboardPage() {
             onConnect={() => connect(w)} onRunNow={() => void runNow(w.source_system, w.source_ten)} />
         ))}
       </div>
+      {dash.data && !widgets.length && <Muted>Chưa có báo cáo nào hiện trên Tổng quan.</Muted>}
+    </>
+  );
+
+  return (
+    <>
+      <PageTitle title="Tổng quan"
+        subtitle={widgets.length ? `${withData}/${widgets.length} báo cáo có số liệu${needConnect.length ? ` · ${needConnect.length} hệ thống cần kết nối` : ''}` : 'Toàn bộ báo cáo của bạn trên một trang.'} />
+      {note && <Banner tone={note.tone} role="status">{note.text}</Banner>}
+      {overview.error ? <ErrorBox error={overview.error} onRetry={overview.reload} /> : null}
+      {overview.loading && !ov && !overview.error ? <Loading /> : (
+        <>
+          <Tabs label="Các phần của Tổng quan" items={tabs} value={active.id} onChange={choose} />
+          <div role="tabpanel" id={`panel-${active.id}`} aria-labelledby={`tab-${active.id}`}>{active.render()}</div>
+        </>
+      )}
 
       {result && (
         <ResultDialog ok={result.ok} onClose={() => setResult(null)}
