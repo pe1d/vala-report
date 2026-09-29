@@ -132,6 +132,19 @@ export function normalizeCapability(spec: AdapterSpec, fetched: FetchResult): Ca
   const objs = fetched.items.filter((i): i is Record<string, unknown> => !!i && typeof i === 'object');
   const rows = objs.map((i) => normalizeItem(i, cap.output_schema));
   if (keyField && rows.some((r) => r[keyField.field] === null)) throw drift(`${cap.id}: có bản ghi thiếu khoá ${keyField.source}`);
+  // Trùng khoá trong cùng một lượt gửi ⇒ báo rõ cho người viết spider/adapter (trước đây rơi xuống ràng buộc
+  // UNIQUE của CSDL thành lỗi 500 "Lỗi hệ thống"). Thường do chọn nhầm trường không duy nhất làm key.
+  if (keyField) {
+    const seen = new Set<string>();
+    for (const r of rows) {
+      const k = String(r[keyField.field]);
+      if (seen.has(k)) {
+        throw new Problem('invalid_params', 'Bản ghi trùng khoá trong cùng một lượt gửi',
+          `${cap.id}: ${keyField.source}='${k.slice(0, 80)}' xuất hiện nhiều lần — trường có key: true phải duy nhất cho mỗi bản ghi`);
+      }
+      seen.add(k);
+    }
+  }
   const hashFields = cap.content_hash_fields ?? cap.output_schema.map((f) => f.field);
   return {
     ...fetched,

@@ -46,6 +46,22 @@ class SchemaDrift(Exception):
     """Hệ thống nguồn đã đổi cấu trúc dữ liệu (mất trường/khối dữ liệu mong đợi)."""
 
 
+class SourceResponseError(Exception):
+    """Hệ thống nguồn trả phản hồi không dùng được (vd không phải JSON: trang lỗi proxy, 204 rỗng, HTML)."""
+
+
+def _json_or_explain(r, method, path):
+    """r.json() nhưng lỗi thì nói rõ request nào, mã HTTP, loại nội dung và vài ký tự đầu (không chứa cookie)."""
+    try:
+        return requests.Response.json(r)
+    except ValueError:
+        ctype = r.headers.get('content-type') or '(không có content-type)'
+        head = (r.text or '')[:120].replace('\n', ' ').strip()
+        raise SourceResponseError(
+            f'{method} {path} → HTTP {r.status_code} {ctype}, không phải JSON: {head!r}' if head
+            else f'{method} {path} → HTTP {r.status_code} {ctype}, thân phản hồi rỗng') from None
+
+
 class ApiError(Exception):
     def __init__(self, status, body):
         self.status = status
@@ -135,6 +151,8 @@ class Run:
             r = self.http.request(method, self.base_url + path, allow_redirects=False, timeout=30, **kw)
             if r.status_code not in REDIRECT_OR_DENIED:
                 r.raise_for_status()
+                # .json() lỗi thì báo rõ request nào — thay vì JSONDecodeError trơn không biết ở đâu.
+                r.json = lambda *a, _r=r, _m=method, _p=path, **k: _json_or_explain(_r, _m, _p)
                 return r
             if attempt == 1 and not self._refreshed:
                 self.refresh()
