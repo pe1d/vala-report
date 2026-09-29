@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { api, fmtDateTime, fmtInt } from '../api';
 import { useAsync } from '../hooks';
+import { NoMatch, Pager, SearchBox, useTableView } from '../components/TableTools';
 import { Empty, ErrorBox, Loading } from '../components/States';
 import { Badge, Card, PageTitle, Select, Table, Td, Th, type Tone } from '../components/ui';
 
@@ -16,7 +17,9 @@ const TONE: Record<string, Tone> = { ok: 'ok', failed: 'err', skipped: 'warn', r
 /** Màn hình 6 — Vận hành (chỉ kỹ sư). Ngưỡng cảnh báo theo monitoring.alert_when của adapter. */
 export function OpsPage() {
   const [status, setStatus] = useState('');
-  const runs = useAsync(() => api.get<Run[]>(`/ops/runs${status ? `?status=${status}` : ''}`), [status]);
+  // Tải 1.000 lượt gần nhất rồi tìm/phân trang trên trình duyệt.
+  const runs = useAsync(() => api.get<Run[]>(`/ops/runs?limit=1000${status ? `&status=${status}` : ''}`), [status]);
+  const tv = useTableView(runs.data, (r) => `${r.ho_ten ?? 'hệ thống'} ${r.source_system}/${r.capability} ${r.trigger_type} ${r.status} ${r.error_code ?? ''} ${r.error_detail ?? ''}`);
   const health = useAsync(() => api.get<Health>('/ops/health'), []);
   const h = health.data;
   const tiles: Array<[string, string, boolean]> = h ? [
@@ -42,6 +45,9 @@ export function OpsPage() {
       </div>
       <div className="mb-2 mt-6 flex items-center gap-3">
         <h2 className="flex-1 text-base font-semibold">Nhật ký chạy</h2>
+      </div>
+      <div className="mb-3 flex flex-wrap items-center gap-3">
+        <SearchBox value={tv.q} onChange={tv.setQ} delay={0} placeholder="Tìm người dùng, nguồn, mã lỗi…" />
         <Select value={status} onChange={(e) => setStatus(e.target.value)} aria-label="Lọc trạng thái">
           <option value="">Mọi trạng thái</option><option value="failed">Lỗi</option><option value="ok">Thành công</option>
           <option value="skipped">Bỏ qua</option><option value="running">Đang chạy</option>
@@ -50,11 +56,12 @@ export function OpsPage() {
       {runs.loading && <Loading />}
       {runs.error ? <ErrorBox error={runs.error} onRetry={runs.reload} /> : null}
       {runs.data && !runs.data.length && <Empty>Chưa có lượt chạy nào.</Empty>}
-      {!!runs.data?.length && (
+      {!!runs.data?.length && !tv.total && <NoMatch q={tv.q} onClear={() => tv.setQ('')} />}
+      {!!tv.total && (<>
         <Table>
           <thead><tr><Th>Người dùng</Th><Th num>Bắt đầu</Th><Th>Nguồn</Th><Th>Kích hoạt</Th><Th>Trạng thái</Th>
             <Th num>Bản ghi</Th><Th num>Thay đổi</Th><Th num>Request</Th><Th>Lỗi</Th></tr></thead>
-          <tbody>{runs.data.map((r) => (
+          <tbody>{tv.rows.map((r) => (
             <tr key={r.id}>
               <Td>{r.ho_ten ?? 'hệ thống'}</Td><Td num>{fmtDateTime(r.started_at)}</Td>
               <Td>{r.source_system}/{r.capability}</Td><Td>{r.trigger_type}</Td>
@@ -64,7 +71,8 @@ export function OpsPage() {
             </tr>))}
           </tbody>
         </Table>
-      )}
+        <Pager page={tv.page} pageSize={tv.pageSize} total={tv.total} onPage={tv.setPage} onPageSize={tv.setPageSize} unit="lượt chạy" />
+      </>)}
     </>
   );
 }

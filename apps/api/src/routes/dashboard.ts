@@ -1,11 +1,12 @@
 /**
- * Tổng quan (dashboard): mọi báo cáo người dùng xem được, mỗi báo cáo một ô kèm số liệu tóm tắt và
- * tình trạng nguồn dữ liệu — để giao diện hiện đúng nút: "Kết nối", "Kết nối lại", "Lấy dữ liệu ngay".
- * Mỗi ô chạy báo cáo qua đúng đường runReport (RLS + audit), không bao giờ chạm hệ thống nguồn.
+ * Tổng quan (dashboard): các TAB do quản trị cấu hình (dashboard_tabs), mỗi tab gồm các KHỐI là báo cáo cấu hình
+ * (report_catalog.dashboard_tab); báo cáo hiện trên Tổng quan mà không thuộc tab nào vào tab "Báo cáo của bạn".
+ * Mỗi khối kèm tình trạng nguồn dữ liệu — để giao diện hiện đúng nút: "Kết nối", "Kết nối lại", "Lấy dữ liệu ngay".
+ * Mỗi khối chạy báo cáo qua đúng đường runReport (RLS + audit), không bao giờ chạm hệ thống nguồn.
  */
 import type { FastifyPluginAsync } from 'fastify';
 import { randomUUID } from 'node:crypto';
-import { Problem, allowedScopes, loadMemberships, withTenant, withUserContext, type Scope, type Tx } from '@vala/core';
+import { Problem, allowedScopes, loadMemberships, withTenant, type Scope } from '@vala/core';
 import { loadAllSpecs } from '@vala/core/adapter';
 import { audit } from '../audit.js';
 import type { ApiDeps } from '../deps.js';
@@ -15,121 +16,46 @@ const RUN_NOW_WINDOW_S = 600;   // "Đồng bộ ngay": mỗi hệ thống một
 
 type WidgetStatus = 'ok' | 'chua_co_du_lieu' | 'can_ket_noi' | 'het_han' | 'loi';
 
-const TODAY = `(now() AT TIME ZONE 'Asia/Ho_Chi_Minh')::date`;
-const DONE = `t.trang_thai = 'Đã hoàn thành'`;
-
-interface FolderKpi { label: string; match: string; warn_if_positive: boolean }
-
-/** Số liệu văn bản của chính người xem từ MỘT hệ thống nguồn — chạy dưới RLS phạm vi cá nhân. */
-async function documentStats(t: Tx, source: string, kpis: FolderKpi[]) {
-  const k = await t.one<{ tong: number; thang_nay: number; thang_truoc: number; so_thu_muc: number }>(
-    `SELECT count(*)::int AS tong,
-            count(*) FILTER (WHERE date_trunc('month', ngay_nhan) = date_trunc('month', ${TODAY}))::int AS thang_nay,
-            count(*) FILTER (WHERE date_trunc('month', ngay_nhan) = date_trunc('month', ${TODAY}) - interval '1 month')::int AS thang_truoc,
-            count(DISTINCT node_id)::int AS so_thu_muc
-       FROM documents WHERE valid_to IS NULL AND source_system = $1`, [source]);
-  // Thẻ KPI theo thư mục: khai trong cấu hình adapter (dashboard.folder_kpis), không viết trong code.
-  const folderKpis = [];
-  for (const f of kpis) {
-    const value = await t.one(`SELECT count(*)::int AS n FROM documents WHERE valid_to IS NULL AND source_system = $1 AND node_ten ILIKE $2`,
-      [source, f.match], (r: { n: number }) => r.n);
-    folderKpis.push({ label: f.label, value, warn: f.warn_if_positive && value > 0 });
-  }
-  const byMonth = await t.any<{ thang: string; so: number }>(
-    `SELECT to_char(m, 'YYYY-MM') AS thang, count(d.id)::int AS so
-       FROM generate_series(date_trunc('month', ${TODAY}) - interval '11 months', date_trunc('month', ${TODAY}), interval '1 month') m
-       LEFT JOIN documents d ON d.valid_to IS NULL AND d.source_system = $1 AND date_trunc('month', d.ngay_nhan) = m
-      GROUP BY m ORDER BY m`, [source]);
-  const byFolder = await t.any<{ thu_muc: string; so: number }>(
-    `SELECT coalesce(node_ten, 'Không rõ') AS thu_muc, count(*)::int AS so FROM documents WHERE valid_to IS NULL AND source_system = $1
-      GROUP BY 1 ORDER BY so DESC, thu_muc LIMIT 10`, [source]);
-  const byDay = await t.any<{ ngay: string; so: number }>(
-    `SELECT to_char(ngay_nhan, 'YYYY-MM-DD') AS ngay, count(*)::int AS so FROM documents
-      WHERE valid_to IS NULL AND source_system = $1 AND ngay_nhan > ${TODAY} - 182 GROUP BY 1 ORDER BY 1`, [source]);
-  return { ...k, folder_kpis: folderKpis, by_month: byMonth, by_folder: byFolder, by_day: byDay };
-}
-
-/** Số liệu việc của chính người xem từ MỘT hệ thống nguồn. */
-async function taskStats(t: Tx, source: string) {
-  const k = await t.one<{ tong: number; qua_han: number; den_han_hom_nay: number; den_han_7: number; dang_lam: number; hoan_thanh: number; xong_thang_nay: number }>(
-    `SELECT count(*)::int AS tong,
-            count(*) FILTER (WHERE han_hoan_thanh < ${TODAY} AND NOT ${DONE})::int AS qua_han,
-            count(*) FILTER (WHERE han_hoan_thanh = ${TODAY} AND NOT ${DONE})::int AS den_han_hom_nay,
-            count(*) FILTER (WHERE han_hoan_thanh BETWEEN ${TODAY} AND ${TODAY} + 7 AND NOT ${DONE})::int AS den_han_7,
-            count(*) FILTER (WHERE trang_thai = 'Đang thực hiện')::int AS dang_lam,
-            count(*) FILTER (WHERE ${DONE})::int AS hoan_thanh,
-            count(*) FILTER (WHERE ${DONE} AND date_trunc('month', ngay_hoan_thanh) = date_trunc('month', ${TODAY}))::int AS xong_thang_nay
-       FROM tasks t WHERE valid_to IS NULL AND source_system = $1`, [source]);
-  const byStatus = await t.any<{ trang_thai: string; so: number }>(
-    `SELECT * FROM (
-       SELECT coalesce(trang_thai, 'Không rõ') AS trang_thai, count(*)::int AS so
-         FROM tasks t WHERE valid_to IS NULL AND source_system = $1 GROUP BY 1) x
-      ORDER BY array_position(ARRAY['Việc mới tạo','Việc cần làm','Đang thực hiện','Chờ duyệt','Đã hoàn thành'], x.trang_thai) NULLS LAST, so DESC`, [source]);
-  const dueNext = await t.any<{ ngay: string; so: number }>(
-    `SELECT to_char(d, 'YYYY-MM-DD') AS ngay, count(t.id)::int AS so
-       FROM generate_series(${TODAY}, ${TODAY} + 13, interval '1 day') d
-       LEFT JOIN tasks t ON t.valid_to IS NULL AND t.source_system = $1 AND t.han_hoan_thanh = d::date AND NOT ${DONE}
-      GROUP BY d ORDER BY d`, [source]);
-  return { ...k, ty_le_hoan_thanh: k.tong ? k.hoan_thanh / k.tong : null, by_status: byStatus, due_next_14: dueNext };
-}
-
 /** Capability có sink của một hệ thống — worker lấy dữ liệu được theo cấu hình adapter, không cần spider. */
 const workerCaps = (source: string) => loadAllSpecs()
   .filter((s) => s.source_system === source)
   .flatMap((s) => s.capabilities.filter((c) => c.sink).map((c) => c.id));
 
 export const dashboardRoutes = (deps: ApiDeps): FastifyPluginAsync => async (app) => {
-  /**
-   * Số liệu tổng hợp cho phần đầu Tổng quan (thẻ KPI + biểu đồ), dữ liệu của CHÍNH người xem.
-   * Chạy trên pool reader với RLS phạm vi cá nhân và ghi audit như mọi lần xem báo cáo.
-   */
-  app.get('/dashboard/overview', async (req) => {
-    const grants = await withTenant(deps.writer, (t) => t.any<{ source_system: string; state: string }>(
-      `SELECT source_system, CASE WHEN revoked_at IS NOT NULL THEN 'revoked' ELSE session_state END AS state
-         FROM source_grants WHERE app_user_id = $1`, [req.user.id]));
-    const state = (s: string) => grants.find((g) => g.source_system === s)?.state ?? 'chua_cau_hinh';
-    // Hệ thống nào có phần Văn bản / Công việc là do cấu hình adapter (capability có sink tới bảng đó) quyết định.
-    const withSink = (table: 'documents' | 'tasks') => loadAllSpecs()
-      .filter((sp) => deps.sources.get(sp.source_system)?.enabled && sp.capabilities.some((c) => c.sink?.table === table));
-    const src = (code: string) => ({ code, ten: deps.sources.get(code)?.ten ?? code, state: state(code), enabled: true });
-    const data = await withUserContext(deps.reader, { userId: req.user.id, scope: 'ca_nhan', orgUnitsAllowed: [] }, async (t) => {
-      await audit(t, req, 'view_report', { type: 'dashboard', id: 'overview' }, { scope: 'ca_nhan' });
-      const documents = [];
-      for (const sp of withSink('documents')) {
-        documents.push({ source: src(sp.source_system), ...await documentStats(t, sp.source_system, sp.dashboard?.folder_kpis ?? []) });
-      }
-      const tasks = [];
-      for (const sp of withSink('tasks')) tasks.push({ source: src(sp.source_system), ...await taskStats(t, sp.source_system) });
-      return { documents, tasks };
-    });
-    return { today: new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Ho_Chi_Minh' }), ...data };
-  });
-
   app.get('/dashboard', async (req) => {
     const scopes = allowedScopes(await withTenant(deps.reader, (t) => loadMemberships(t, req.user.id)));
-    const { catalog, grants } = await withTenant(deps.writer, async (t) => ({
-      catalog: await t.any<{ code: string; ten: string; mo_ta: string | null; source_system: string; view_template: string; required_scope: string; spider_code: string | null }>(
-        `SELECT rc.code, rc.ten, rc.mo_ta, rc.source_system, rc.view_template, rc.required_scope, rc.spider_code
+    const { catalog, tabs, grants } = await withTenant(deps.writer, async (t) => ({
+      catalog: await t.any<{ code: string; ten: string; mo_ta: string | null; source_system: string; view_template: string; required_scope: string;
+                             spider_code: string | null; dashboard_tab: number | null; dashboard_width: number }>(
+        `SELECT rc.code, rc.ten, rc.mo_ta, rc.source_system, rc.view_template, rc.required_scope, rc.spider_code,
+                CASE WHEN dt.is_active THEN rc.dashboard_tab END AS dashboard_tab, rc.dashboard_width
            FROM report_catalog rc JOIN core.source_systems ss ON ss.code = rc.source_system
+           LEFT JOIN dashboard_tabs dt ON dt.id = rc.dashboard_tab
           WHERE rc.is_active AND ss.enabled AND rc.show_on_dashboard
           ORDER BY rc.dashboard_order, rc.view_template = 'tong_hop' DESC, rc.ten`),
+      tabs: await t.any<{ id: number; ten: string; source_system: string | null }>(
+        `SELECT dt.id, dt.ten, dt.source_system FROM dashboard_tabs dt
+           LEFT JOIN core.source_systems ss ON ss.code = dt.source_system
+          WHERE dt.is_active AND (dt.source_system IS NULL OR ss.enabled) ORDER BY dt.thu_tu, dt.id`),
       grants: await t.any<{ source_system: string; state: string; auth_method: string | null }>(
         `SELECT source_system, CASE WHEN revoked_at IS NOT NULL THEN 'revoked' ELSE session_state END AS state, auth_method
            FROM source_grants WHERE app_user_id = $1`, [req.user.id]),
     }));
     const conn = new Map(grants.map((g) => [g.source_system, g]));
+    const stateOf = (source: string) => conn.get(source)?.state ?? 'chua_cau_hinh';
+    const canRunNow = (source: string, spider: string | null) => stateOf(source) === 'active' && (!!spider || workerCaps(source).length > 0);
 
-    const widgets = [];
+    const widgets: Array<Record<string, unknown> & { tab: number | null; source_system: string; can_run_now: boolean }> = [];
     for (const rc of catalog) {
       if (rc.required_scope !== 'ca_nhan' && !scopes.includes('don_vi')) continue;
       const scope: Scope = rc.required_scope === 'ca_nhan' ? 'ca_nhan' : 'don_vi';
-      const g = conn.get(rc.source_system);
-      const state = g?.state ?? 'chua_cau_hinh';
+      const state = stateOf(rc.source_system);
       const base = {
         code: rc.code, ten: rc.ten, mo_ta: rc.mo_ta, view_template: rc.view_template, scope,
+        tab: rc.dashboard_tab, width: rc.dashboard_width,
         source_system: rc.source_system, source_ten: deps.sources.get(rc.source_system)?.ten ?? rc.source_system,
         // Lấy ngay được khi đã kết nối và có đường lấy dữ liệu: spider, hoặc bước lấy dữ liệu trong cấu hình adapter.
-        connection_state: state, can_run_now: state === 'active' && (!!rc.spider_code || workerCaps(rc.source_system).length > 0),
+        connection_state: state, can_run_now: canRunNow(rc.source_system, rc.spider_code),
       };
       try {
         const r = await runReport(deps, req, rc.code, { scope, page: 1, page_size: 5 }, 'view_report', 5);
@@ -139,7 +65,7 @@ export const dashboardRoutes = (deps: ApiDeps): FastifyPluginAsync => async (app
         widgets.push({
           ...base, status, has_data: hasData, freshness: r.freshness, total_rows: r.out.total_rows,
           tiles: r.out.tiles ?? null, charts: r.out.charts ?? null,
-          chart_rows: (r.out.chart_rows ?? r.out.rows).slice(0, 12), columns: r.out.columns.slice(0, 4), rows: r.out.rows.slice(0, 5),
+          chart_rows: r.out.chart_rows ?? r.out.rows, columns: r.out.columns.slice(0, 5), rows: r.out.rows.slice(0, 5),
         });
       } catch (e) {
         if (e instanceof Problem && e.type === 'grant_required') {
@@ -152,7 +78,16 @@ export const dashboardRoutes = (deps: ApiDeps): FastifyPluginAsync => async (app
         }
       }
     }
-    return { widgets };
+    return {
+      tabs: tabs.map((tb) => ({
+        id: tb.id, ten: tb.ten,
+        source: tb.source_system ? {
+          code: tb.source_system, ten: deps.sources.get(tb.source_system)?.ten ?? tb.source_system, state: stateOf(tb.source_system),
+          can_run_now: canRunNow(tb.source_system, null) || widgets.some((w) => w.tab === tb.id && w.source_system === tb.source_system && w.can_run_now),
+        } : null,
+      })),
+      widgets,
+    };
   });
 
   /**

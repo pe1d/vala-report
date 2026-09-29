@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { api, fmtDateTime, type AuthMethod, type Connection } from '../api';
 import { ConnectionEditor } from '../components/ConnectionEditor';
 import { useAsync } from '../hooks';
+import { NoMatch, Pager, SearchBox, useTableView } from '../components/TableTools';
 import { Empty, ErrorBox, Loading } from '../components/States';
 import { Badge, Banner, Button, Muted, PageTitle, Select, Table, Td, Th, type Tone } from '../components/ui';
 
@@ -22,7 +23,8 @@ export function AdminConnectionsPage() {
   const [note, setNote] = useState<string | null>(null);
   const [src, setSrc] = useState('');
   const sources = [...new Map((conns.data ?? []).map((c) => [c.source_system, c.source_ten])).entries()];
-  const rows = (conns.data ?? []).filter((c) => !src || c.source_system === src);
+  const bySrc = (conns.data ?? []).filter((c) => !src || c.source_system === src);
+  const tv = useTableView(bySrc, (c) => `${c.ho_ten} ${c.email} ${c.source_ten} ${c.source_username ?? ''} ${STATE[c.state][1]} ${c.auth_method ? METHOD_LABEL[c.auth_method] : ''}`);
 
   return (
     <>
@@ -30,8 +32,9 @@ export function AdminConnectionsPage() {
         subtitle="Cấu hình cách hệ thống lấy dữ liệu thay cho từng người dùng. Mật khẩu và cookie chỉ được lưu trong kho bí mật (vault); hệ thống không hiển thị lại." />
       {note && <Banner tone="ok">{note}</Banner>}
       <div className="mb-3 flex flex-wrap items-center gap-3">
+        <SearchBox value={tv.q} onChange={tv.setQ} delay={0} placeholder="Tìm người dùng, email, tài khoản nguồn…" />
         <label className="flex items-center gap-2 text-sm">Hệ thống
-          <Select value={src} onChange={(e) => setSrc(e.target.value)} aria-label="Lọc theo hệ thống">
+          <Select value={src} onChange={(e) => { setSrc(e.target.value); tv.setPage(1); }} aria-label="Lọc theo hệ thống">
             <option value="">Tất cả ({sources.length})</option>
             {sources.map(([code, ten]) => <option key={code} value={code}>{ten}</option>)}
           </Select>
@@ -43,13 +46,14 @@ export function AdminConnectionsPage() {
       {conns.error ? <ErrorBox error={conns.error} onRetry={conns.reload} /> : null}
       {conns.data && !conns.data.length && <Empty>Chưa có người dùng nào.</Empty>}
 
-      {!!conns.data?.length && (
+      {!!conns.data?.length && !tv.total && <NoMatch q={tv.q || 'bộ lọc hiện tại'} onClear={() => { tv.setQ(''); setSrc(''); }} />}
+      {!!tv.total && (<>
         <Table>
           <thead><tr>
             <Th>Người dùng</Th><Th>Hệ thống</Th><Th>Cách lấy dữ liệu</Th><Th>Tài khoản nguồn</Th>
             <Th>Trạng thái</Th><Th num>Lấy thành công gần nhất</Th><Th /></tr></thead>
           <tbody>
-            {rows.map((c) => {
+            {tv.rows.map((c) => {
               const [tone, label] = STATE[c.state];
               return (
                 <tr key={`${c.app_user_id}-${c.source_system}`}>
@@ -72,7 +76,8 @@ export function AdminConnectionsPage() {
             })}
           </tbody>
         </Table>
-      )}
+        <Pager page={tv.page} pageSize={tv.pageSize} total={tv.total} onPage={tv.setPage} onPageSize={tv.setPageSize} unit="kết nối" />
+      </>)}
 
       {editing && (
         <ConnectionEditor conn={editing} onClose={() => setEditing(null)}

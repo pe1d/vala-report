@@ -65,7 +65,11 @@ export interface ReportDef {
 }
 export interface JsonProp { type: string; title?: string; enum?: string[]; format?: string; items?: { type: string }; minimum?: number; maximum?: number; 'x-options'?: unknown }
 export interface Column { field: string; label: string; type: 'string' | 'int' | 'date' | 'money'; width?: number }
-export interface Chart { kind: 'line' | 'bar'; title: string; x_field: string; series: { field: string; label: string }[] }
+export type ChartKind = 'bar' | 'column' | 'line' | 'donut' | 'heatmap';
+export interface Chart {
+  kind: ChartKind; title: string; x_field: string; series: { field: string; label: string }[];
+  range?: { tu_ngay: string; den_ngay: string };
+}
 export interface Freshness {
   source_system: string;
   status: 'ok' | 'stale' | 'failed' | 'no_grant'; message: string; last_success_at: string | null; grant_state?: string | null;
@@ -79,7 +83,11 @@ export interface ReportResult {
   /** Thẻ số liệu của dashboard. tone là trạng thái, luôn đi kèm nhãn chữ. */
   tiles?: StatTile[];
 }
-export interface StatTile { key: string; label: string; value: number; tone: 'ok' | 'warn' | 'err' | 'neutral' }
+export interface StatTile {
+  key: string; label: string; value: number; tone: 'ok' | 'warn' | 'err' | 'neutral';
+  unit?: '%'; part?: number; whole?: number;
+  trend?: number[]; delta?: { now: number; before: number; vs: string };
+}
 export interface Subscription {
   id: number; report_code: string; report_ten: string; params: Record<string, unknown>; schedule_preset: string;
   is_enabled: boolean; next_run_at: string | null; last_run_at: string | null; last_status: string | null;
@@ -88,11 +96,19 @@ export type WidgetStatus = 'ok' | 'chua_co_du_lieu' | 'can_ket_noi' | 'het_han' 
 /** Một ô trên Tổng quan: báo cáo + tình trạng nguồn dữ liệu + số liệu tóm tắt. */
 export interface DashboardWidget {
   code: string; ten: string; mo_ta: string | null; view_template: string; scope: Scope;
+  /** Tab trên Tổng quan (null = "Báo cáo của bạn"); độ rộng khối 1..3 phần ba hàng. */
+  tab: number | null; width: 1 | 2 | 3;
   source_system: string; source_ten: string; connection_state: Connection['state']; can_run_now: boolean;
   status: WidgetStatus; has_data: boolean; message?: string;
   freshness?: Freshness; total_rows?: number; tiles?: StatTile[] | null; charts?: Chart[] | null;
   chart_rows?: Record<string, unknown>[]; columns?: Column[]; rows?: Record<string, unknown>[];
 }
+
+export interface DashboardTab {
+  id: number; ten: string;
+  source: { code: string; ten: string; state: string; can_run_now: boolean } | null;
+}
+export interface DashboardData { tabs: DashboardTab[]; widgets: DashboardWidget[] }
 
 export interface AuthProfile {
   cookies_required: Array<string | string[]>; cookies_optional?: string[]; cookie_domain?: string;
@@ -108,7 +124,7 @@ export interface AdminSource {
 }
 export interface AdapterSummary {
   id: string; version: string; allowed_endpoints: number; password_login: boolean; sso_bootstrap: boolean;
-  capabilities: Array<{ id: string; ten: string; sink: string | null }>; folder_kpis: number;
+  capabilities: Array<{ id: string; ten: string; sink: string | null }>;
 }
 
 export interface Preset { code: string; label: string; next_runs: string[] }

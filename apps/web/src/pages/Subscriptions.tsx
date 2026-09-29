@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { api, fmtDateTime, type Preset, type Subscription } from '../api';
 import { useAsync } from '../hooks';
+import { NoMatch, Pager, SearchBox, useTableView } from '../components/TableTools';
 import { Empty, ErrorBox, Loading } from '../components/States';
 import { Badge, Banner, Button, PageTitle, Select, Table, Td, TextLink, Th, type Tone } from '../components/ui';
 
@@ -12,6 +13,8 @@ export function SubscriptionsPage() {
   const presets = useAsync(() => api.get<Preset[]>('/presets'), []);
   const [err, setErr] = useState<unknown>(null);
   const [note, setNote] = useState<string | null>(null);
+  const presetLabel = (code: string) => presets.data?.find((p) => p.code === code)?.label ?? code;
+  const tv = useTableView(subs.data, (s) => `${s.report_ten} ${presetLabel(s.schedule_preset)} ${s.is_enabled ? '' : 'đang tắt'} ${s.last_status ? STATUS[s.last_status]?.[1] ?? '' : ''}`);
   const act = async (fn: () => Promise<unknown>, msg?: string) => {
     setErr(null); setNote(null);
     try { await fn(); if (msg) setNote(msg); subs.reload(); } catch (e) { setErr(e); }
@@ -25,11 +28,13 @@ export function SubscriptionsPage() {
       {subs.loading && <Loading />}
       {subs.error ? <ErrorBox error={subs.error} onRetry={subs.reload} /> : null}
       {subs.data && !subs.data.length && <Empty>Bạn chưa đặt lịch nào. <TextLink to="/bao-cao">Chọn một báo cáo</TextLink></Empty>}
-      {!!subs.data?.length && (
+      {!!subs.data?.length && <div className="mb-3"><SearchBox value={tv.q} onChange={tv.setQ} delay={0} placeholder="Tìm theo báo cáo, lịch, kết quả…" /></div>}
+      {!!subs.data?.length && !tv.total && <NoMatch q={tv.q} onClear={() => tv.setQ('')} />}
+      {!!tv.total && (<>
         <Table>
           <thead><tr><Th>Báo cáo</Th><Th>Lịch</Th><Th num>Lần chạy kế tiếp</Th><Th num>Lần chạy gần nhất</Th><Th>Kết quả</Th><Th /></tr></thead>
           <tbody>
-            {subs.data.map((s) => {
+            {tv.rows.map((s) => {
               const st = s.last_status ? STATUS[s.last_status] : null;
               return (
                 <tr key={s.id}>
@@ -56,7 +61,8 @@ export function SubscriptionsPage() {
             })}
           </tbody>
         </Table>
-      )}
+        <Pager page={tv.page} pageSize={tv.pageSize} total={tv.total} onPage={tv.setPage} onPageSize={tv.setPageSize} unit="lịch" />
+      </>)}
     </>
   );
 }

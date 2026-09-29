@@ -9,7 +9,7 @@ import { z } from 'zod';
 import { Problem, type Tx } from '@vala/core';
 import { SINK_TABLES, loadAllSpecs } from '@vala/core/adapter';
 import { resolvePeriod } from '../params.js';
-import type { Column, ReportInput, ReportOutput } from './index.js';
+import type { Column, ReportInput, ReportOutput, Tile } from './index.js';
 
 export type FieldType = 'string' | 'int' | 'date';
 export interface FieldDef { name: string; label: string; type: FieldType; expr: string }
@@ -77,19 +77,24 @@ const FieldName = z.string().regex(/^[A-Za-z][A-Za-z0-9_]{0,60}$/);
 const Value = z.union([z.string().max(200), z.number(), z.boolean()]);
 const FilterSchema = z.object({
   field: FieldName,
-  op: z.enum(['eq', 'neq', 'in', 'contains', 'gt', 'gte', 'lt', 'lte', 'is_null', 'not_null', 'truoc_hom_nay', 'tu_hom_nay', 'hom_nay', 'den_hom_nay']),
+  op: z.enum(['eq', 'neq', 'in', 'contains', 'gt', 'gte', 'lt', 'lte', 'is_null', 'not_null',
+    'truoc_hom_nay', 'tu_hom_nay', 'hom_nay', 'den_hom_nay', 'thang_nay', 'trong_n_ngay_toi', 'trong_n_ngay_qua']),
   value: z.union([Value, z.array(Value).max(50)]).optional(),
 });
 const MeasureSchema = z.object({
-  fn: z.enum(['count', 'count_distinct', 'sum', 'avg', 'min', 'max']),
+  /** ty_le = % bản ghi thoả điều kiện (filters) trên tổng số bản ghi. */
+  fn: z.enum(['count', 'count_distinct', 'sum', 'avg', 'min', 'max', 'ty_le']),
   field: FieldName.optional(),
   label: z.string().min(1).max(80),
   /** Chỉ đếm/tính trên các dòng thoả điều kiện này (vd "quá hạn"). */
   filters: z.array(FilterSchema).max(5).default([]),
 });
 /** Điều kiện so với hôm nay (giờ Việt Nam) — không cần giá trị, chỉ dùng cho trường ngày. */
-const TODAY_OPS: string[] = ['truoc_hom_nay', 'tu_hom_nay', 'hom_nay', 'den_hom_nay'];
-export const PERIODS = ['thang_hien_tai', 'thang_truoc', 'quy_hien_tai', '30_ngay_qua', '12_thang_qua', 'tat_ca', 'tuy_chon'] as const;
+const TODAY_OPS: string[] = ['truoc_hom_nay', 'tu_hom_nay', 'hom_nay', 'den_hom_nay', 'thang_nay'];
+/** Trong N ngày tới / qua (tính cả hôm nay) — giá trị là số ngày, chỉ dùng cho trường ngày. */
+const DAYS_OPS: string[] = ['trong_n_ngay_toi', 'trong_n_ngay_qua'];
+export const PERIODS = ['thang_hien_tai', 'thang_truoc', 'quy_hien_tai', '30_ngay_qua', '6_thang_qua', '12_thang_qua',
+  '7_ngay_toi', '14_ngay_toi', '30_ngay_toi', 'tat_ca', 'tuy_chon'] as const;
 
 export const DefinitionSchema = z.object({
   dataset: z.enum(['documents', 'tasks', 'records']),
@@ -108,10 +113,12 @@ export const DefinitionSchema = z.object({
   measures: z.array(MeasureSchema).max(4).default([]),
   sort: z.object({ by: z.string().max(60), dir: z.enum(['asc', 'desc']).default('desc') }).optional(),
   limit: z.number().int().min(1).max(1000).default(500),
-  chart: z.object({ kind: z.enum(['bar', 'line']), title: z.string().max(120).optional() }).optional(),
+  chart: z.object({ kind: z.enum(['bar', 'column', 'line', 'donut', 'heatmap']), title: z.string().max(120).optional() }).optional(),
   tiles: z.array(MeasureSchema.extend({
     warn_if_gt: z.number().optional(),
     err_if_gt: z.number().optional(),
+    /** Trường ngày: thẻ hiện số của THÁNG NÀY theo trường này, so với tháng trước, kèm xu hướng 12 tháng. */
+    trend_field: FieldName.optional(),
   })).max(4).default([]),
 });
 export type Definition = z.infer<typeof DefinitionSchema>;
@@ -137,11 +144,15 @@ export function checkDefinition(source: string, raw: unknown) {
   };
   const checkFilters = (fs: Definition['filters'], where: string) => fs.forEach((f, i) => {
     const fd = need(f.field, `${where}[${i}]`);
-    if (TODAY_OPS.includes(f.op) && fd.type !== 'date') throw new Problem('invalid_params', 'Định nghĩa báo cáo chưa hợp lệ', `${where}[${i}]: so với hôm nay chỉ dùng cho trường ngày`);
+    if ([...TODAY_OPS, ...DAYS_OPS].includes(f.op) && fd.type !== 'date') throw new Problem('invalid_params', 'Định nghĩa báo cáo chưa hợp lệ', `${where}[${i}]: so với hôm nay chỉ dùng cho trường ngày`);
     if (!['is_null', 'not_null', ...TODAY_OPS].includes(f.op) && f.value === undefined) throw new Problem('invalid_params', 'Định nghĩa báo cáo chưa hợp lệ', `${where}[${i}]: cần giá trị`);
+    if (DAYS_OPS.includes(f.op) && !(Number.isInteger(Number(f.value)) && Number(f.value) >= 1 && Number(f.value) <= 3650)) {
+      throw new Problem('invalid_params', 'Định nghĩa báo cáo chưa hợp lệ', `${where}[${i}]: số ngày phải từ 1 đến 3650`);
+    }
   });
   const checkMeasure = (m: Definition['measures'][number], where: string) => {
-    if (m.fn !== 'count' && !m.field) throw new Problem('invalid_params', 'Định nghĩa báo cáo chưa hợp lệ', `${where}: phép ${m.fn} cần chọn trường`);
+    if (m.fn === 'ty_le' && !m.filters.length) throw new Problem('invalid_params', 'Định nghĩa báo cáo chưa hợp lệ', `${where}: tỉ lệ cần ít nhất một điều kiện (phần được tính)`);
+    if (m.fn !== 'count' && m.fn !== 'ty_le' && !m.field) throw new Problem('invalid_params', 'Định nghĩa báo cáo chưa hợp lệ', `${where}: phép ${m.fn} cần chọn trường`);
     if (m.field) need(m.field, where, m.fn === 'sum' || m.fn === 'avg' ? 'int' : undefined);
     checkFilters(m.filters, `${where}.filters`);
   };
@@ -149,7 +160,11 @@ export function checkDefinition(source: string, raw: unknown) {
   if (def.keyword_field) need(def.keyword_field, 'keyword_field', 'string');
   checkFilters(def.filters, 'filters');
   def.param_filters.forEach((f, i) => { if (need(f.field, `param_filters[${i}]`).type === 'date') throw new Problem('invalid_params', 'Định nghĩa báo cáo chưa hợp lệ', `param_filters[${i}]: không lọc chọn-nhiều trên trường ngày`); });
-  def.tiles.forEach((m, i) => checkMeasure(m, `tiles[${i}]`));
+  def.tiles.forEach((m, i) => {
+    checkMeasure(m, `tiles[${i}]`);
+    if (m.trend_field) need(m.trend_field, `tiles[${i}].trend_field`, 'date');
+    if (m.trend_field && m.fn === 'ty_le') throw new Problem('invalid_params', 'Định nghĩa báo cáo chưa hợp lệ', `tiles[${i}]: thẻ tỉ lệ không kèm xu hướng theo tháng`);
+  });
   if (def.mode === 'list') {
     if (!def.columns.length) throw new Problem('invalid_params', 'Định nghĩa báo cáo chưa hợp lệ', 'Danh sách cần ít nhất một cột');
     def.columns.forEach((c, i) => need(c.field, `columns[${i}]`));
@@ -161,6 +176,7 @@ export function checkDefinition(source: string, raw: unknown) {
     def.group_by.forEach((g, i) => { need(g.field, `group_by[${i}]`, g.bucket ? 'date' : undefined); });
     def.measures.forEach((m, i) => checkMeasure(m, `measures[${i}]`));
     if (def.chart && def.group_by.length !== 1) throw new Problem('invalid_params', 'Định nghĩa báo cáo chưa hợp lệ', 'Biểu đồ cần nhóm theo đúng một trường');
+    if (def.chart?.kind === 'heatmap' && def.group_by[0]?.bucket !== 'day') throw new Problem('invalid_params', 'Định nghĩa báo cáo chưa hợp lệ', 'Lịch nhiệt cần nhóm theo một trường ngày, gộp theo ngày');
     if (def.sort && !/^(g|m)\d$/.test(def.sort.by)) throw new Problem('invalid_params', 'Định nghĩa báo cáo chưa hợp lệ', 'sort.by của Thống kê là g0/g1 (nhóm) hoặc m0…m3 (phép tính)');
   }
   const properties: Record<string, unknown> = {};
@@ -209,6 +225,9 @@ function filterSql(q: Sql, f: Definition['filters'][number], fd: FieldDef): stri
     case 'tu_hom_nay': return `${e} >= ${TODAY}`;
     case 'hom_nay': return `${e} = ${TODAY}`;
     case 'den_hom_nay': return `${e} <= ${TODAY}`;
+    case 'thang_nay': return `date_trunc('month', ${e}) = date_trunc('month', ${TODAY})`;
+    case 'trong_n_ngay_toi': return `${e} BETWEEN ${TODAY} AND ${TODAY} + (${q.param(Number(f.value), 'int')})::int`;
+    case 'trong_n_ngay_qua': return `${e} BETWEEN ${TODAY} - (${q.param(Number(f.value), 'int')})::int AND ${TODAY}`;
     case 'contains': return `${e}::text ILIKE '%' || ${q.param(String(f.value), 'string')} || '%'`;
     case 'in': return `${e} = ANY(${q.params(Array.isArray(f.value) ? f.value : [f.value], fd.type)})`;
     default: {
@@ -223,6 +242,7 @@ function measureSql(q: Sql, m: Definition['measures'][number], fields: Map<strin
   const where = m.filters.length ? ` FILTER (WHERE ${m.filters.map((f) => filterSql(q, f, fields.get(f.field)!)).join(' AND ')})` : '';
   switch (m.fn) {
     case 'count': return `count(*)${where}`;
+    case 'ty_le': return `round(100.0 * count(*)${where} / nullif(count(*), 0), 1)`;
     case 'count_distinct': return `count(DISTINCT ${e})${where}`;
     case 'avg': return `round(avg(${e})${where}, 2)`;
     default: return `${m.fn}(${e})${where}`;
@@ -236,11 +256,13 @@ export async function runDefinition(t: Tx, source: string, raw: unknown, input: 
   const from = `${def.dataset} t LEFT JOIN app_users u ON u.id = t.owner_user_id LEFT JOIN org_units o ON o.id = t.org_unit_id`;
   const where = [`t.valid_to IS NULL`, `t.source_system = ${q.param(source, 'string')}`];
   if (def.dataset === 'records') where.push(`t.capability = ${q.param(def.capability, 'string')}`);
-  let applied: Record<string, unknown> | undefined;
+  let applied: { tu_ngay: string; den_ngay: string } | undefined;
+  let periodCond: string | null = null;
   if (def.date_field && input.params.khoang_thoi_gian !== 'tat_ca') {
     const period = resolvePeriod(input.params);
     applied = period;
-    where.push(`${fields.get(def.date_field)!.expr} BETWEEN ${q.param(period.tu_ngay, 'date')} AND ${q.param(period.den_ngay, 'date')}`);
+    periodCond = `${fields.get(def.date_field)!.expr} BETWEEN ${q.param(period.tu_ngay, 'date')} AND ${q.param(period.den_ngay, 'date')}`;
+    where.push(periodCond);
   }
   if (def.keyword_field && typeof input.params.tu_khoa === 'string' && input.params.tu_khoa.trim()) {
     where.push(`${fields.get(def.keyword_field)!.expr} ILIKE '%' || ${q.param(input.params.tu_khoa.trim(), 'string')} || '%'`);
@@ -253,17 +275,42 @@ export async function runDefinition(t: Tx, source: string, raw: unknown, input: 
   }
   const W = where.join(' AND ');
 
-  // Thẻ KPI: một truy vấn, mỗi thẻ một phép tính.
-  let tiles: ReportOutput['tiles'];
+  // Thẻ KPI: một truy vấn, mỗi thẻ một phép tính (thẻ tỉ lệ lấy thêm tử số / mẫu số).
+  let tiles: Tile[] | undefined;
   if (def.tiles.length) {
-    const exprs = def.tiles.map((m, i) => `${measureSql(q, m, fields)} AS k${i}`).join(', ');
-    const k = await t.one<Record<string, number | null>>(`SELECT ${exprs} FROM ${from} WHERE ${W}`, q.args);
-    tiles = def.tiles.map((m, i) => {
-      const value = Number(k[`k${i}`] ?? 0);
-      const tone = m.err_if_gt !== undefined && value > m.err_if_gt ? 'err' : m.warn_if_gt !== undefined && value > m.warn_if_gt ? 'warn'
+    const exprs = def.tiles.flatMap((m, i) => {
+      const out = [`${measureSql(q, m, fields)} AS k${i}`];
+      if (m.fn === 'ty_le') {
+        out.push(`count(*) FILTER (WHERE ${m.filters.map((f) => filterSql(q, f, fields.get(f.field)!)).join(' AND ')}) AS p${i}`, `count(*) AS w${i}`);
+      }
+      return out;
+    }).join(', ');
+    const k = await t.one<Record<string, number | string | null>>(`SELECT ${exprs} FROM ${from} WHERE ${W}`, q.args);
+    const tone = (m: Definition['tiles'][number], value: number): Tile['tone'] =>
+      m.err_if_gt !== undefined && value > m.err_if_gt ? 'err' : m.warn_if_gt !== undefined && value > m.warn_if_gt ? 'warn'
         : m.err_if_gt !== undefined || m.warn_if_gt !== undefined ? 'ok' : 'neutral';
-      return { key: `k${i}`, label: m.label, value, tone };
-    });
+    // Xu hướng theo tháng không bị cắt bởi khoảng thời gian của báo cáo — luôn là 12 tháng gần nhất.
+    const Wtrend = where.filter((c) => c !== periodCond).join(' AND ');
+    tiles = [];
+    for (const [i, m] of def.tiles.entries()) {
+      if (m.trend_field) {
+        const e = fields.get(m.trend_field)!.expr;
+        const series = await t.map(
+          `SELECT coalesce(x.v, 0)::float8 AS v
+             FROM generate_series(date_trunc('month', ${TODAY}) - interval '11 months', date_trunc('month', ${TODAY}), interval '1 month') AS mm(m)
+             LEFT JOIN (SELECT date_trunc('month', ${e}) AS m, ${measureSql(q, m, fields)} AS v FROM ${from}
+                         WHERE ${Wtrend} AND ${e} >= (date_trunc('month', ${TODAY}) - interval '11 months')::date AND ${e} <= ${TODAY}
+                         GROUP BY 1) x ON x.m = mm.m
+            ORDER BY mm.m`, q.args, (r: { v: number }) => Number(r.v));
+        const now = series.at(-1) ?? 0;
+        tiles.push({ key: `k${i}`, label: m.label, value: now, tone: tone(m, now), trend: series, delta: { now, before: series.at(-2) ?? 0, vs: 'tháng trước' } });
+        continue;
+      }
+      const value = Number(k[`k${i}`] ?? 0);
+      tiles.push(m.fn === 'ty_le'
+        ? { key: `k${i}`, label: m.label, value, tone: tone(m, value), unit: '%', part: Number(k[`p${i}`] ?? 0), whole: Number(k[`w${i}`] ?? 0) }
+        : { key: `k${i}`, label: m.label, value, tone: tone(m, value) });
+    }
   }
 
   const { page, pageSize } = input;
@@ -272,9 +319,15 @@ export async function runDefinition(t: Tx, source: string, raw: unknown, input: 
     const sel = cols.map(({ f }) => `${f.expr} AS "${f.name}"`).join(', ');
     const sortF = def.sort ? fields.get(def.sort.by)! : def.date_field ? fields.get(def.date_field)! : null;
     const order = sortF ? `${sortF.expr} ${def.sort?.dir === 'asc' ? 'ASC' : 'DESC'} NULLS LAST, t.id DESC` : 't.id DESC';
-    const total = await t.one(`SELECT count(*)::int AS n FROM ${from} WHERE ${W}`, q.args, (r: { n: number }) => r.n);
+    // Tìm trong bảng: khớp một phần ở bất kỳ cột nào đang hiện (ngày so theo dạng DD/MM/YYYY như trên màn hình).
+    let WL = W;
+    if (input.q) {
+      const needle = q.param(input.q, 'string');
+      WL += ` AND (${cols.map(({ f }) => `${f.type === 'date' ? `to_char(${f.expr}, 'DD/MM/YYYY')` : `${f.expr}::text`} ILIKE '%' || ${needle} || '%'`).join(' OR ')})`;
+    }
+    const total = await t.one(`SELECT count(*)::int AS n FROM ${from} WHERE ${WL}`, q.args, (r: { n: number }) => r.n);
     const limit = Math.min(pageSize, def.limit);
-    const rows = await t.any(`SELECT ${sel} FROM ${from} WHERE ${W} ORDER BY ${order} LIMIT ${limit} OFFSET ${(page - 1) * limit}`, q.args);
+    const rows = await t.any(`SELECT ${sel} FROM ${from} WHERE ${WL} ORDER BY ${order} LIMIT ${limit} OFFSET ${(page - 1) * limit}`, q.args);
     const columns: Column[] = cols.map(({ c, f }) => ({ field: f.name, label: c.label ?? f.label, type: f.type, width: f.type === 'string' ? 220 : 120 }));
     return { columns, rows, total_rows: Math.min(total, def.limit), tiles, applied };
   }
@@ -296,21 +349,62 @@ export async function runDefinition(t: Tx, source: string, raw: unknown, input: 
     ? `${def.sort.by.startsWith('g') ? `s${def.sort.by.slice(1)}` : def.sort.by} ${def.sort.dir === 'asc' ? 'ASC' : 'DESC'} NULLS LAST`
     : groups[0]!.bucket ? 's0 ASC' : 'm0 DESC NULLS LAST, g0';
   const all = await t.any<Record<string, unknown>>(`SELECT ${sel} FROM ${from} WHERE ${W} GROUP BY ${groupBy} ORDER BY ${order} LIMIT ${def.limit}`, q.args);
-  const rows = all.map((r) => {
+  let rows = all.map((r) => {
     const o: Record<string, unknown> = {};
     for (const g of groups) o[g.key] = r[g.key];
     for (const m of measures) o[m.key] = r[m.key] === null ? null : Number(r[m.key]);
     return o;
   });
+  // Nhóm theo ngày/tháng của chính trường thời gian ⇒ điền đủ mọi ngày/tháng trong khoảng (ngày không có = 0),
+  // để đường/cột không "nhảy cóc". Lịch nhiệt tự có ô trống nên không cần.
+  const g0 = def.group_by[0]!;
+  if (groups.length === 1 && g0.bucket && !def.sort && applied && g0.field === def.date_field && def.chart?.kind !== 'heatmap') {
+    const keys = bucketKeys(applied.tu_ngay, applied.den_ngay, g0.bucket);
+    if (keys) {
+      const zero = Object.fromEntries(def.measures.map((m, i) => [`m${i}`, ['count', 'count_distinct', 'sum', 'ty_le'].includes(m.fn) ? 0 : null]));
+      const have = new Map(rows.map((r) => [r.g0, r]));
+      rows = keys.map((key) => have.get(key) ?? { g0: key, ...zero });
+    }
+  }
   const columns: Column[] = [
     ...groups.map((g) => ({ field: g.key, label: g.label, type: g.type, width: 220 })),
     ...measures.map((m) => ({ field: m.key, label: m.label, type: 'int' as const, width: 140 })),
   ];
+  const chart = def.chart;
+  // Tìm trong bảng thống kê: lọc theo nhãn nhóm; biểu đồ vẫn vẽ đủ mọi nhóm.
+  const needle = input.q?.toLocaleLowerCase('vi');
+  const shown = needle ? rows.filter((r) => groups.some((g) => String(r[g.key] ?? '').toLocaleLowerCase('vi').includes(needle))) : rows;
   return {
-    columns, rows: rows.slice((page - 1) * pageSize, page * pageSize), total_rows: rows.length, tiles, applied,
-    charts: def.chart ? [{ kind: def.chart.kind, title: def.chart.title ?? `${measures[0]!.label} theo ${groups[0]!.label.toLowerCase()}`, x_field: 'g0', series: [{ field: 'm0', label: measures[0]!.label }] }] : undefined,
-    chart_rows: def.chart ? rows.slice(0, 60) : undefined,
+    columns, rows: shown.slice((page - 1) * pageSize, page * pageSize), total_rows: shown.length, tiles, applied,
+    charts: chart ? [{
+      kind: chart.kind, title: chart.title ?? `${measures[0]!.label} theo ${groups[0]!.label.toLowerCase()}`, x_field: 'g0',
+      series: [{ field: 'm0', label: measures[0]!.label }],
+      range: chart.kind === 'heatmap' ? applied ?? dayRange(rows) : undefined,
+    }] : undefined,
+    chart_rows: chart ? rows.slice(0, g0.bucket === 'day' ? 400 : 60) : undefined,
   };
+}
+
+const pad = (n: number) => String(n).padStart(2, '0');
+/** Mọi nhãn ngày (DD/MM/YYYY) hoặc tháng (MM/YYYY) trong [tu, den] — null nếu quá dài để điền. */
+function bucketKeys(tu: string, den: string, bucket: 'day' | 'month'): string[] | null {
+  const out: string[] = [];
+  const d = new Date(`${tu}T00:00:00Z`);
+  const end = new Date(`${den}T00:00:00Z`);
+  if (bucket === 'month') d.setUTCDate(1);
+  while (d <= end) {
+    out.push(bucket === 'day' ? `${pad(d.getUTCDate())}/${pad(d.getUTCMonth() + 1)}/${d.getUTCFullYear()}` : `${pad(d.getUTCMonth() + 1)}/${d.getUTCFullYear()}`);
+    if (out.length > (bucket === 'day' ? 400 : 120)) return null;
+    if (bucket === 'day') d.setUTCDate(d.getUTCDate() + 1); else d.setUTCMonth(d.getUTCMonth() + 1);
+  }
+  return out;
+}
+
+/** Khoảng ngày của dữ liệu nhóm theo ngày (DD/MM/YYYY) — cho lịch nhiệt khi báo cáo không có khoảng thời gian. */
+function dayRange(rows: Record<string, unknown>[]): { tu_ngay: string; den_ngay: string } | undefined {
+  const iso = rows.map((r) => String(r.g0 ?? '')).filter((x) => /^\d{2}\/\d{2}\/\d{4}$/.test(x))
+    .map((x) => `${x.slice(6)}-${x.slice(3, 5)}-${x.slice(0, 2)}`).sort();
+  return iso.length ? { tu_ngay: iso[0]!, den_ngay: iso.at(-1)! } : undefined;
 }
 
 /**

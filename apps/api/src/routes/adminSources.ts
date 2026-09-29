@@ -47,7 +47,6 @@ const summarize = (s: AdapterSpec) => ({
   id: s.id, version: s.version, allowed_endpoints: s.allowed_endpoints.length,
   password_login: !!s.auth.password_login, sso_bootstrap: !!s.auth.bootstrap,
   capabilities: s.capabilities.map((c) => ({ id: c.id, ten: c.ten, sink: c.sink?.table ?? null })),
-  folder_kpis: s.dashboard?.folder_kpis.length ?? 0,
 });
 
 const bodySchema = {

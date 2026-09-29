@@ -1,75 +1,175 @@
-import type { Chart } from '../api';
-import { Card } from './ui';
-
 /**
- * Biểu đồ SVG tự vẽ (mục 06): chuỗi thời gian dùng đường, so sánh hạng mục dùng cột ngang,
- * một trục y, tối đa 6 chuỗi, nhãn trục là giá trị thật mà dữ liệu chạm tới.
- * Màu lấy từ class Tailwind (fill-/stroke-) nên tự đổi theo chế độ sáng/tối.
+ * Biểu đồ của báo cáo cấu hình (ECharts, SVG). Chọn dạng theo việc của số liệu (skill dataviz):
+ * bar = cột ngang (so sánh hạng mục), column = cột đứng (theo ngày/tháng), line = đường (xu hướng),
+ * donut = phần của tổng thể (tối đa 3 nhóm + "Khác"), heatmap = lịch nhiệt một màu theo ngày.
+ * Một trục y, một chuỗi, màu dữ liệu chỉ cho nét/khối — chữ luôn dùng token chữ.
  */
-const LABEL = 'fill-slate-500 text-[11px] tabular-nums dark:fill-slate-400';
-const AXIS = 'stroke-slate-200 dark:stroke-slate-700';
-const MARK_STROKE = 'stroke-blue-700 dark:stroke-blue-400';
-const MARK_FILL = 'fill-blue-700 dark:fill-blue-400';
+import { useMemo } from 'react';
+import type { EChartsCoreOption } from 'echarts/core';
+import type { Chart } from '../api';
+import { EChart } from './EChart';
+import { Card } from './ui';
+import { useViz, type VizTokens } from '../viz';
 
-export function ChartView({ chart, rows }: { chart: Chart; rows: Record<string, unknown>[] }) {
-  const series = chart.series.slice(0, 6);
+type Row = Record<string, unknown>;
+const WEEKDAY = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
+const fmtN = (n: number) => n.toLocaleString('vi-VN');
+/** DD/MM/YYYY ⇒ YYYY-MM-DD (nhãn ngày của báo cáo nhóm theo ngày). */
+const isoOf = (s: string) => (/^\d{2}\/\d{2}\/\d{4}$/.test(s) ? `${s.slice(6)}-${s.slice(3, 5)}-${s.slice(0, 2)}` : s);
+const dayLabel = (iso: string) => { const d = new Date(`${iso}T00:00:00`); return `${WEEKDAY[d.getDay()]} ${iso.slice(8)}/${iso.slice(5, 7)}`; };
+/** Nhãn trục gọn: 09/2026 ⇒ 09/26, 29/09/2026 ⇒ 29/09. */
+const shortLabel = (s: string) => (/^\d{2}\/\d{4}$/.test(s) ? `${s.slice(0, 3)}${s.slice(5)}` : /^\d{2}\/\d{2}\/\d{4}$/.test(s) ? s.slice(0, 5) : s);
+
+export const tooltip = (v: VizTokens, trigger: 'axis' | 'item') => ({
+  trigger, confine: true, backgroundColor: v.surface, borderColor: v.baseline, borderWidth: 1,
+  textStyle: { color: v.text, fontFamily: 'inherit', fontSize: 12 }, extraCssText: 'box-shadow:0 4px 16px rgba(0,0,0,.12);border-radius:8px;',
+  axisPointer: { type: trigger === 'axis' ? 'line' : 'none', lineStyle: { color: v.baseline } },
+});
+const axisCommon = (v: VizTokens) => ({
+  axisLine: { lineStyle: { color: v.baseline } }, axisTick: { show: false },
+  axisLabel: { color: v.muted, fontSize: 11, fontFamily: 'inherit' }, splitLine: { lineStyle: { color: v.grid } },
+});
+
+/** Biểu đồ trong một thẻ có tiêu đề (trang báo cáo, xem thử). `bare` = chỉ phần vẽ, để khối Tổng quan tự đặt tiêu đề. */
+export function ChartView({ chart, rows, bare }: { chart: Chart; rows: Row[]; bare?: boolean }) {
   if (!rows.length) return null;
+  const body = <ChartBody chart={chart} rows={rows} />;
+  if (bare) return body;
   return (
     <Card className="my-3">
       <figure>
         <figcaption className="mb-2 font-semibold">{chart.title}</figcaption>
-        {chart.kind === 'line' ? <Line chart={chart} rows={rows} field={series[0]!.field} /> : <Bars chart={chart} rows={rows} field={series[0]!.field} />}
+        {body}
       </figure>
     </Card>
   );
 }
 
-function Line({ chart, rows, field }: { chart: Chart; rows: Record<string, unknown>[]; field: string }) {
-  const W = 720, H = 220, L = 40, B = 28, T = 12;
-  const vals = rows.map((r) => Number(r[field] ?? 0));
-  const max = Math.max(...vals, 0);
-  const x = (i: number) => L + (rows.length === 1 ? 0 : (i * (W - L - 12)) / (rows.length - 1));
-  const y = (v: number) => T + (H - T - B) * (1 - (max ? v / max : 0));
-  return (
-    <svg viewBox={`0 0 ${W} ${H}`} width="100%" role="img" aria-label={chart.title}>
-      <line className={AXIS} x1={L} x2={W - 12} y1={y(0)} y2={y(0)} />
-      <line className={AXIS} x1={L} x2={W - 12} y1={y(max)} y2={y(max)} strokeDasharray="3 3" />
-      <text className={LABEL} x={L - 6} y={y(0) + 4} textAnchor="end">0</text>
-      <text className={LABEL} x={L - 6} y={y(max) + 4} textAnchor="end">{max.toLocaleString('vi-VN')}</text>
-      <polyline className={MARK_STROKE} fill="none" strokeWidth={2} points={vals.map((v, i) => `${x(i)},${y(v)}`).join(' ')} />
-      {vals.map((v, i) => <circle key={i} className={MARK_FILL} cx={x(i)} cy={y(v)} r={3}><title>{`${rows[i]![chart.x_field]}: ${v}`}</title></circle>)}
-      {rows.map((r, i) => (i % Math.ceil(rows.length / 8) === 0 || i === rows.length - 1) && (
-        <text key={i} className={LABEL} x={x(i)} y={H - 8} textAnchor="middle">{String(r[chart.x_field])}</text>
-      ))}
-    </svg>
-  );
+function ChartBody({ chart, rows }: { chart: Chart; rows: Row[] }) {
+  const field = chart.series[0]!.field;
+  const name = chart.series[0]!.label;
+  const data = rows.map((r) => ({ x: String(r[chart.x_field] ?? 'Không rõ'), y: Number(r[field] ?? 0) }));
+  switch (chart.kind) {
+    case 'line': return <LineChart data={data} name={name} title={chart.title} />;
+    case 'column': return <ColumnChart data={data} name={name} title={chart.title} />;
+    case 'donut': return <DonutChart data={data} name={name} title={chart.title} />;
+    case 'heatmap': return <DayHeatmap data={data} name={name} title={chart.title} range={chart.range} />;
+    default: return <BarChart data={data.slice(0, 15)} name={name} title={chart.title} />;
+  }
 }
 
-/** Thanh ngang: gốc vuông áp sát trục, đầu dữ liệu bo tròn 4px. */
-function barPath(x: number, y: number, w: number, h: number) {
-  const r = Math.min(4, w, h / 2);
-  return `M${x},${y} H${x + w - r} Q${x + w},${y} ${x + w},${y + r} V${y + h - r} Q${x + w},${y + h} ${x + w - r},${y + h} H${x} Z`;
+interface P { data: Array<{ x: string; y: number }>; name: string; title: string }
+const describe = (title: string, data: P['data']) => `${title}: ${data.slice(0, 40).map((d) => `${d.x} ${d.y}`).join(', ')}`;
+
+function LineChart({ data, name, title }: P) {
+  const v = useViz();
+  const option = useMemo<EChartsCoreOption>(() => ({
+    grid: { left: 36, right: 30, top: 16, bottom: 28 },
+    tooltip: { ...tooltip(v, 'axis'), formatter: (p: Array<{ dataIndex: number; value: number }>) => `${data[p[0]!.dataIndex]!.x}<br/>${name}: <b>${fmtN(p[0]!.value)}</b>` },
+    xAxis: { type: 'category', boundaryGap: false, data: data.map((d) => shortLabel(d.x)), ...axisCommon(v), splitLine: { show: false } },
+    yAxis: { type: 'value', minInterval: 1, ...axisCommon(v), axisLine: { show: false } },
+    series: [{
+      name, type: 'line', data: data.map((d) => d.y), symbol: 'circle', symbolSize: 8, showSymbol: data.length === 1,
+      lineStyle: { width: 2, color: v.series[0] }, itemStyle: { color: v.series[0], borderColor: v.surface, borderWidth: 2 },
+      areaStyle: { color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: `${v.series[0]}40` }, { offset: 1, color: `${v.series[0]}00` }] } },
+      emphasis: { focus: 'series' },
+      // Nhãn trực tiếp chỉ ở điểm cuối, không gắn số lên mọi điểm.
+      endLabel: { show: true, color: v.text2, fontSize: 11, formatter: (p: { value: number }) => fmtN(p.value) },
+    }],
+  }), [data, name, v]);
+  return <EChart option={option} height={240} label={describe(title, data)} />;
 }
 
-function Bars({ chart, rows, field }: { chart: Chart; rows: Record<string, unknown>[]; field: string }) {
-  const top = rows.slice(0, 15);
-  const max = Math.max(...top.map((r) => Number(r[field] ?? 0)), 1);
-  const rowH = 28, L = 190, W = 720;
-  return (
-    <svg viewBox={`0 0 ${W} ${top.length * rowH + 8}`} width="100%" role="img" aria-label={chart.title}>
-      {top.map((r, i) => {
-        const v = Number(r[field] ?? 0);
-        const w = ((W - L - 60) * v) / max;
-        return (
-          <g key={i} transform={`translate(0 ${i * rowH + 4})`} className="[&:hover_path]:opacity-80">
-            <text className={LABEL} x={L - 8} y={rowH / 2 + 4} textAnchor="end">{String(r[chart.x_field]).slice(0, 28)}</text>
-            <title>{`${r[chart.x_field]}: ${v.toLocaleString('vi-VN')}`}</title>
-            <rect x={0} y={0} width={W} height={rowH} fill="transparent" />
-            <path className={MARK_FILL} d={barPath(L, 5, Math.max(w, 1), rowH - 10)} />
-            <text className={LABEL} x={L + w + 6} y={rowH / 2 + 4}>{v.toLocaleString('vi-VN')}</text>
-          </g>
-        );
-      })}
-    </svg>
-  );
+function ColumnChart({ data, name, title }: P) {
+  const v = useViz();
+  const option = useMemo<EChartsCoreOption>(() => {
+    const isDay = data.every((d) => /^\d{2}\/\d{2}\/\d{4}$/.test(d.x));
+    const label = (x: string) => (isDay ? dayLabel(isoOf(x)) : shortLabel(x));
+    return {
+      grid: { left: 28, right: 8, top: 16, bottom: 28 },
+      tooltip: { ...tooltip(v, 'axis'), axisPointer: { type: 'shadow', shadowStyle: { color: `${v.baseline}33` } },
+        formatter: (p: Array<{ dataIndex: number; value: number }>) => `${label(data[p[0]!.dataIndex]!.x)}<br/>${name}: <b>${fmtN(p[0]!.value)}</b>` },
+      xAxis: { type: 'category', data: data.map((d) => label(d.x)), ...axisCommon(v), splitLine: { show: false },
+        axisLabel: { color: v.muted, fontSize: 10, interval: 'auto', hideOverlap: true, formatter: (s: string) => s.replace(' ', '\n') } },
+      yAxis: { type: 'value', minInterval: 1, ...axisCommon(v), axisLine: { show: false } },
+      series: [{
+        type: 'bar', barMaxWidth: 22, data: data.map((d) => d.y), itemStyle: { color: v.series[0], borderRadius: [4, 4, 0, 0] },
+        label: { show: data.length <= 31, position: 'top', color: v.text2, fontSize: 10, formatter: (p: { value: number }) => (p.value ? fmtN(p.value) : '') },
+      }],
+    };
+  }, [data, name, v]);
+  return <EChart option={option} height={240} label={describe(title, data)} />;
+}
+
+function BarChart({ data, name, title }: P) {
+  const v = useViz();
+  const option = useMemo<EChartsCoreOption>(() => ({
+    grid: { left: 8, right: 36, top: 4, bottom: 4, containLabel: true },
+    tooltip: { ...tooltip(v, 'item'), formatter: (p: { name: string; value: number }) => `${p.name}<br/>${name}: <b>${fmtN(p.value)}</b>` },
+    xAxis: { type: 'value', show: false, minInterval: 1 },
+    yAxis: { type: 'category', inverse: true, data: data.map((d) => d.x), ...axisCommon(v), axisLine: { show: false },
+      axisLabel: { color: v.text2, fontSize: 11, width: 140, overflow: 'truncate', fontFamily: 'inherit' } },
+    series: [{
+      type: 'bar', data: data.map((d) => d.y), barMaxWidth: 16, barCategoryGap: '35%',
+      itemStyle: { color: v.series[0], borderRadius: [0, 4, 4, 0] },
+      label: { show: true, position: 'right', color: v.text2, fontSize: 11, formatter: (p: { value: number }) => fmtN(p.value) },
+      emphasis: { itemStyle: { opacity: 0.85 } },
+    }],
+  }), [data, name, v]);
+  return <EChart option={option} height={Math.max(140, data.length * 34)} label={describe(title, data)} />;
+}
+
+/** Phần của tổng thể: 3 nhóm lớn nhất giữ màu riêng, phần còn lại gộp "Khác" (xám) — không sinh màu thứ 4. */
+function DonutChart({ data, name, title }: P) {
+  const v = useViz();
+  const option = useMemo<EChartsCoreOption>(() => {
+    const top = data.slice(0, 3);
+    const rest = data.slice(3).reduce((a, d) => a + d.y, 0);
+    const slices = [...top.map((d, i) => ({ name: d.x, value: d.y, itemStyle: { color: v.series[i as 0 | 1 | 2] } })),
+      ...(rest ? [{ name: 'Khác', value: rest, itemStyle: { color: v.baseline } }] : [])];
+    const total = data.reduce((a, d) => a + d.y, 0);
+    return {
+      tooltip: { ...tooltip(v, 'item'), formatter: (p: { name: string; value: number; percent: number }) => `${p.name}: <b>${fmtN(p.value)}</b> (${p.percent}%)` },
+      legend: { bottom: 0, icon: 'circle', itemWidth: 8, itemHeight: 8, textStyle: { color: v.text2, fontSize: 11 } },
+      title: { text: fmtN(total), subtext: name.toLowerCase(), left: 'center', top: '34%', textStyle: { color: v.text, fontSize: 22, fontWeight: 600 }, subtextStyle: { color: v.muted, fontSize: 11 } },
+      series: [{
+        type: 'pie', radius: ['52%', '74%'], center: ['50%', '42%'], padAngle: 2, avoidLabelOverlap: true,
+        itemStyle: { borderRadius: 4, borderColor: v.surface, borderWidth: 2 },
+        // Nhãn số trực tiếp: bắt buộc vì màu thứ 3 dưới 3:1 ở chế độ sáng.
+        label: { show: true, color: v.text2, fontSize: 11, formatter: (p: { value: number }) => fmtN(p.value) },
+        labelLine: { length: 6, length2: 6, lineStyle: { color: v.baseline } },
+        data: slices,
+      }],
+    };
+  }, [data, name, v]);
+  return <EChart option={option} height={260} label={describe(title, data)} />;
+}
+
+function DayHeatmap({ data, name, title, range }: P & { range?: Chart['range'] }) {
+  const v = useViz();
+  const points = useMemo(() => data.map((d) => [isoOf(d.x), d.y] as [string, number]).filter((p) => p[1] > 0), [data]);
+  const option = useMemo<EChartsCoreOption>(() => {
+    const iso = points.map((p) => p[0]).sort();
+    const today = new Date().toLocaleDateString('sv-SE');
+    const tu = range?.tu_ngay ?? iso[0] ?? today;
+    const den = range?.den_ngay && range.den_ngay < '2999' ? range.den_ngay : today;
+    const max = Math.max(1, ...points.map((p) => p[1]));
+    return {
+      tooltip: { ...tooltip(v, 'item'), formatter: (p: { value: [string, number] }) => `${dayLabel(p.value[0])}/${p.value[0].slice(0, 4)}<br/>${name}: <b>${fmtN(p.value[1])}</b>` },
+      visualMap: {
+        min: 0, max, calculable: false, orient: 'horizontal', right: 0, bottom: 0, itemWidth: 10, itemHeight: 80,
+        text: ['Nhiều', 'Ít'], textStyle: { color: v.muted, fontSize: 11 }, inRange: { color: v.seq }, outOfRange: { color: v.empty },
+      },
+      calendar: {
+        range: [tu, den], top: 22, left: 34, right: 8, bottom: 36, cellSize: ['auto', 15],
+        splitLine: { show: false }, itemStyle: { color: v.empty, borderColor: v.surface, borderWidth: 3 },
+        dayLabel: { firstDay: 1, nameMap: WEEKDAY, color: v.muted, fontSize: 10 },
+        monthLabel: { nameMap: ['T1', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'T8', 'T9', 'T10', 'T11', 'T12'], color: v.muted, fontSize: 11 },
+        yearLabel: { show: false },
+      },
+      series: [{ type: 'heatmap', coordinateSystem: 'calendar', data: points, itemStyle: { borderRadius: 3 } }],
+    };
+  }, [points, name, range, v]);
+  const total = points.reduce((a, p) => a + p[1], 0);
+  return <EChart option={option} height={190} label={`${title}: tổng ${total}, nhiều nhất ${Math.max(0, ...points.map((p) => p[1]))} một ngày`} />;
 }

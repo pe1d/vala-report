@@ -35,6 +35,8 @@ interface RunBody {
   scope?: Scope;
   page?: number;
   page_size?: number;
+  /** Tìm trong bảng kết quả. */
+  q?: string;
 }
 
 /**
@@ -51,6 +53,7 @@ export async function runReport(deps: ApiDeps, req: FastifyRequest, code: string
   const params = validateParams(code, entry.param_schema, entry.default_params, body.params);
   const page = Math.max(1, Math.trunc(body.page ?? 1));
   const pageSize = Math.min(maxPageSize, Math.max(1, Math.trunc(body.page_size ?? 50)));
+  const q = typeof body.q === 'string' && body.q.trim() ? body.q.trim().slice(0, 200) : undefined;
   const ctx = await resolveUserContext(deps.reader, req.user.id, scope);
 
   return withUserContext(deps.reader, ctx, async (t) => {
@@ -58,8 +61,8 @@ export async function runReport(deps: ApiDeps, req: FastifyRequest, code: string
     if (scope === 'ca_nhan' && freshness.status === 'no_grant' && !freshness.last_success_at) {
       throw new Problem('grant_required', 'Cần uỷ quyền lấy dữ liệu', `Chưa uỷ quyền ${entry.source_system}`, { source_system: entry.source_system });
     }
-    await audit(t, req, action, { type: 'report', id: code }, { scope, params, page, page_size: pageSize });
-    const input = { params, scope, page, pageSize };
+    await audit(t, req, action, { type: 'report', id: code }, { scope, params, page, page_size: pageSize, ...(q ? { q } : {}) });
+    const input = { params, scope, page, pageSize, q };
     const out: ReportOutput = await runDefinition(t, entry.source_system, entry.definition, input);
     return { entry, scope, params, freshness, out, page, pageSize };
   });

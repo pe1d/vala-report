@@ -48,6 +48,15 @@ export function resolvePeriod(p: Record<string, unknown>, now = new Date()): { t
     }
     case '30_ngay_qua':
       return { tu_ngay: ymd(new Date(now.getTime() - 29 * 86_400_000)), den_ngay: today };
+    case '6_thang_qua':
+      return { tu_ngay: ymd(new Date(now.getTime() - 181 * 86_400_000)), den_ngay: today };
+    // Khoảng về phía trước — cho trường hạn (vd việc đến hạn 14 ngày tới), hôm nay tính là ngày đầu.
+    case '7_ngay_toi':
+    case '14_ngay_toi':
+    case '30_ngay_toi': {
+      const n = Number.parseInt(String(p.khoang_thoi_gian), 10);
+      return { tu_ngay: today, den_ngay: ymd(new Date(now.getTime() + (n - 1) * 86_400_000)) };
+    }
     case '12_thang_qua':
       return { tu_ngay: firstOf(m === 12 ? y : y - 1, m === 12 ? 1 : m + 1), den_ngay: lastOf(y, m) };
     case 'tat_ca':

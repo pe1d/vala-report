@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, fmtDateTime, type AdapterSummary, type AdminSource, type AuthMethod, type AuthProfile } from '../api';
 import { useAsync } from '../hooks';
+import { NoMatch, Pager, SearchBox, useTableView } from '../components/TableTools';
 import { Empty, ErrorBox, Loading } from '../components/States';
 import { Badge, Banner, Button, Card, Field, Input, Muted, PageTitle, Table, Td, Th } from '../components/ui';
 import { METHOD_LABEL } from './AdminConnections';
@@ -20,6 +21,7 @@ export function AdminSourcesPage() {
   const [editing, setEditing] = useState<AdminSource | 'new' | null>(null);
   const [adapterOf, setAdapterOf] = useState<AdminSource | null>(null);
   const [note, setNote] = useState<string | null>(null);
+  const tv = useTableView(list.data, (s) => `${s.ten} ${s.code} ${s.mo_ta ?? ''} ${s.effective_base_url} ${s.enabled ? 'đang bật' : 'đã tắt'}`);
 
   const toggle = async (s: AdminSource) => {
     await api.patch(`/admin/sources/${s.code}`, { enabled: !s.enabled });
@@ -32,17 +34,20 @@ export function AdminSourcesPage() {
       <PageTitle title="Hệ thống nguồn"
         subtitle={<>Các hệ thống mà Vala lấy dữ liệu thay người dùng. Thêm hệ thống mới thì người dùng <strong>kết nối được ngay</strong> (tiện ích trình duyệt hoặc dán cookie); muốn có báo cáo từ hệ thống đó cần thêm spider ở <Link to="/script-crawl" className="text-blue-700 dark:text-blue-400">Script crawl</Link> và báo cáo tương ứng.</>} />
       {note && <Banner tone="ok" role="status">{note}</Banner>}
-      <div className="mb-3 flex justify-end">
+      <div className="mb-3 flex flex-wrap items-center gap-3">
+        <SearchBox value={tv.q} onChange={tv.setQ} delay={0} placeholder="Tìm theo tên, mã, địa chỉ…" />
+        <span className="flex-1" />
         <Button variant="primary" onClick={() => { setEditing('new'); setNote(null); }}>Thêm hệ thống nguồn</Button>
       </div>
       {list.loading && <Loading />}
       {list.error ? <ErrorBox error={list.error} onRetry={list.reload} /> : null}
       {list.data && !list.data.length && <Empty>Chưa có hệ thống nguồn nào.</Empty>}
-      {!!list.data?.length && (
+      {!!list.data?.length && !tv.total && <NoMatch q={tv.q} onClear={() => tv.setQ('')} />}
+      {!!tv.total && (<>
         <Table>
           <thead><tr><Th>Hệ thống</Th><Th>Địa chỉ</Th><Th>Cấu hình phiên</Th><Th>Cách kết nối</Th><Th num>Đang kết nối</Th><Th num>Spider / báo cáo</Th><Th>Trạng thái</Th><Th /></tr></thead>
           <tbody>
-            {list.data.map((s) => (
+            {tv.rows.map((s) => (
               <tr key={s.code}>
                 <Td><div className="font-medium">{s.ten}</div><Muted className="font-mono text-xs">{s.code}</Muted>{s.mo_ta && <Muted className="text-xs">{s.mo_ta}</Muted>}</Td>
                 <Td>
@@ -72,7 +77,8 @@ export function AdminSourcesPage() {
             ))}
           </tbody>
         </Table>
-      )}
+        <Pager page={tv.page} pageSize={tv.pageSize} total={tv.total} onPage={tv.setPage} onPageSize={tv.setPageSize} unit="hệ thống" />
+      </>)}
       {adapterOf && (
         <AdapterEditor source={adapterOf} onClose={() => setAdapterOf(null)}
           onSaved={(msg) => { setAdapterOf(null); setNote(msg); list.reload(); }} />
@@ -238,7 +244,7 @@ function AdapterEditor({ source, onClose, onSaved }: { source: AdminSource; onCl
           <Banner tone="ok">
             Hợp lệ — {check.summary.id} v{check.summary.version} · {check.summary.allowed_endpoints} endpoint được phép ·
             {' '}{check.summary.capabilities.map((c) => (c.sink ? `${c.id} → ${c.sink}` : c.id)).join(', ')}
-            {check.summary.password_login ? ' · tự đăng nhập bằng mật khẩu' : ''}{check.summary.folder_kpis ? ` · ${check.summary.folder_kpis} thẻ Tổng quan` : ''}
+            {check.summary.password_login ? ' · tự đăng nhập bằng mật khẩu' : ''}
           </Banner>
         )}
         <div className="mt-4 flex justify-end gap-2">

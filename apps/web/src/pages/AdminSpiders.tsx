@@ -1,6 +1,7 @@
 import { useEffect, useState, type KeyboardEvent } from 'react';
 import { ApiProblem, api, fmtDateTime, type AdminSource, type AdminUser } from '../api';
 import { useAsync } from '../hooks';
+import { NoMatch, Pager, SearchBox, useTableView } from '../components/TableTools';
 import { Empty, ErrorBox, Loading } from '../components/States';
 import { Badge, Banner, Button, Card, Field, Input, Muted, PageTitle, Select, Table, Td, Th, type Tone } from '../components/ui';
 
@@ -86,6 +87,7 @@ export function AdminSpidersPage() {
   };
 
   const d = list.data;
+  const tv = useTableView(d?.spiders, (s) => `${s.ten} ${s.code} ${s.source_ten} ${s.is_enabled ? '' : 'đang tắt'} ${s.crawlab_spider_id ? 'đã đồng bộ' : 'chưa đồng bộ'}`);
   return (
     <>
       <PageTitle title="Script crawl"
@@ -111,11 +113,13 @@ export function AdminSpidersPage() {
       )}
 
       {d && !d.spiders.length && <Empty>Chưa có spider nào. Bấm “Thêm spider” để viết spider cho một hệ thống nguồn.</Empty>}
-      {!!d?.spiders.length && (
+      {!!d?.spiders.length && <div className="mb-3"><SearchBox value={tv.q} onChange={tv.setQ} delay={0} placeholder="Tìm theo tên, mã, hệ thống…" /></div>}
+      {!!d?.spiders.length && !tv.total && <NoMatch q={tv.q} onClear={() => tv.setQ('')} />}
+      {!!tv.total && (<>
         <Table>
           <thead><tr><Th>Spider</Th><Th>Hệ thống</Th><Th>Đồng bộ</Th><Th num>Người đặt lịch</Th><Th>Lần chạy gần nhất</Th><Th>Chạy thử cho</Th><Th /></tr></thead>
           <tbody>
-            {d.spiders.map((s) => {
+            {tv.rows.map((s) => {
               const lr = s.last_run ? RUN[s.last_run.status] ?? ['neutral', s.last_run.status] as [Tone, string] : null;
               return (
                 <tr key={s.code}>
@@ -145,7 +149,8 @@ export function AdminSpidersPage() {
             })}
           </tbody>
         </Table>
-      )}
+        <Pager page={tv.page} pageSize={tv.pageSize} total={tv.total} onPage={tv.setPage} onPageSize={tv.setPageSize} unit="spider" />
+      </>)}
 
       {editing && (
         <SpiderEditor code={editing === 'new' ? null : editing} onClose={() => setEditing(null)}

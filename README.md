@@ -97,18 +97,16 @@ Thử trên dev:
 
 ## Tổng quan và hệ thống nguồn (cập nhật 28/09/2026)
 
-**Tổng quan** (`/tong-quan`, trang mặc định) liệt kê mọi báo cáo người dùng được xem, mỗi báo cáo một ô, dữ liệu lấy từ `GET /api/v1/dashboard`. Mỗi ô chạy báo cáo qua đúng `runReport`, tức là có RLS và audit. Ô tự đổi theo tình trạng:
+**Tổng quan** (`/tong-quan`, trang mặc định) **cấu hình hoàn toàn trên cổng** (cập nhật 29/09/2026): gồm các **tab** do quản trị tạo (*Cấu hình báo cáo → Tab trên Tổng quan*, bảng `dashboard_tabs`), mỗi tab gồm các **khối**, mỗi khối là một báo cáo cấu hình chọn "Ở tab" đó (`report_catalog.dashboard_tab`, độ rộng `dashboard_width` 1–3 phần ba hàng, thứ tự `dashboard_order`). Báo cáo hiện trên Tổng quan mà không thuộc tab nào nằm ở tab *Báo cáo của bạn*. Tab gắn một hệ thống nguồn thì hiện tình trạng kết nối và nút Kết nối / Cập nhật ngay; tab không có khối nào người xem được thì tự ẩn. Dữ liệu lấy từ `GET /api/v1/dashboard`; mỗi khối chạy báo cáo qua đúng `runReport`, tức là có RLS và audit. Khối tự đổi theo tình trạng:
 
 | Tình trạng | Ô hiện |
 | --- | --- |
 | `ok` | thẻ số liệu / biểu đồ đầu tiên / 5 dòng đầu, kèm "Cập nhật ngay" |
 | `can_ket_noi` | nút **Kết nối <nguồn>**: có tiện ích thì kết nối qua tiện ích, không thì mở *Tài khoản nguồn* (`?ket-noi=<nguồn>`) |
 | `het_han` | nút **Kết nối lại** |
-| `chua_co_du_lieu` | nút **Lấy dữ liệu ngay** (`POST /me/sources/:nguồn/run-now`, một lần / 5 phút) |
+| `chua_co_du_lieu` | nút **Lấy dữ liệu ngay** (`POST /me/sources/:nguồn/run-now`, một lần / 10 phút) |
 
-Phần đầu Tổng quan (`GET /api/v1/dashboard/overview`, chỉ dữ liệu của chính người xem, có RLS và audit) vẽ bằng **ECharts**, chỉ nạp các thành phần cần dùng và tách thành chunk riêng:
-- Văn bản: thẻ KPI (nhận tháng này kèm chênh lệch so với tháng trước và sparkline 12 tháng, tổng, chờ xử lý, đang theo dõi), đường có vùng tô theo tháng, cột ngang theo thư mục, lịch nhiệt 26 tuần.
-- Công việc: thẻ quá hạn, đến hạn 7 ngày, đang làm, thanh tiến độ tỷ lệ hoàn thành, vành khuyên theo trạng thái, cột đến hạn 14 ngày tới.
+Khối vẽ bằng **ECharts** theo loại biểu đồ trong định nghĩa báo cáo: cột ngang (so sánh hạng mục), cột đứng (theo ngày/tháng), đường (xu hướng), vành khuyên (phần của tổng, 3 nhóm lớn + "Khác"), lịch nhiệt (mật độ theo ngày). Thẻ số liệu có thể kèm **xu hướng theo tháng** của một trường ngày (số tháng này, chênh lệch so với tháng trước, sparkline 12 tháng) hoặc là **tỉ lệ %** (thanh tiến độ). Không còn phần Văn bản / Công việc viết cứng trong code: hai tab đó giờ là cấu hình mẫu trong CSDL, sửa/xoá như mọi tab khác.
 
 Bảng màu lấy theo palette tham chiếu của skill dataviz ([apps/web/src/viz.ts](apps/web/src/viz.ts)) và đã chạy validator trên đúng nền thẻ của cổng, cả sáng lẫn tối. Số liệu có hiệu ứng đếm lên, biểu đồ có hiệu ứng xuất hiện; cả hai tắt khi người dùng bật *giảm chuyển động*.
 
@@ -120,10 +118,9 @@ Kết nối qua tiện ích xong thì Tổng quan tự gọi "Lấy dữ liệu 
 - xác thực: cookie phiên, tên miền cookie, trang kiểm tra phiên, cách tự đăng nhập;
 - `allowed_endpoints`: các endpoint được phép gọi;
 - các capability và `output_schema`;
-- **`sink`**: bảng đích của từng capability (`documents` / `tasks`, cột nào). Trước đây phần này viết cứng trong `crawl.ts`. Tên bảng và cột chỉ được chọn trong `SINK_TABLES`, nên cấu hình không thể chèn SQL;
-- **`dashboard.folder_kpis`**: thẻ theo thư mục trên Tổng quan.
+- **`sink`**: bảng đích của từng capability (`documents` / `tasks` / `records`, cột nào). Trước đây phần này viết cứng trong `crawl.ts`. Tên bảng và cột chỉ được chọn trong `SINK_TABLES`, nên cấu hình không thể chèn SQL.
 
-Tổng quan tự sinh một phần *Văn bản* / *Công việc* cho **mọi** hệ thống có capability ghi vào bảng tương ứng. Code không còn nhắc tới `egov`/`etask`. Hệ thống tạo nhanh (chỉ phiên đăng nhập) nâng lên cấu hình đầy đủ bằng cách dán adapter vào cùng hộp đó. Mọi lần lưu đều ghi `core.adapters` và audit `source_change`. Cổng áp dụng ngay; worker nạp lại mỗi phút.
+Code không còn nhắc tới `egov`/`etask`. Hệ thống tạo nhanh (chỉ phiên đăng nhập) nâng lên cấu hình đầy đủ bằng cách dán adapter vào cùng hộp đó. Mọi lần lưu đều ghi `core.adapters` và audit `source_change`. Cổng áp dụng ngay; worker nạp lại mỗi phút.
 
 **Thêm hệ thống mới từ đầu đến Tổng quan, không sửa code (cập nhật 28/09/2026):**
 1. *Hệ thống nguồn → Thêm*: dán cấu hình adapter. Capability ghi vào `sink: { table: records }` là **bảng dữ liệu chung** (`records`): trường theo `output_schema`, nhãn lấy từ `label`, có lịch sử SCD2 và RLS cá nhân/đơn vị như văn bản. Muốn đưa vào bảng văn bản/công việc thì dùng `documents` / `tasks`.
@@ -132,15 +129,13 @@ Tổng quan tự sinh một phần *Văn bản* / *Công việc* cho **mọi** h
 4. *Cấu hình báo cáo → Tạo báo cáo* (`/cau-hinh-bao-cao`), không viết SQL. Chọn:
    - hệ thống, tập dữ liệu, kiểu *Thống kê* (nhóm theo, phép tính, biểu đồ) hoặc *Danh sách* (cột);
    - trường ngày cho tham số khoảng thời gian, ô từ khoá, bộ lọc người xem tự chọn (lựa chọn lấy từ dữ liệu);
-   - điều kiện cố định, thẻ KPI có ngưỡng cảnh báo;
-   - **Hiện trên Tổng quan** và thứ tự.
+   - điều kiện cố định (kể cả so với hôm nay: trước/đúng/đến hôm nay, trong tháng này, trong N ngày tới/qua), thẻ KPI có ngưỡng cảnh báo, xu hướng theo tháng hoặc tỉ lệ %;
+   - **Hiện trên Tổng quan**: ở tab nào, độ rộng khối, thứ tự.
 
    Có nút *Xem thử* trên dữ liệu quản trị được xem. Máy chủ dựng SQL từ danh mục trường cho phép, còn mọi giá trị đi qua tham số ([reports/defined.ts](apps/api/src/reports/defined.ts)). Báo cáo trên văn bản/công việc tự nối với spider có sẵn của hệ thống đó.
-5. Báo cáo có sẵn (viết trong code) vẫn chạy như cũ. Trên trang *Cấu hình báo cáo* chỉ sửa được tên, mô tả, bật/tắt, hiện trên Tổng quan và thứ tự.
+5. Mọi báo cáo đều là báo cáo cấu hình (không còn báo cáo viết trong code): sửa được toàn bộ, xoá được (kèm lịch chạy của nó) trong menu "…".
 
 `scheduling.selector` (SQL trong YAML cũ) **không còn được dùng**: cấu hình sửa được trên cổng thì không được chứa câu lệnh chạy bằng quyền ghi. Người cần crawl do `FANOUT_SELECTOR` cố định trong `queue.ts` chọn.
-
-Còn là giả định trong code: các mã trạng thái việc (`HoanThanh`, `DangThucHien`, `ChuaBatDau`) mà báo cáo và Tổng quan dùng. Muốn đổi thì chuẩn hoá chúng trong `output_schema`.
 
 Danh mục hệ thống nằm trong bộ nhớ API (`SourceRegistry`), được nạp lại sau mỗi lần sửa. Chạy nhiều tiến trình API thì phải nạp lại ở mọi tiến trình, hoặc khởi động lại.
 

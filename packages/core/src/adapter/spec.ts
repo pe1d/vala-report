@@ -127,14 +127,6 @@ export const AdapterSpecSchema = z.object({
     // cấu hình sửa được trên cổng nên không bao giờ được chứa câu lệnh chạy bằng quyền ghi.
     scheduling: z.object({}).passthrough().optional(),
     monitoring: z.object({ schema_baseline_fields: z.array(z.string()) }).passthrough(),
-    // Tuỳ chọn cho trang Tổng quan: thẻ KPI đếm văn bản theo thư mục (khớp tên thư mục, ILIKE).
-    dashboard: z.object({
-      folder_kpis: z.array(z.object({
-        label: z.string().min(1).max(60),
-        match: z.string().min(1).max(100),
-        warn_if_positive: z.boolean().default(false),
-      })).max(4).default([]),
-    }).optional(),
   }).passthrough(),
 });
 
