@@ -68,6 +68,14 @@ export class CrawlabClient {
   updateSpider(id: string, s: { name: string; description: string; cmd: string }) {
     return this.call('PUT', `/spiders/${id}`, { _id: id, ...s, col_name: `results_${s.name}`, mode: 'random', priority: 5, node_ids: [] });
   }
+  /** File ở thư mục gốc của spider trên Crawlab (rỗng nếu Crawlab mất file, vd sau khi khởi động lại). */
+  listFiles(spiderId: string, path = '') {
+    return this.call<Array<{ name: string; is_dir?: boolean }> | null>('GET', `/spiders/${spiderId}/files/list?path=${encodeURIComponent(path)}`).then((d) => d ?? []);
+  }
+  /** Nội dung một file của spider trên Crawlab (null nếu không có). */
+  getFile(spiderId: string, path: string) {
+    return this.call<string | null>('GET', `/spiders/${spiderId}/files/get?path=${encodeURIComponent(path)}`).catch(() => null);
+  }
   saveFile(spiderId: string, path: string, data: string) {
     return this.call('POST', `/spiders/${spiderId}/files/save`, { path, data });
   }

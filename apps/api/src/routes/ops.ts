@@ -28,6 +28,17 @@ export const opsRoutes = (deps: ApiDeps): FastifyPluginAsync => async (app) => {
          (SELECT count(*) FROM crawl_runs WHERE error_code = 'schema_drift' AND started_at > now() - interval '24 hours')::int AS drift_24h,
          (SELECT count(*) FROM source_grants g WHERE g.revoked_at IS NULL AND g.session_state = 'active'
              AND NOT EXISTS (SELECT 1 FROM crawl_runs r WHERE r.app_user_id = g.app_user_id AND r.source_system = g.source_system
-                              AND r.status = 'ok' AND r.finished_at > now() - interval '48 hours'))::int AS users_no_success_48h`));
+                              AND r.status = 'ok' AND r.finished_at > now() - interval '48 hours'))::int AS users_no_success_48h,
+         -- Lịch đã quá giờ (trừ 10 phút rải giờ + nhịp 1 phút) mà bộ hẹn giờ chưa xử lý ⇒ worker đang ngừng.
+         (SELECT count(*) FROM report_subscriptions rs
+            JOIN report_catalog rc ON rc.code = rs.report_code AND rc.is_active
+            JOIN core.source_systems ss ON ss.code = rc.source_system AND ss.enabled
+            JOIN app_users au ON au.id = rs.app_user_id AND au.is_active
+           WHERE rs.is_enabled AND rs.next_run_at < now() - interval '10 minutes')::int AS overdue_schedules,
+         -- Lượt spider hỏng ngay trong Crawlab (không tới được Vala) 24 giờ qua.
+         (SELECT count(*) FROM crawl_runs WHERE error_code IN ('spider_not_started', 'spider_launch_failed', 'spider_not_synced')
+             AND started_at > now() - interval '24 hours')::int AS launch_failures_24h,
+         (SELECT jsonb_build_object('at', at, 'info', info) FROM core.service_heartbeats WHERE name = 'worker') AS worker,
+         (SELECT jsonb_build_object('at', at, 'info', info) FROM core.service_heartbeats WHERE name = 'crawlab') AS crawlab`));
   });
 };

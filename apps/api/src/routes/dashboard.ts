@@ -6,7 +6,9 @@
  */
 import type { FastifyPluginAsync } from 'fastify';
 import { randomUUID } from 'node:crypto';
-import { Problem, allowedScopes, loadMemberships, withTenant, type Scope } from '@vala/core';
+import {
+  allowedScopes, launchSpider, loadMemberships, Problem, withTenant, type Scope,
+} from '@vala/core';
 import { loadAllSpecs } from '@vala/core/adapter';
 import { audit } from '../audit.js';
 import type { ApiDeps } from '../deps.js';
@@ -109,7 +111,8 @@ export const dashboardRoutes = (deps: ApiDeps): FastifyPluginAsync => async (app
     await withTenant(deps.writer, (t) => audit(t, req, 'run_now', { type: 'source', id: source }));
     if (deps.crawlab && spiders.some((s) => s.crawlab_spider_id)) {
       const ids: string[] = [];
-      for (const s of spiders) if (s.crawlab_spider_id) ids.push(...await deps.crawlab.runSpider(s.crawlab_spider_id, `--user ${req.user.id}`));
+      // launchSpider: kiểm tra/khôi phục mã spider trên Crawlab, ghi lượt khởi chạy (lỗi ⇒ hiện ở Nhật ký chạy).
+      for (const s of spiders) if (s.crawlab_spider_id) ids.push(...await launchSpider(deps.writer, deps.crawlab, { spiderCode: s.code, userId: req.user.id, trigger: 'manual' }));
       return reply.status(202).send({ executor: 'crawlab', queued: ids.length });
     }
     // Không có spider: worker chạy thẳng các bước lấy dữ liệu khai trong cấu hình adapter (mọi capability có sink).

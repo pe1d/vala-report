@@ -3,7 +3,9 @@ import { Queue, type ConnectionOptions } from 'bullmq';
 import { findSpec, loadAllSpecs, type AdapterSpec } from './adapter/index.js';
 import { withTenant, type Db } from './db/index.js';
 import { env } from './env.js';
+import type { CrawlabClient } from './crawlab.js';
 import { JITTER_SQL, ScheduleSchema, nextScheduleRuns, type Schedule } from './schedule.js';
+import { launchSpider } from './spiderOps.js';
 import type { CrawlJob, TriggerType } from './ingest/crawl.js';
 
 export const CRAWL_QUEUE = 'crawl';
@@ -111,8 +113,6 @@ export const SCHEDULE_MIN_GAP_MINUTES = Number(process.env.SCHEDULE_MIN_GAP_MINU
 
 export interface DueScheduleResult { due: number; started: number; skipped: number; deferred: number }
 
-/** Phần Crawlab worker cần: chạy một spider với tham số dòng lệnh. */
-export interface SpiderRunner { runSpider(spiderId: string, param: string): Promise<string[]> }
 
 /**
  * Bộ hẹn giờ lịch người dùng tự đặt (worker gọi mỗi phút). Với mỗi lịch đến hạn (giờ đặt + độ lệch rải giờ):
@@ -125,7 +125,7 @@ export interface SpiderRunner { runSpider(spiderId: string, param: string): Prom
  *   5. báo cáo có spider ⇒ chạy spider trên Crawlab cho ĐÚNG người đó (--user); không có ⇒ job crawl của worker.
  */
 export async function runDueSchedules(
-  writer: Db, queue: Pick<Queue<CrawlJob>, 'addBulk'>, crawlab: SpiderRunner | null, now = new Date(),
+  writer: Db, queue: Pick<Queue<CrawlJob>, 'addBulk'>, crawlab: CrawlabClient | null, now = new Date(),
   log: (msg: string, meta?: Record<string, unknown>) => void = () => {},
 ): Promise<DueScheduleResult> {
   type Row = {
@@ -193,9 +193,10 @@ export async function runDueSchedules(
   const tick = now.toISOString().slice(0, 16);
   for (const r of plan) {
     if (r.spider_code) {
-      if (!crawlab || !r.crawlab_spider_id) { res.skipped++; log('lịch cần spider nhưng Crawlab chưa sẵn sàng', { spider: r.spider_code }); continue; }
+      if (!crawlab) { res.skipped++; log('lịch cần spider nhưng chưa cấu hình Crawlab', { spider: r.spider_code }); continue; }
       try {
-        await crawlab.runSpider(r.crawlab_spider_id, `--user ${r.app_user_id} --trigger schedule`);
+        // Kiểm tra/khôi phục mã spider trên Crawlab, chạy, ghi lượt khởi chạy; lỗi ⇒ đã ghi vào Nhật ký chạy.
+        await launchSpider(writer, crawlab, { spiderCode: r.spider_code, userId: r.app_user_id, trigger: 'schedule' });
         res.started++;
       } catch (e) {
         res.skipped++;

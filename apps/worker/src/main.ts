@@ -5,7 +5,7 @@
 import { Worker } from 'bullmq';
 import {
   CRAWL_CONCURRENCY, CRAWL_QUEUE, ConnectionSessions, CrawlabClient, MAINTENANCE_QUEUE, SessionManager, SourceRegistry, SsoClient, TENANT, closeAllPools,
-  crawlUserSource, crawlQueue, crawlabConfigFromEnv, ensureRecordIndexes, envBool, markSourceMfa, runDueSchedules, fanOut, maintenanceQueue, redisConnection, refreshExpiringSessions, secretStore,
+  checkCrawlabHealth, checkSpiderLaunches, crawlUserSource, crawlQueue, crawlabConfigFromEnv, ensureRecordIndexes, heartbeat, markSourceMfa, runDueSchedules, maintenanceQueue, redisConnection, refreshExpiringSessions, secretStore,
   ssoConfigFromEnv, withTenant, writerDb, type CrawlJob,
 } from '@vala/core';
 import { loadAllSpecs, registerSpecs } from '@vala/core/adapter';
@@ -94,11 +94,18 @@ const maintenanceWorker = new Worker(
         // Bộ hẹn giờ lịch người dùng tự đặt: spider (qua Crawlab, --user) hoặc các bước lấy dữ liệu trong adapter.
         const r = await runDueSchedules(writer, crawl, crawlab, new Date(), (msg, meta) => log.warn(msg, meta));
         if (r.due) log.info('lịch đến hạn', { ...r });
+        // Lượt spider đã khởi chạy mà không gọi tới Vala ⇒ ghi lỗi kèm lý do từ Crawlab (Nhật ký chạy).
+        if (crawlab) {
+          const c = await checkSpiderLaunches(writer, crawlab);
+          if (c.failed) log.warn('lượt spider không khởi chạy được', c);
+        }
+        await heartbeat(writer, 'worker', { pid: process.pid });
         return;
       }
-      case 'dev_fanout': {
-        const res = await fanOut(writer, crawl, { ...(job.data as { source: string; capability: string; preset: string }), trigger: 'schedule' });
-        log.info('dev fan-out', { ...job.data, ...res });
+      case 'crawlab_health': {
+        // Crawlab còn liên lạc được không, spider nào mất file (vd sau khi khởi động lại) ⇒ đẩy lại mã từ CSDL.
+        const info = await checkCrawlabHealth(writer, crawlab);
+        if ((info.restored as string[] | undefined)?.length || info.reachable === false) log.warn('kiểm tra Crawlab', info);
         return;
       }
       default:
@@ -111,20 +118,13 @@ const maintenanceWorker = new Worker(
 await maintenance.upsertJobScheduler('raw_partitions', { pattern: '0 2 * * *', tz: 'Asia/Ho_Chi_Minh' }, { name: 'raw_partitions' });
 await maintenance.upsertJobScheduler('session_refresh', { every: 10 * 60_000 }, { name: 'session_refresh' });
 await maintenance.upsertJobScheduler('due_subscriptions', { every: 60_000 }, { name: 'due_subscriptions' });
-
-// Dev không có Crawlab: tự kích hoạt theo core.crawl_tasks. Production: Crawlab gọi /internal/crawl/fan-out.
-if (envBool('DEV_SCHEDULER')) {
-  const tasks = await withTenant(writer, (t) => t.any<{ source_system: string; capability: string; schedule_preset: string; cron_expr: string }>(
-    'SELECT source_system, capability, schedule_preset, cron_expr FROM core.crawl_tasks WHERE is_enabled'));
-  for (const task of tasks) {
-    await maintenance.upsertJobScheduler(
-      `dev_fanout:${task.source_system}:${task.capability}:${task.schedule_preset}`,
-      { pattern: task.cron_expr, tz: 'Asia/Ho_Chi_Minh' },
-      { name: 'dev_fanout', data: { source: task.source_system, capability: task.capability, preset: task.schedule_preset } },
-    );
-  }
-  log.warn('DEV_SCHEDULER bật — worker tự chạy lịch thay Crawlab', { tasks: tasks.length });
-}
+await maintenance.upsertJobScheduler('crawlab_health', { every: 10 * 60_000 }, { name: 'crawlab_health' });
+// Ngay khi khởi động: báo còn sống + kiểm tra Crawlab (máy chủ vừa khởi động lại thì Crawlab hay mất mã spider).
+await heartbeat(writer, 'worker', { pid: process.pid, started: true }).catch(() => {});
+checkCrawlabHealth(writer, crawlab).then(
+  (info) => log.info('kiểm tra Crawlab lúc khởi động', info),
+  (e: Error) => log.error('kiểm tra Crawlab lỗi', { err: e.message }),
+);
 
 async function shutdown(signal: string) {
   log.info('dừng worker', { signal });

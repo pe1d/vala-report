@@ -1,8 +1,7 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { randomUUID } from 'node:crypto';
 import {
-  Problem, SCHEDULE_TEMPLATES, describeSchedule, nextScheduleRuns, parseSchedule, withTenant, withUserContext,
-  type Schedule, type UserContext,
+  describeSchedule, launchSpider, nextScheduleRuns, parseSchedule, Problem, SCHEDULE_TEMPLATES, withTenant, withUserContext, type Schedule, type UserContext,
 } from '@vala/core';
 import { audit } from '../audit.js';
 import type { ApiDeps } from '../deps.js';
@@ -129,8 +128,7 @@ export const subscriptionRoutes = (deps: ApiDeps): FastifyPluginAsync => async (
     await withUserContext(deps.reader, own(req.user.id), (t) => audit(t, req, 'run_now', { type: 'subscription', id: String(id) }));
     // Báo cáo lấy dữ liệu bằng spider Python ⇒ chạy spider trên Crawlab, riêng cho người này.
     if (sub.spider_code && deps.crawlab) {
-      if (!sub.crawlab_spider_id) throw new Problem('internal', 'Spider chưa được đồng bộ lên Crawlab', 'Quản trị cần bấm "Đồng bộ Crawlab"');
-      const tasks = await deps.crawlab.runSpider(sub.crawlab_spider_id, `--user ${req.user.id} --trigger manual`);
+      const tasks = await launchSpider(deps.writer, deps.crawlab, { spiderCode: sub.spider_code, userId: req.user.id, trigger: 'manual' });
       return reply.status(202).send({ run_key: tasks[0] ?? null, queued: 1, executor: 'crawlab' });
     }
     // Không có spider: worker chạy các bước lấy dữ liệu trong cấu hình adapter, riêng cho người này.

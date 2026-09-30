@@ -5,7 +5,9 @@
  * Bí mật chỉ vào vault; không endpoint nào trả lại mật khẩu hay cookie.
  */
 import type { FastifyPluginAsync } from 'fastify';
-import { Problem, getSpider, spiderMainPy, syncCrawlab, withTenant } from '@vala/core';
+import {
+  getSpider, launchSpider, Problem, spiderMainPy, syncCrawlab, withTenant,
+} from '@vala/core';
 import { audit } from '../audit.js';
 import { configureConnection, connectionBodySchema, deleteConnection, listConnections, testConnection, type ConnectionBody } from '../connections.js';
 import type { ApiDeps } from '../deps.js';
@@ -140,8 +142,7 @@ export const adminRoutes = (deps: ApiDeps): FastifyPluginAsync => async (app) =>
     if (!deps.crawlab) throw new Problem('internal', 'Chưa cấu hình Crawlab');
     const sp = await getSpider(deps.writer, req.params.code);
     if (!sp.crawlab_spider_id) throw new Problem('invalid_params', 'Spider chưa đồng bộ lên Crawlab', 'Bấm "Đồng bộ Crawlab" trước');
-    const tasks = await deps.crawlab.runSpider(sp.crawlab_spider_id, `--user ${req.body.user_id}`)
-      .catch((e: Error) => { throw new Problem('internal', 'Crawlab không chạy được spider', e.message.slice(0, 400)); });
+    const tasks = await launchSpider(deps.writer, deps.crawlab, { spiderCode: sp.code, userId: req.body.user_id, trigger: 'manual' });
     return reply.status(202).send({ crawlab_task_ids: tasks });
   });
 };
