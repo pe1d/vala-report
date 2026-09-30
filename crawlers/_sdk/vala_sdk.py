@@ -34,7 +34,7 @@ from urllib.parse import urlparse
 
 import requests
 
-__all__ = ['Vala', 'Run', 'SessionExpired', 'SchemaDrift', 'ApiError']
+__all__ = ['Vala', 'Run', 'SessionExpired', 'SchemaDrift', 'SourceUnavailable', 'ApiError']
 
 REDIRECT_OR_DENIED = {301, 302, 303, 307, 308, 401, 403}
 
@@ -45,6 +45,10 @@ class SessionExpired(Exception):
 
 class SchemaDrift(Exception):
     """Hệ thống nguồn đã đổi cấu trúc dữ liệu (mất trường/khối dữ liệu mong đợi)."""
+
+
+class SourceUnavailable(Exception):
+    """Hệ thống nguồn lỗi (HTTP 5xx) hoặc không phản hồi — KHÔNG phải do phiên; không bắt người dùng đăng nhập lại."""
 
 
 class SourceResponseError(Exception):
@@ -68,6 +72,7 @@ class ApiError(Exception):
         self.status = status
         self.type = body.get('type') if isinstance(body, dict) else None
         self.title = body.get('title') if isinstance(body, dict) else str(body)
+        self.detail = body.get('detail') if isinstance(body, dict) else None
         super().__init__(f'{status} {self.type}: {self.title}')
 
 
@@ -116,8 +121,11 @@ class Run:
         self.base_url = self._pinned_base
 
     # ---- phiên ----
-    def session(self, refresh=False):
-        s = self._api.post(f'/runs/{self.run_id}/session', {'refresh': refresh})
+    def session(self, refresh=False, reason=None):
+        body = {'refresh': refresh}
+        if reason:
+            body['reason'] = reason
+        s = self._api.post(f'/runs/{self.run_id}/session', body)
         # Gửi thẳng header Cookie: đúng bộ cookie backend cấp, không phụ thuộc cách jar khớp domain.
         self.http.cookies.clear()
         self.session_cookies = s.get('cookies') or {}
@@ -129,12 +137,13 @@ class Run:
             self.base_url = s['base_url'].rstrip('/')
         return s
 
-    def refresh(self):
-        """Xin backend phiên mới (tối đa một lần mỗi người mỗi lượt chạy)."""
+    def refresh(self, reason=None):
+        """Xin backend phiên mới (tối đa một lần mỗi người mỗi lượt chạy). `reason` = request bị từ chối
+        ({'status', 'path'} — không có query) để backend kiểm tra lại phiên và ghi đúng lý do, không đoán "hết hạn"."""
         if self._refreshed:
             raise SessionExpired('phiên vẫn hỏng sau khi đã lấy phiên mới')
         self._refreshed = True
-        self.session(refresh=True)
+        self.session(refresh=True, reason=reason)
 
     # ---- gọi hệ thống nguồn ----
     def _throttle(self):
@@ -146,19 +155,32 @@ class Run:
     def _request(self, method, path, **kw):
         if not path.startswith('/'):
             raise ValueError('path phải bắt đầu bằng / (chỉ gọi trong hệ thống nguồn của kết nối)')
+        plain = path.split('?', 1)[0]
         for attempt in (1, 2):
             self._throttle()
             self.calls += 1
-            r = self.http.request(method, self.base_url + path, allow_redirects=False, timeout=30, **kw)
+            try:
+                r = self.http.request(method, self.base_url + path, allow_redirects=False, timeout=30, **kw)
+            except (requests.ConnectionError, requests.Timeout) as e:
+                # Nguồn không phản hồi: đợi rồi thử lại một lần; vẫn không được ⇒ "nguồn đang lỗi", không đụng tới phiên.
+                if attempt == 1:
+                    time.sleep(5)
+                    continue
+                raise SourceUnavailable(f'{method} {plain} không phản hồi ({type(e).__name__})')
+            if r.status_code >= 500:
+                if attempt == 1:
+                    time.sleep(5)
+                    continue
+                raise SourceUnavailable(f'{method} {plain} → HTTP {r.status_code}')
             if r.status_code not in REDIRECT_OR_DENIED:
                 r.raise_for_status()
                 # .json() lỗi thì báo rõ request nào — thay vì JSONDecodeError trơn không biết ở đâu.
                 r.json = lambda *a, _r=r, _m=method, _p=path, **k: _json_or_explain(_r, _m, _p)
                 return r
             if attempt == 1 and not self._refreshed:
-                self.refresh()
+                self.refresh({'status': r.status_code, 'path': plain})
                 continue
-            raise SessionExpired(f'{method} {path} → {r.status_code}')
+            raise SessionExpired(f'{method} {plain} → {r.status_code}')
 
     def get(self, path, **kw):
         return self._request('GET', path, **kw)
@@ -233,10 +255,14 @@ class Vala:
                 ok += 1
                 print(f'[vala] user={run.user_id} ok, bản ghi={run.saved}, request={run.calls}', flush=True)
             except ApiError as e:
-                # Backend đã tự đánh dấu lượt chạy (hết phiên, sai mật khẩu, lệch schema…).
+                # Backend đã tự đánh dấu lượt chạy (phiên mất/hết hạn, nguồn lỗi, sai mật khẩu, lệch schema…).
                 failed += 1
-                _safe_finish(run, e.type or 'api_error', e.title)
-                print(f'[vala] user={run.user_id} lỗi: {e.type} — {e.title}', flush=True)
+                _safe_finish(run, e.type or 'api_error', e.detail or e.title)
+                print(f'[vala] user={run.user_id} lỗi: {e.type} — {e.title}{" — " + e.detail if e.detail else ""}', flush=True)
+            except SourceUnavailable as e:
+                failed += 1
+                _safe_finish(run, 'source_unavailable', f'Hệ thống nguồn đang lỗi: {e}')
+                print(f'[vala] user={run.user_id} nguồn đang lỗi: {e}', flush=True)
             except SessionExpired as e:
                 failed += 1
                 _safe_finish(run, 'session_expired', str(e))

@@ -12,7 +12,7 @@
     "dev:web": "pnpm --filter @vala/web dev",
     "dev:up": "docker compose up postgres redis vault api-dev worker-dev web-dev",
     "dev:up:d": "docker compose up -d postgres redis vault api-dev worker-dev web-dev",
-    "dev:down": "docker compose down",
+    "dev:down": "docker compose --profile dev down",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r --workspace-concurrency=1 test"
   }

@@ -175,6 +175,22 @@ export class ConnectionSessions {
     return { cookies: { ...raw, ...Object.fromEntries(filled.map((n) => [n, prev!.cookies[n]!])) }, filled };
   }
 
+  /**
+   * Kiểm tra phiên ĐANG LƯU bằng session_probe (không lấy phiên mới): còn sống / nguồn từ chối phiên (hết hạn thật) /
+   * không có trong kho / nguồn đang lỗi. Dùng khi spider bị 401/403 để không kết luận "hết hạn" khi phiên vẫn tốt.
+   */
+  async checkStoredSession(userId: number, source: string): Promise<{ state: 'alive' | 'expired' | 'missing' | 'unavailable'; detail?: string }> {
+    const cur = await this.o.secrets.get<SessionSecret>(this.sessionRef(userId, source));
+    if (!cur) return { state: 'missing' };
+    try {
+      await this.verifyCookies(source, cur.cookies);
+      return { state: 'alive' };
+    } catch (e) {
+      if (e instanceof Problem && e.type === 'session_expired') return { state: 'expired', detail: e.detail ?? e.title };
+      return { state: 'unavailable', detail: e instanceof Problem ? e.detail ?? e.title : (e as Error).message };
+    }
+  }
+
   /** Phiên do tiện ích trình duyệt gửi về (đã qua verifyCookies). */
   async saveSession(userId: number, source: string, cookies: Record<string, string>): Promise<SessionSecret> {
     const secret: SessionSecret = { cookies, obtained_at: new Date().toISOString() };

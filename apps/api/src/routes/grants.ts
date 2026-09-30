@@ -23,7 +23,7 @@ export const grantRoutes = (deps: ApiDeps): FastifyPluginAsync => async (app) =>
       `SELECT ss.code AS source_system, ss.ten,
               coalesce(CASE WHEN g.revoked_at IS NOT NULL THEN 'revoked' ELSE g.session_state END, 'pending') AS session_state,
               g.granted_at, g.session_expires_at, coalesce(g.scope_capabilities, '{}') AS scope_capabilities,
-              g.last_refresh_at, g.revoked_at,
+              g.last_refresh_at, g.revoked_at, g.auth_method, g.last_error,
               (SELECT max(r.finished_at) FROM crawl_runs r
                 WHERE r.app_user_id = $1 AND r.source_system = ss.code AND r.status = 'ok') AS last_success_at,
               (g.id IS NOT NULL AND g.revoked_at IS NULL AND g.session_state = 'active') AS can_crawl

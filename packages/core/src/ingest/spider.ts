@@ -11,10 +11,11 @@
  *   finish   đóng crawl_run, cập nhật lịch của người dùng.
  */
 import { findSpec, loadAllSpecs, normalizeCapability, type AdapterSpec, type FetchResult } from '../adapter/index.js';
-import { isPermanentLoginError, type AuthMethod, type ConnectionSessions, type SourceInfo } from '../connections.js';
+import { canAutoRenew, isPermanentLoginError, type AuthMethod, type ConnectionSessions, type SourceInfo } from '../connections.js';
 import { withTenant, type Db } from '../db/index.js';
 import { Problem } from '../errors.js';
 import { isPreset, nextRuns } from '../presets.js';
+import { markSpiderLaunchReported } from '../spiderOps.js';
 import type { SecretStore } from '../secrets.js';
 import { saveSourceAccount, sinkOf, upsertCurrent, writeRaw, type TriggerType } from './crawl.js';
 
@@ -111,6 +112,7 @@ export async function startSpiderRun(deps: SpiderDeps, req: StartRequest) {
     [spider.code, req.preset ?? null, req.userId ?? null, spider.source_system],
     (r: { app_user_id: number }) => r.app_user_id));
 
+  await markSpiderLaunchReported(deps.writer, req.crawlabTaskId);   // lượt Vala khởi chạy đã tới nơi (spider gọi được Vala)
   const info = await deps.sourceInfo(spider.source_system);
   const targets: SpiderTarget[] = [];
   for (const userId of users) {
@@ -125,8 +127,15 @@ export async function startSpiderRun(deps: SpiderDeps, req: StartRequest) {
   return { spider: spider.code, source_system: spider.source_system, entity: spider.entity, preset: req.preset ?? null, targets };
 }
 
-/** Cookie phiên cho target. refresh=true khi spider thấy phiên hỏng giữa chừng. */
-export async function spiderSession(deps: SpiderDeps, runId: number, opts: { refresh?: boolean } = {}) {
+/**
+ * Cookie phiên cho target. refresh=true khi spider bị nguồn từ chối (401/403/chuyển hướng) giữa chừng; `reason` là
+ * request bị từ chối (mã HTTP + đường dẫn) để ghi đúng lý do.
+ *
+ * Kết nối không tự lấy lại phiên được (tiện ích, cookie) thì KHÔNG vội kết luận "hết hạn": kiểm tra lại phiên đang
+ * lưu bằng session_probe — còn sống ⇒ lỗi của request đó (source_denied), nguồn lỗi ⇒ source_unavailable, không có
+ * trong kho ⇒ session_missing; chỉ khi nguồn từ chối chính phiên mới đánh dấu hết hạn.
+ */
+export async function spiderSession(deps: SpiderDeps, runId: number, opts: { refresh?: boolean; reason?: { status?: number; path?: string } } = {}) {
   const run = await loadRun(deps.writer, runId);
   const grant = await withTenant(deps.writer, (t) => t.oneOrNone<{ id: number; vault_ref: string; auth_method: AuthMethod }>(
     `SELECT id, vault_ref, auth_method FROM source_grants
@@ -137,12 +146,43 @@ export async function spiderSession(deps: SpiderDeps, runId: number, opts: { ref
     throw new Problem('grant_required', 'Kết nối không còn hiệu lực');
   }
   const info = await deps.sourceInfo(run.source_system);
+  const canRenew = canAutoRenew(grant.auth_method);
+  const why = opts.reason?.status ? `${opts.reason.path ?? '?'} → HTTP ${opts.reason.status}` : '';
+
+  /** Kết nối cần phiên mới từ người dùng (tiện ích tự gửi lại khi thấy kết nối không còn "đang dùng"). */
+  const needNewSession = async (type: 'session_expired' | 'session_missing', title: string, detail: string): Promise<never> => {
+    await withTenant(deps.writer, (t) => t.none(
+      `UPDATE source_grants SET session_state = 'expired', refresh_fail_count = refresh_fail_count + 1, last_error = $2 WHERE id = $1`,
+      [grant.id, `${title}: ${detail}`.slice(0, 300)]));
+    await failRun(deps.writer, runId, type, detail);
+    throw new Problem(type, title, detail);
+  };
+  /** Lỗi không do phiên: ghi lượt lỗi, giữ nguyên kết nối. */
+  const notSession = async (type: 'source_denied' | 'source_unavailable', title: string, detail: string): Promise<never> => {
+    await failRun(deps.writer, runId, type, detail);
+    throw new Problem(type, title, detail);
+  };
+  const missingMsg = `Kho bí mật không còn phiên ${run.source_system} (vd máy chủ khởi động lại) — mở ${run.source_system} trên trình duyệt có tiện ích Vala, tiện ích tự gửi lại`;
 
   if (!opts.refresh) {
     const cur = await deps.secrets.get(grant.vault_ref);
     if (cur && (!cur.expires_at || new Date(cur.expires_at).getTime() > Date.now() + 60_000)) {
       return { cookies: cur.cookies, base_url: info.baseUrl, expires_at: cur.expires_at ?? null, renewed: false };
     }
+    if (!cur && !canRenew) return needNewSession('session_missing', 'Phiên đã lưu bị mất', missingMsg);
+  }
+  if (opts.refresh && !canRenew) {
+    const st = await deps.connections.checkStoredSession(run.app_user_id, run.source_system);
+    if (st.state === 'alive') {
+      return notSession('source_denied', 'Nguồn từ chối request',
+        `${why || 'Một request'} bị từ chối nhưng phiên vẫn còn hiệu lực (kiểm tra lại phiên: OK) — không phải hết hạn`);
+    }
+    if (st.state === 'unavailable') {
+      return notSession('source_unavailable', 'Hệ thống nguồn đang lỗi', `${why ? `${why}; ` : ''}kiểm tra phiên: ${st.detail ?? 'không phản hồi'}`);
+    }
+    if (st.state === 'missing') return needNewSession('session_missing', 'Phiên đã lưu bị mất', missingMsg);
+    return needNewSession('session_expired', 'Phiên đã hết hạn',
+      `${run.source_system} từ chối phiên (${st.detail ?? why}) — đăng nhập lại ${run.source_system} trên trình duyệt, tiện ích tự gửi phiên mới`);
   }
   try {
     const s = await deps.connections.renew(run.app_user_id, run.source_system, grant.auth_method);
@@ -157,6 +197,8 @@ export async function spiderSession(deps: SpiderDeps, runId: number, opts: { ref
         `UPDATE source_grants SET session_state = $2, refresh_fail_count = refresh_fail_count + 1, last_error = $3 WHERE id = $1`,
         [grant.id, expired ? 'expired' : 'failed', (e as Problem).title]));
       await failRun(deps.writer, runId, (e as Problem).type, (e as Problem).detail ?? (e as Problem).title);
+    } else if (e instanceof Problem && e.type === 'source_unavailable') {
+      await failRun(deps.writer, runId, e.type, e.detail ?? e.title);
     }
     throw e;
   }

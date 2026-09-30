@@ -61,6 +61,8 @@ export interface Connection {
 export interface Grant {
   source_system: string; ten: string; session_state: 'pending' | 'active' | 'expired' | 'revoked' | 'failed';
   granted_at: string | null; last_success_at: string | null; session_expires_at: string | null; scope_capabilities: string[]; available_capabilities: string[]; can_crawl: boolean;
+  /** Cách kết nối (sso/password/cookie/extension) + lý do lỗi gần nhất (vd "Phiên đã lưu bị mất…"). */
+  auth_method: 'password' | 'cookie' | 'sso' | 'extension' | null; last_error: string | null;
 }
 export interface ReportDef {
   code: string; ten: string; mo_ta: string | null; source_system: string; source_ten?: string; view_template: string;

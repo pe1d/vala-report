@@ -117,7 +117,7 @@ export async function crawlUserSource(deps: CrawlDeps, job: CrawlJob): Promise<C
     let secret = await deps.secrets.get(grant.vault_ref);
     let rederived = false;
     if (!secret) {
-      if (!canRenew) throw new Problem('session_expired', 'Phiên uỷ quyền không còn trong vault');
+      if (!canRenew) throw new Problem('session_missing', 'Phiên đã lưu bị mất', 'Phiên đã lưu bị mất (kho bí mật không còn phiên này) — mở hệ thống nguồn trên trình duyệt, tiện ích tự gửi lại');
       secret = await renew();
       rederived = true;
     }
@@ -162,11 +162,14 @@ export async function crawlUserSource(deps: CrawlDeps, job: CrawlJob): Promise<C
     const warn = [...warnings];
     return finish('ok', warn[0], warn.length ? warn.join(', ') : undefined);
   } catch (e) {
-    if (e instanceof Problem && e.type === 'session_expired') {
+    // Hết phiên thật (nguồn từ chối phiên) hoặc phiên đã lưu bị mất ⇒ đánh dấu cần gửi phiên mới (tiện ích tự gửi lại
+    // khi thấy kết nối không còn "đang dùng"). last_error ghi đúng lý do để người dùng không hiểu nhầm.
+    if (e instanceof Problem && (e.type === 'session_expired' || e.type === 'session_missing')) {
+      const why = e.type === 'session_missing' ? 'Phiên đã lưu bị mất — cần gửi lại qua tiện ích' : `Phiên hết hạn: ${e.detail ?? e.title}`;
       await withTenant(db, (t) => t.none(
         `UPDATE source_grants SET session_state = 'expired', refresh_fail_count = refresh_fail_count + 1,
-                last_error = 'session_probe thất bại' WHERE id = $1`, [grant.id]));
-      return finish('failed', 'session_expired', e.detail);
+                last_error = $2 WHERE id = $1`, [grant.id, why.slice(0, 300)]));
+      return finish('failed', e.type, e.detail);
     }
     // Sai mật khẩu / cần OTP: thử lại chỉ khoá tài khoản nguồn. Đánh dấu kết nối cần quản trị sửa, dừng.
     if (isPermanentLoginError(e)) {

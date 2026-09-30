@@ -113,7 +113,7 @@ export class GuardedHttpClient {
       });
     } catch (e) {
       // Chỉ ghi method + path: URL có thể mang puid, header mang cookie.
-      throw new Error(`Lỗi mạng khi gọi ${req.method} ${req.path}: ${(e as Error).name}`);
+      throw new Problem('source_unavailable', 'Hệ thống nguồn không phản hồi', `${req.method} ${req.path}: ${(e as Error).name}`);
     }
 
     // Phiên hết hạn trên hệ thống dùng SSO thường biểu hiện bằng chuyển hướng sang trang đăng nhập.
@@ -124,6 +124,8 @@ export class GuardedHttpClient {
       throw new Problem('session_expired', 'Phiên uỷ quyền đã hết hạn', `${req.method} ${req.path} → ${res.status}${to}`);
     }
     const text = await res.text();
+    // 5xx: nguồn đang lỗi — không phải do phiên, không được đánh dấu hết hạn.
+    if (res.status >= 500) throw new Problem('source_unavailable', 'Hệ thống nguồn đang lỗi', `${req.method} ${req.path} → HTTP ${res.status}`);
     if (res.status >= 400) throw new Error(`${req.method} ${req.path} → HTTP ${res.status}`);
     return {
       status: res.status,

@@ -28,8 +28,11 @@ export const spiderInternalRoutes = (deps: ApiDeps): FastifyPluginAsync => async
     trigger: req.body.trigger,
   }));
 
-  app.post<{ Params: { id: string }; Body: { refresh?: boolean } }>('/runs/:id/session', async (req) => {
-    const s = await spiderSession(sd, runId(req.params), { refresh: !!req.body?.refresh });
+  app.post<{ Params: { id: string }; Body: { refresh?: boolean; reason?: { status?: number; path?: string } } }>('/runs/:id/session', async (req) => {
+    // reason: request bị nguồn từ chối (mã HTTP + đường dẫn, không có query) — để ghi đúng lý do, không đoán "hết hạn".
+    const r = req.body?.reason;
+    const reason = r ? { status: Number.isInteger(r.status) ? r.status : undefined, path: typeof r.path === 'string' ? r.path.slice(0, 120) : undefined } : undefined;
+    const s = await spiderSession(sd, runId(req.params), { refresh: !!req.body?.refresh, reason });
     // Ghi nhận cấp phiên (không ghi giá trị cookie).
     req.log.info({ run: runId(req.params), renewed: s.renewed }, 'cấp phiên cho spider');
     return s;

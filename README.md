@@ -15,6 +15,8 @@ pnpm db:seed                     # migration + dữ liệu mẫu (1 tài khoản
 
 # Cách 1 — tất cả trong Docker (một lệnh, hot-reload):
 pnpm dev:up         # postgres/redis/vault + api :3000 + worker + web :5173
+#   Thêm COMPOSE_PROFILES=dev vào .env thì `docker compose up -d` bật tất cả (kể cả Crawlab).
+#   Máy dev tắt là tắt, không tự lên lại; chỉ prod (RESTART_POLICY=unless-stopped) mới tự lên.
 # Cách 2 — chạy tay từng tiến trình:
 pnpm dev:api        # Fastify :3000
 pnpm dev:worker     # bảo trì: làm mới phiên, phân vùng, lớp tổng hợp
@@ -72,6 +74,13 @@ Cổng        dashboard có sẵn đọc từ kho, vd "Việc của tôi hôm na
   (`MAX_STARTS_PER_SOURCE_PER_MINUTE`), phần dư chạy phút sau; mỗi người tối đa 10 lịch đang bật (`MAX_SUBSCRIPTIONS_PER_USER`);
   kết nối hết hạn thì bỏ qua lượt đó. Lịch một lần chạy xong tự tắt. "Đồng bộ Crawlab" xoá các lịch cố định (preset) cũ.
 - "Chạy ngay" của người dùng và "Chạy thử" của quản trị chạy spider trên Crawlab với `--user N`.
+- **Theo dõi lỗi trong Crawlab (cập nhật 30/09/2026, migration 019).** Mọi lần chạy spider đi qua `launchSpider`
+  ([packages/core/src/spiderOps.ts](packages/core/src/spiderOps.ts)): kiểm tra mã spider trên Crawlab còn đủ file
+  (thiếu thì đẩy lại từ CSDL), chạy, ghi `core.spider_launches`. Spider gọi Vala ⇒ `reported`; quá 3 phút không thấy
+  (task Crawlab không còn chạy) ⇒ worker lấy dòng lỗi từ log Crawlab và ghi một lượt `spider_not_started` vào
+  Nhật ký chạy. Worker ghi "còn sống" mỗi phút và kiểm tra Crawlab mỗi 10 phút + lúc khởi động (tự khôi phục mã spider
+  khi Crawlab mất file, vd sau khi máy chủ khởi động lại) — trang *Vận hành* hiện Worker, Crawlab, Lịch trễ, Spider
+  không tới được Vala. Máy chủ chạy thật đặt `RESTART_POLICY=unless-stopped` để container tự lên lại sau khi khởi động máy.
 - Lỗi của một người không làm hỏng cả lượt; spider báo lỗi Crawlab khi quá 50% người dùng lỗi.
 
 **Viết spider mới cho một trang:**
@@ -95,7 +104,13 @@ Sửa mã trên trang *Script crawl* rồi đồng bộ. Đừng sửa trực ti
 | `sso` | (người dùng tự uỷ quyền qua Bkav SSO) | Có — refresh token |
 | `extension` | (không nhập gì — tiện ích trình duyệt tự gửi) | Tiện ích gửi lại mỗi khi người dùng đăng nhập nguồn |
 
-Bí mật (mật khẩu/cookie nguồn) **chỉ nằm trong vault**, không trả qua API, không ghi log. Sai mật khẩu hoặc tài khoản bật OTP ⇒ dừng, không thử lại (tránh khoá tài khoản nguồn). eGov thật đăng nhập qua `iam.bkav.com` (WSO2); cách đăng nhập khai báo ở `adapters/egov.documents.yaml` mục `auth.password_login`.
+Bí mật (mật khẩu/cookie nguồn) **chỉ nằm trong vault**, không trả qua API, không ghi log. **Vault chạy chế độ lưu bền**
+(cập nhật 30/09/2026, [infra/vault](infra/vault)): dữ liệu ở volume `vault-file`, tự khởi tạo + tự mở khoá khi khởi động
+(khoá mở ở volume `vault-keys`, chmod 600), token ứng dụng `VAULT_TOKEN` chỉ có quyền `secret/*`. Trước đó chạy `server -dev`
+(lưu trong bộ nhớ) — máy chủ khởi động lại là mất hết phiên đã lưu. Phân loại lỗi khi lấy dữ liệu: `session_missing` (kho
+không còn phiên), `session_expired` (nguồn từ chối chính phiên — kiểm tra lại bằng session_probe trước khi kết luận),
+`source_denied` (nguồn từ chối một request nhưng phiên vẫn tốt), `source_unavailable` (nguồn lỗi 5xx / không phản hồi,
+spider thử lại một lần) — chỉ hai loại đầu mới bắt người dùng đăng nhập lại. Sai mật khẩu hoặc tài khoản bật OTP ⇒ dừng, không thử lại (tránh khoá tài khoản nguồn). eGov thật đăng nhập qua `iam.bkav.com` (WSO2); cách đăng nhập khai báo ở `adapters/egov.documents.yaml` mục `auth.password_login`.
 
 Thử trên dev:
 - Quản trị (`ops`) → *Kết nối dữ liệu* → *Cấu hình* cho một người dùng → chọn "Tài khoản/mật khẩu", nhập tên nguồn (vd `binhlt`) + `Egov@2026` → Lưu (hệ thống thử đăng nhập iam giả lập ngay).
