@@ -21,6 +21,9 @@ export interface SourceRow {
   adapter_yaml: string | null;
   adapter_updated_at: Date | null;
   connection_methods: AuthMethod[];
+  /** Xác thực 2 lớp: co ⇒ không cho kết nối bằng mật khẩu; chua_ro ⇒ cho nhưng cảnh báo. */
+  mfa: 'co' | 'khong' | 'chua_ro';
+  mfa_detected_at: Date | null;
   updated_at: Date;
 }
 
@@ -35,7 +38,7 @@ export class SourceRegistry {
   async reload(): Promise<void> {
     const q = () => withTenant(this.db, (t) => t.any<SourceRow>(
       `SELECT code, ten, mo_ta, base_url, enabled, login_hosts, auth_profile, adapter_yaml, adapter_updated_at,
-              connection_methods, updated_at
+              connection_methods, mfa, mfa_detected_at, updated_at
          FROM core.source_systems ORDER BY code`));
     let rows = await q();
     if (this.opts.importFromRepo !== false && rows.some((r) => !r.adapter_yaml && !r.auth_profile)) {
@@ -92,4 +95,15 @@ export class SourceRegistry {
   list(): SourceRow[] {
     return [...this.rows.values()];
   }
+}
+
+/**
+ * Tự đăng nhập bằng mật khẩu gặp OTP ⇒ đánh dấu hệ thống có xác thực 2 lớp (chỉ khi đang "chưa rõ") và bỏ cách kết
+ * nối bằng mật khẩu khỏi danh sách cho phép. Kết nối mật khẩu đang có vẫn giữ nhưng sẽ báo lỗi OTP cho tới khi đổi cách.
+ */
+export async function markSourceMfa(db: Db, source: string): Promise<void> {
+  await withTenant(db, (t) => t.none(
+    `UPDATE core.source_systems
+        SET mfa = 'co', mfa_detected_at = now(), connection_methods = array_remove(connection_methods, 'password'), updated_at = now()
+      WHERE code = $1 AND mfa = 'chua_ro'`, [source]));
 }

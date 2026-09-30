@@ -1,6 +1,6 @@
 import { Queue } from 'bullmq';
 import {
-  CRAWL_QUEUE, ConnectionSessions, CrawlabClient, SessionManager, SourceRegistry, SsoClient, TENANT, crawlabConfigFromEnv, env, readerDb,
+  CRAWL_QUEUE, ConnectionSessions, CrawlabClient, SessionManager, SourceRegistry, SsoClient, TENANT, crawlabConfigFromEnv, env, markSourceMfa, readerDb,
   redisConnection, secretStore, ssoConfigFromEnv, withTenant, writerDb, type CrawlJob,
 } from '@vala/core';
 import { buildApp } from './app.js';
@@ -47,7 +47,9 @@ const sources = new SourceRegistry(writer);
 await sources.reload();
 sources.install();
 setInterval(() => { sources.reload().catch(() => { /* giữ cấu hình cũ, thử lại lần sau */ }); }, 60_000).unref();
-const connections = new ConnectionSessions({ secrets, tenant: TENANT, sourceInfo, sso: sessions, extraSpecs: sources.specs });
+// Tự đăng nhập gặp OTP ⇒ đánh dấu hệ thống có xác thực 2 lớp, bỏ cách kết nối bằng mật khẩu.
+const connections = new ConnectionSessions({ secrets, tenant: TENANT, sourceInfo, sso: sessions, extraSpecs: sources.specs,
+  onOtpRequired: async (s) => { await markSourceMfa(writer, s); await sources.reload(); } });
 const crawlabCfg = crawlabConfigFromEnv();
 const crawlab = crawlabCfg ? new CrawlabClient(crawlabCfg) : undefined;
 const app = await buildApp({

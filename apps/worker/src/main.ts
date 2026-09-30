@@ -5,7 +5,7 @@
 import { Worker } from 'bullmq';
 import {
   CRAWL_CONCURRENCY, CRAWL_QUEUE, ConnectionSessions, CrawlabClient, MAINTENANCE_QUEUE, SessionManager, SourceRegistry, SsoClient, TENANT, closeAllPools,
-  crawlUserSource, crawlQueue, crawlabConfigFromEnv, ensureRecordIndexes, envBool, runDueSchedules, fanOut, maintenanceQueue, redisConnection, refreshExpiringSessions, secretStore,
+  crawlUserSource, crawlQueue, crawlabConfigFromEnv, ensureRecordIndexes, envBool, markSourceMfa, runDueSchedules, fanOut, maintenanceQueue, redisConnection, refreshExpiringSessions, secretStore,
   ssoConfigFromEnv, withTenant, writerDb, type CrawlJob,
 } from '@vala/core';
 import { loadAllSpecs, registerSpecs } from '@vala/core/adapter';
@@ -46,7 +46,9 @@ const sourceInfo = (source: string) => withTenant(writer, (t) => t.one(
   })));
 const sessions = new SessionManager({ secrets, sso: new SsoClient(ssoConfigFromEnv()), tenant: TENANT, baseUrls, resolveBaseUrl });
 // Cách xác thực nào cũng lấy lại phiên qua đây: password (tự đăng nhập), cookie (chờ dán), sso (refresh token).
-const connections = new ConnectionSessions({ secrets, tenant: TENANT, sourceInfo, sso: sessions });
+// Tự đăng nhập gặp OTP ⇒ đánh dấu hệ thống có xác thực 2 lớp, bỏ cách kết nối bằng mật khẩu.
+const connections = new ConnectionSessions({ secrets, tenant: TENANT, sourceInfo, sso: sessions,
+  onOtpRequired: async (s) => { await markSourceMfa(writer, s); await registry.reload(); } });
 
 await withTenant(writer, async (t) => {
   await registerSpecs(t, loadAllSpecs());

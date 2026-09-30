@@ -33,6 +33,8 @@ export interface ConnectionSessionsOptions {
   fetchImpl?: FetchLike;
   /** Chỉ cần khi có kết nối auth_method = 'sso'. */
   sso?: SessionManager;
+  /** Tự đăng nhập bằng mật khẩu gặp OTP ⇒ báo để đánh dấu hệ thống có xác thực 2 lớp (xem markSourceMfa). */
+  onOtpRequired?: (source: string) => Promise<void>;
   /** Spec của hệ thống nguồn do quản trị tạo trên cổng (dựng từ auth_profile), đọc từ cache — xem SourceRegistry. */
   extraSpecs?: () => AdapterSpec[];
 }
@@ -196,7 +198,11 @@ export class ConnectionSessions {
     const cred = await this.o.secrets.get<SourceCredential>(this.credentialRef(userId, source));
     if (!cred) throw new Problem('invalid_credentials', 'Chưa có tài khoản/mật khẩu cho kết nối này');
     const info = await this.o.sourceInfo(source);
-    const r = await passwordLogin({ spec: this.spec(source), baseUrl: info.baseUrl, loginHosts: info.loginHosts, credential: cred, fetchImpl: this.o.fetchImpl });
+    const r = await passwordLogin({ spec: this.spec(source), baseUrl: info.baseUrl, loginHosts: info.loginHosts, credential: cred, fetchImpl: this.o.fetchImpl })
+      .catch(async (e: unknown) => {
+        if (e instanceof Problem && e.type === 'otp_required') await this.o.onOtpRequired?.(source).catch(() => {});
+        throw e;
+      });
     const secret: SessionSecret = { cookies: r.cookies, obtained_at: new Date().toISOString(), expires_at: r.expires_at };
     await this.o.secrets.put(this.sessionRef(userId, source), secret);
     return secret;

@@ -131,6 +131,8 @@ export interface AdminSource {
   connection_methods: AuthMethod[]; supported_methods: AuthMethod[]; managed_by: 'adapter' | 'portal';
   auth_profile: AuthProfile | null;
   auth: { cookie_groups: string[][]; cookies_optional: string[]; cookie_domain: string | null; probe_path: string } | null;
+  /** Xác thực 2 lớp: co ⇒ không kết nối bằng mật khẩu được; chua_ro ⇒ chưa xác nhận. */
+  mfa: 'co' | 'khong' | 'chua_ro'; mfa_detected_at: string | null; password_conns: number;
   conns: number; spiders: number; reports: number; updated_at: string;
   adapter: AdapterSummary | null; adapter_updated_at: string | null; adapter_error: string | null;
 }

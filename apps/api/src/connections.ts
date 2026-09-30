@@ -44,9 +44,12 @@ export function listConnections(deps: ApiDeps, userId?: number) {
 export async function configureConnection(
   deps: ApiDeps, req: FastifyRequest, userId: number, source: string, b: ConnectionBody,
 ): Promise<{ state: string; expires_at: string | null }> {
-  const src = await withTenant(deps.writer, (t) => t.oneOrNone<{ connection_methods: AuthMethod[] }>(
-    'SELECT connection_methods FROM core.source_systems WHERE code = $1 AND enabled', [source]));
+  const src = await withTenant(deps.writer, (t) => t.oneOrNone<{ connection_methods: AuthMethod[]; mfa: string }>(
+    'SELECT connection_methods, mfa FROM core.source_systems WHERE code = $1 AND enabled', [source]));
   if (!src) throw new Problem('not_found', 'Không có hệ thống nguồn này');
+  if (b.auth_method === 'password' && src.mfa === 'co') {
+    throw new Problem('invalid_params', 'Hệ thống này có xác thực 2 lớp (OTP)', 'Máy chủ không tự đăng nhập bằng mật khẩu được — kết nối qua tiện ích trình duyệt');
+  }
   if (!src.connection_methods.includes(b.auth_method)) {
     throw new Problem('invalid_params', 'Hệ thống này không cho kết nối theo cách đã chọn', `cho phép: ${src.connection_methods.join(', ')}`);
   }

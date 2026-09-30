@@ -4,7 +4,7 @@ import { api, fmtDateTime, type AdapterSummary, type AdminSource, type AuthMetho
 import { useAsync } from '../hooks';
 import { NoMatch, Pager, SearchBox, useTableView } from '../components/TableTools';
 import { Empty, ErrorBox, Loading } from '../components/States';
-import { Badge, Banner, Button, Card, Field, Input, Muted, PageTitle, Table, Td, Th } from '../components/ui';
+import { Badge, Banner, Button, Card, Field, Input, Muted, PageTitle, Select, Table, Td, Th } from '../components/ui';
 import { METHOD_LABEL } from './AdminConnections';
 
 const cookieText = (groups: Array<string | string[]>) => groups.map((g) => (Array.isArray(g) ? g.join(' | ') : g)).join('\n');
@@ -62,7 +62,15 @@ export function AdminSourcesPage() {
                     ? <Muted className="mt-1 font-mono text-xs">{s.auth.cookie_groups.map((g) => g.join('|')).join(', ')}{s.auth.cookie_domain ? ` @ ${s.auth.cookie_domain}` : ''}</Muted>
                     : <div className="mt-1 text-xs text-red-700 dark:text-red-400">Chưa có cấu hình phiên</div>}
                 </Td>
-                <Td><div className="flex flex-wrap gap-1">{s.connection_methods.map((m) => <Badge key={m} tone="neutral">{METHOD_LABEL[m]}</Badge>)}</div></Td>
+                <Td>
+                  <div className="flex flex-wrap gap-1">{s.connection_methods.map((m) => <Badge key={m} tone="neutral">{METHOD_LABEL[m]}</Badge>)}</div>
+                  <div className="mt-1.5">
+                    {s.mfa === 'co' ? <Badge tone="warn">Có xác thực 2 lớp</Badge> : s.mfa === 'khong' ? <Badge tone="ok">Không có xác thực 2 lớp</Badge> : <Badge tone="neutral">2 lớp: chưa rõ</Badge>}
+                  </div>
+                  {s.mfa === 'co' && s.password_conns > 0 && (
+                    <div className="mt-1 text-xs text-red-700 dark:text-red-400">{s.password_conns} kết nối đang dùng mật khẩu — sẽ lỗi khi hết phiên, đổi sang tiện ích</div>
+                  )}
+                </Td>
                 <Td num>{s.conns}</Td>
                 <Td num>{s.spiders} / {s.reports}</Td>
                 <Td><Badge tone={s.enabled ? 'ok' : 'neutral'}>{s.enabled ? 'Đang bật' : 'Đã tắt'}</Badge></Td>
@@ -99,8 +107,12 @@ function SourceEditor({ source, onClose, onSaved }: { source: AdminSource | null
   const [ten, setTen] = useState(source?.ten ?? '');
   const [moTa, setMoTa] = useState(source?.mo_ta ?? '');
   const [baseUrl, setBaseUrl] = useState(source?.base_url ?? 'https://');
-  const supported: AuthMethod[] = source?.supported_methods ?? ['extension', 'cookie'];
+  const [mfa, setMfa] = useState<AdminSource['mfa']>(source?.mfa ?? 'chua_ro');
+  // Có xác thực 2 lớp ⇒ bỏ "tài khoản/mật khẩu" (máy chủ không tự nhập được OTP); đổi lại "không có" ⇒ hiện lại nếu adapter hỗ trợ.
+  const canPassword = !!source?.adapter?.password_login && mfa !== 'co';
+  const supported: AuthMethod[] = [...(source?.supported_methods ?? ['extension', 'cookie']).filter((m) => m !== 'password'), ...(canPassword ? ['password' as const] : [])];
   const [methods, setMethods] = useState<AuthMethod[]>(source?.connection_methods ?? ['extension', 'cookie']);
+  const chosen = methods.filter((m) => supported.includes(m));
   const [required, setRequired] = useState(p ? cookieText(p.cookies_required) : '');
   const [optional, setOptional] = useState(p?.cookies_optional?.join(', ') ?? '');
   const [domain, setDomain] = useState(p?.cookie_domain ?? '');
@@ -111,7 +123,7 @@ function SourceEditor({ source, onClose, onSaved }: { source: AdminSource | null
 
   const save = async () => {
     setBusy(true); setErr(null);
-    const body: Record<string, unknown> = { ten, mo_ta: moTa || null, base_url: baseUrl, connection_methods: methods };
+    const body: Record<string, unknown> = { ten, mo_ta: moTa || null, base_url: baseUrl, connection_methods: chosen, mfa };
     if (portal) {
       body.auth_profile = {
         cookies_required: parseCookies(required),
@@ -142,12 +154,27 @@ function SourceEditor({ source, onClose, onSaved }: { source: AdminSource | null
           <Field label="Tên hiển thị"><Input value={ten} onChange={(e) => setTen(e.target.value)} placeholder="vd Cổng nhân sự" /></Field>
           <div className="sm:col-span-2"><Field label="Địa chỉ"><Input value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder="https://hr.bkav.com" /></Field></div>
           <div className="sm:col-span-2"><Field label="Mô tả (không bắt buộc)"><Input value={moTa} onChange={(e) => setMoTa(e.target.value)} /></Field></div>
+          <div className="sm:col-span-2">
+            <Field label="Xác thực 2 lớp (OTP) khi đăng nhập hệ thống này">
+              <Select value={mfa} onChange={(e) => setMfa(e.target.value as AdminSource['mfa'])}>
+                <option value="chua_ro">Chưa rõ</option>
+                <option value="khong">Không có — máy chủ tự đăng nhập bằng tài khoản/mật khẩu được</option>
+                <option value="co">Có — chỉ kết nối qua tiện ích trình duyệt / cookie</option>
+              </Select>
+            </Field>
+            <Muted className="mt-1 text-xs">
+              {mfa === 'co' ? 'Máy chủ không tự nhập được OTP nên không cho kết nối bằng tài khoản/mật khẩu; người dùng đăng nhập (kể cả OTP) trên trình duyệt, tiện ích tự gửi phiên.'
+                : mfa === 'khong' ? 'Kết nối bằng tài khoản/mật khẩu: máy chủ tự đăng nhập lại khi hết phiên, không phụ thuộc trình duyệt người dùng.'
+                  : 'Chưa xác nhận: vẫn cho dùng tài khoản/mật khẩu; lần tự đăng nhập nào gặp OTP hệ thống tự chuyển sang "Có".'}
+              {source?.mfa_detected_at ? ` Hệ thống tự phát hiện OTP lúc ${new Date(source.mfa_detected_at).toLocaleString('vi-VN')}.` : ''}
+            </Muted>
+          </div>
           <fieldset className="sm:col-span-2">
             <legend className="mb-1 text-sm font-medium">Cách kết nối người dùng được chọn</legend>
             <div className="flex flex-wrap gap-4">
               {supported.map((m) => (
                 <label key={m} className="flex items-center gap-2 text-sm">
-                  <input type="checkbox" checked={methods.includes(m)}
+                  <input type="checkbox" checked={chosen.includes(m)}
                     onChange={(e) => setMethods(e.target.checked ? [...methods, m] : methods.filter((x) => x !== m))} />
                   {METHOD_LABEL[m]}
                 </label>
@@ -182,7 +209,7 @@ function SourceEditor({ source, onClose, onSaved }: { source: AdminSource | null
 
         <div className="mt-5 flex justify-end gap-2">
           <Button onClick={onClose}>Huỷ</Button>
-          <Button variant="primary" disabled={busy || !ten.trim() || !methods.length || (isNew && !code)} onClick={() => void save()}>
+          <Button variant="primary" disabled={busy || !ten.trim() || !chosen.length || (isNew && !code)} onClick={() => void save()}>
             {busy ? 'Đang lưu…' : isNew ? 'Thêm' : 'Lưu'}
           </Button>
         </div>

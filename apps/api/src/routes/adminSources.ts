@@ -20,6 +20,8 @@ interface SourceBody {
   base_url?: string;
   enabled?: boolean;
   connection_methods?: AuthMethod[];
+  /** Xác thực 2 lớp của hệ thống nguồn: co | khong | chua_ro. */
+  mfa?: 'co' | 'khong' | 'chua_ro';
   auth_profile?: unknown;
   adapter_yaml?: string;
 }
@@ -57,6 +59,7 @@ const bodySchema = {
     base_url: { type: 'string', maxLength: 300 },
     enabled: { type: 'boolean' },
     connection_methods: { type: 'array', minItems: 1, uniqueItems: true, items: { type: 'string', enum: METHODS } },
+    mfa: { type: 'string', enum: ['co', 'khong', 'chua_ro'] },
     auth_profile: { type: 'object' },
     adapter_yaml: { type: 'string', minLength: 20, maxLength: 200_000 },
   },
@@ -81,16 +84,19 @@ function parseProfile(raw: unknown) {
 }
 
 export const adminSourceRoutes = (deps: ApiDeps): FastifyPluginAsync => async (app) => {
-  /** Cách kết nối hệ thống này thực sự hỗ trợ (theo adapter / hồ sơ). */
-  const supported = (code: string, portal: boolean): AuthMethod[] => {
+  /**
+   * Cách kết nối hệ thống này thực sự hỗ trợ (theo adapter / hồ sơ). Có xác thực 2 lớp ⇒ không có mật khẩu: máy chủ
+   * không tự đăng nhập được khi bị hỏi OTP.
+   */
+  const supported = (code: string, portal: boolean, mfa: SourceRow['mfa'] = 'chua_ro'): AuthMethod[] => {
     if (portal) return ['extension', 'cookie'];
     const out: AuthMethod[] = ['extension', 'cookie'];
-    if (deps.connections.supportsPassword(code)) out.push('password');
+    if (mfa !== 'co' && deps.connections.supportsPassword(code)) out.push('password');
     try { if (deps.connections.spec(code).auth.bootstrap) out.push('sso'); } catch { /* chưa có adapter */ }
     return out;
   };
 
-  const view = async (r: SourceRow, counts: Record<string, { conns: number; spiders: number; reports: number }>) => {
+  const view = async (r: SourceRow, counts: Record<string, { conns: number; spiders: number; reports: number; password_conns: number }>) => {
     const portal = !r.adapter_yaml && !!r.auth_profile;
     let adapter: ReturnType<typeof summarize> | null = null;
     try { if (r.adapter_yaml) adapter = summarize(deps.connections.spec(r.code)); } catch { /* lỗi đã nằm trong registry.errors */ }
@@ -103,19 +109,22 @@ export const adminSourceRoutes = (deps: ApiDeps): FastifyPluginAsync => async (a
     const info = await deps.sourceInfo(r.code);
     return {
       code: r.code, ten: r.ten, mo_ta: r.mo_ta, base_url: r.base_url, effective_base_url: info.baseUrl, enabled: r.enabled,
-      connection_methods: r.connection_methods, supported_methods: supported(r.code, portal),
+      connection_methods: r.connection_methods, supported_methods: supported(r.code, portal, r.mfa),
+      mfa: r.mfa, mfa_detected_at: r.mfa_detected_at,
       managed_by: portal ? 'portal' : 'adapter', auth_profile: portal ? r.auth_profile : null, auth, updated_at: r.updated_at,
       adapter, adapter_updated_at: r.adapter_updated_at, adapter_error: deps.sources.errors.get(r.code) ?? null,
-      ...(counts[r.code] ?? { conns: 0, spiders: 0, reports: 0 }),
+      // password_conns: kết nối mật khẩu đang có — trên hệ thống có OTP sẽ lỗi khi hết phiên, quản trị cần đổi cách.
+      ...(counts[r.code] ?? { conns: 0, spiders: 0, reports: 0, password_conns: 0 }),
     };
   };
 
   const counts = () => withTenant(deps.writer, async (t) => {
-    const rows = await t.any<{ code: string; conns: number; spiders: number; reports: number }>(
+    const rows = await t.any<{ code: string; conns: number; spiders: number; reports: number; password_conns: number }>(
       `SELECT ss.code,
               (SELECT count(*)::int FROM source_grants g WHERE g.source_system = ss.code AND g.revoked_at IS NULL AND g.session_state = 'active') AS conns,
               (SELECT count(*)::int FROM core.crawl_spiders sp WHERE sp.source_system = ss.code) AS spiders,
-              (SELECT count(*)::int FROM report_catalog rc WHERE rc.source_system = ss.code AND rc.is_active) AS reports
+              (SELECT count(*)::int FROM report_catalog rc WHERE rc.source_system = ss.code AND rc.is_active) AS reports,
+              (SELECT count(*)::int FROM source_grants g WHERE g.source_system = ss.code AND g.revoked_at IS NULL AND g.auth_method = 'password') AS password_conns
          FROM core.source_systems ss`);
     return Object.fromEntries(rows.map((r) => [r.code, r]));
   });
@@ -132,8 +141,9 @@ export const adminSourceRoutes = (deps: ApiDeps): FastifyPluginAsync => async (a
     if (!b.auth_profile === !b.adapter_yaml) throw new Problem('invalid_params', 'Cần đúng một trong hai: cấu hình nhanh (phiên đăng nhập) hoặc cấu hình adapter đầy đủ');
     const profile = b.auth_profile ? parseProfile(b.auth_profile) : null;
     const spec = b.adapter_yaml ? parseAdapter(code, b.adapter_yaml) : null;
+    const mfa = b.mfa ?? 'chua_ro';
     const ok: AuthMethod[] = spec
-      ? ['extension', 'cookie', ...(spec.auth.password_login ? ['password' as const] : []), ...(spec.auth.bootstrap ? ['sso' as const] : [])]
+      ? ['extension', 'cookie', ...(spec.auth.password_login && mfa !== 'co' ? ['password' as const] : []), ...(spec.auth.bootstrap ? ['sso' as const] : [])]
       : ['extension', 'cookie'];
     const methods = b.connection_methods ?? ok.filter((m) => m !== 'sso');
     const bad = methods.filter((m) => !ok.includes(m));
@@ -143,9 +153,9 @@ export const adminSourceRoutes = (deps: ApiDeps): FastifyPluginAsync => async (a
     await withTenant(deps.writer, async (t) => {
       await t.none(
         `INSERT INTO core.source_systems (code, ten, mo_ta, base_url, auth_mode, auth_profile, adapter_yaml, adapter_updated_at,
-                                          adapter_updated_by, connection_methods, created_by)
-         VALUES ($1, $2, $3, $4, 'delegated_session', $5, $6, CASE WHEN $6::text IS NULL THEN NULL ELSE now() END, $7, $8, $7)`,
-        [code, b.ten!.trim(), b.mo_ta?.trim() || null, baseUrl, profile ? JSON.stringify(profile) : null, b.adapter_yaml ?? null, req.user.id, methods]);
+                                          adapter_updated_by, connection_methods, created_by, mfa)
+         VALUES ($1, $2, $3, $4, 'delegated_session', $5, $6, CASE WHEN $6::text IS NULL THEN NULL ELSE now() END, $7, $8, $7, $9)`,
+        [code, b.ten!.trim(), b.mo_ta?.trim() || null, baseUrl, profile ? JSON.stringify(profile) : null, b.adapter_yaml ?? null, req.user.id, methods, mfa]);
       if (spec) await registerSpecs(t, [spec]);
       await audit(t, req, 'source_change', { type: 'source_system', id: code }, { op: 'create', base_url: baseUrl, kind: spec ? 'adapter' : 'profile' });
     });
@@ -164,8 +174,9 @@ export const adminSourceRoutes = (deps: ApiDeps): FastifyPluginAsync => async (a
       throw new Problem('invalid_params', 'Hệ thống này dùng cấu hình adapter đầy đủ', 'Sửa phần auth trong cấu hình adapter');
     }
     const profile = b.auth_profile !== undefined ? parseProfile(b.auth_profile) : undefined;
+    const mfa = b.mfa ?? cur.mfa;
     if (b.connection_methods) {
-      const ok = supported(cur.code, portal);
+      const ok = supported(cur.code, portal, mfa);
       const bad = b.connection_methods.filter((m) => !ok.includes(m));
       if (bad.length) throw new Problem('invalid_params', 'Hệ thống này không hỗ trợ cách kết nối đã chọn', `không hỗ trợ: ${bad.join(', ')}`);
     }
@@ -175,10 +186,16 @@ export const adminSourceRoutes = (deps: ApiDeps): FastifyPluginAsync => async (a
         `UPDATE core.source_systems SET
             ten = coalesce($2, ten), mo_ta = CASE WHEN $3::boolean THEN $4 ELSE mo_ta END, base_url = coalesce($5, base_url),
             enabled = coalesce($6, enabled), connection_methods = coalesce($7, connection_methods),
-            auth_profile = coalesce($8, auth_profile), updated_at = now()
+            auth_profile = coalesce($8, auth_profile), mfa = $9,
+            mfa_detected_at = CASE WHEN $9 = 'co' THEN mfa_detected_at END, updated_at = now()
           WHERE code = $1`,
         [cur.code, b.ten?.trim() ?? null, b.mo_ta !== undefined, b.mo_ta?.trim() || null, baseUrl ?? null,
-         b.enabled ?? null, b.connection_methods ?? null, profile ? JSON.stringify(profile) : null]);
+         b.enabled ?? null, b.connection_methods ?? null, profile ? JSON.stringify(profile) : null, mfa]);
+      // Có xác thực 2 lớp ⇒ không còn cho kết nối bằng mật khẩu.
+      if (mfa === 'co') {
+        await t.none(`UPDATE core.source_systems SET connection_methods = array_remove(connection_methods, 'password')
+                       WHERE code = $1 AND cardinality(array_remove(connection_methods, 'password')) > 0`, [cur.code]);
+      }
       await audit(t, req, 'source_change', { type: 'source_system', id: cur.code },
         { op: 'update', fields: Object.keys(b) });
     });
