@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api, type Grant } from '../api';
 import { startGrant } from '../reauth';
+import { stripBase } from '../base';
 import { Button } from './ui';
 
 export function ReauthButton({ source, label = 'Đăng nhập lại' }: { source: string; label?: string }) {
@@ -32,7 +33,7 @@ export function ReauthGate() {
     let dismissed = false;
     try { dismissed = sessionStorage.getItem(DISMISS_KEY) === '1'; } catch { /* bỏ qua */ }
     // Đang ở trang Tài khoản nguồn thì không chặn (trạng thái đã hiện ở đó).
-    if (dismissed || window.location.pathname === '/uy-quyen') return;
+    if (dismissed || stripBase(window.location.pathname) === '/uy-quyen') return;
     api.get<Grant[]>('/grants').then((gs) => setExpired(gs.filter((g) => g.session_state === 'expired')), () => {});
   }, []);
 

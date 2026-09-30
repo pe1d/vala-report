@@ -17,6 +17,36 @@ namespace vala-report:  api, worker (image vala-report-node) · postgres, redis,
 - Image build ngay trên máy chủ bằng BuildKit trong một Job (pod privileged, chỉ tồn tại lúc build), rồi nạp vào containerd
   của k3s.
 
+## Tạm chạy dưới đường dẫn con của tên miền đang có (Istio)
+
+Chưa có DNS/chứng chỉ riêng cho `vala-report.demozone.vn` thì chạy sau **Istio ingress gateway có sẵn** của cluster, ở một
+đường dẫn con của tên miền đã trỏ về máy chủ, vd **https://qtttboard-demo.demozone.vn:5443/vala-report/**:
+
+```
+Người dùng ──HTTPS──▶ 113.190.241.235:5443 ─NAT─▶ istio-ingressgateway (chứng chỉ *.demozone.vn)
+   VirtualService cds-nb/superset:  /vala-report/* ──(bỏ tiền tố)──▶ Service web.vala-report:80   · còn lại → superset
+```
+
+Khác cách mặc định: không giữ cổng 5443 trên máy chủ, không cần `deploy/certs`. Trong `.env.prod`:
+
+```bash
+PUBLIC_WEB_URL=https://qtttboard-demo.demozone.vn:5443/vala-report
+PUBLIC_API_URL=https://qtttboard-demo.demozone.vn:5443/vala-report
+WEB_EXPOSE=istio
+```
+
+Rồi `deploy/k8s/deploy.sh` như bình thường (web tự build cho đường dẫn `/vala-report`, image tên
+`…:<commit>-vala-report`), và gắn đường dẫn vào VirtualService **một lần** (thử trước bằng `DRY_RUN=1`):
+
+```bash
+DRY_RUN=1 deploy/k8s/istio-route.sh cds-nb/superset /vala-report   # xem trước, không sửa gì
+deploy/k8s/istio-route.sh cds-nb/superset /vala-report             # thêm (lưu bản cũ vào /var/tmp)
+deploy/k8s/istio-route.sh cds-nb/superset /vala-report --remove    # gỡ ra khi có tên miền riêng
+```
+
+Tiện ích trình duyệt hiện chỉ lưu *origin* máy chủ (bỏ đường dẫn) nên chưa kết nối được bản chạy ở đường dẫn con — dùng
+tên miền riêng khi cần tiện ích.
+
 ## 0. Việc cần có trước
 
 | Việc | Ai làm |

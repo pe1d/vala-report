@@ -38,7 +38,9 @@ export const ssoRoutes = (deps: ApiDeps): FastifyPluginAsync => async (app) => {
 };
 
 function toWeb(reply: FastifyReply, deps: ApiDeps, path: string, q: Record<string, string>, hash?: Record<string, string>) {
-  const u = new URL(path, deps.config.publicWebUrl);
+  // Giữ đường dẫn con của cổng (PUBLIC_WEB_URL=https://host/vala-report ⇒ /vala-report/dang-nhap), không về gốc tên miền.
+  const web = new URL(deps.config.publicWebUrl);
+  const u = new URL(web.pathname.replace(/\/+$/, '') + path, web);
   for (const [k, v] of Object.entries(q)) u.searchParams.set(k, v);
   if (hash) u.hash = new URLSearchParams(hash).toString();
   return reply.redirect(u.toString());

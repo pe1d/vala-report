@@ -8,7 +8,9 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
 COPY apps/web/package.json apps/web/
 RUN pnpm install --frozen-lockfile --filter @vala/web
 COPY apps/web apps/web
-RUN pnpm --filter @vala/web build
+# Chạy dưới đường dẫn con (vd /vala-report sau Istio) ⇒ build với WEB_BASE_PATH; mặc định ở gốc tên miền.
+ARG WEB_BASE_PATH=/
+RUN WEB_BASE_PATH="$WEB_BASE_PATH" pnpm --filter @vala/web build
 
 FROM nginx:1.27-alpine
 COPY infra/web/nginx-http.conf infra/web/nginx-https.conf /etc/nginx/vala/

@@ -3,16 +3,17 @@
 # namespace vala-report, rồi nạp file .tar vào containerd của k3s. deploy.sh tự gọi khi chưa có image của phiên bản này.
 #   deploy/k8s/build-images.sh [phiên bản]
 # Máy chủ ra Internet qua proxy: BUILD_HTTP_PROXY=http://proxy:3128 deploy/k8s/build-images.sh
+# Web chạy dưới đường dẫn con (vd sau Istio): WEB_BASE_PATH=/vala-report — deploy.sh tự lấy từ PUBLIC_WEB_URL.
 # Thư mục trên máy chủ: /var/lib/vala-report/{images,buildkit} (image vừa build, cache build — xoá được bất cứ lúc nào).
 source "$(dirname "$0")/lib.sh"
 VER="${1:-$(version)}"
 DATA_DIR="${VALA_DATA_DIR:-/var/lib/vala-report}"
 IMAGES="$DATA_DIR/images"
 
-echo "==> Build image phiên bản $VER từ $ROOT"
+echo "==> Build image phiên bản $VER từ $ROOT (web ở đường dẫn ${WEB_BASE_PATH:-/})"
 k delete job vala-build --ignore-not-found --wait=true >/dev/null
 sed -e "s|VALA_VERSION|$VER|g" -e "s|SRC_DIR|$ROOT|" -e "s|IMAGES_DIR|$IMAGES|" -e "s|CACHE_DIR|$DATA_DIR/buildkit|" \
-  -e "s|BUILD_PROXY|${BUILD_HTTP_PROXY:-}|g" \
+  -e "s|BUILD_PROXY|${BUILD_HTTP_PROXY:-}|g" -e "s|BASE_PATH_VALUE|${WEB_BASE_PATH:-/}|g" \
   "$K8S/build-job.yaml" | k apply -f - >/dev/null
 # Theo log tới khi Job xong (lần build đầu 5–15 phút: tải image gốc + thư viện npm; sau đó có cache nhanh hơn).
 for _ in $(seq 1 120); do
