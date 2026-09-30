@@ -10,7 +10,7 @@
  *   8. cập nhật crawl_runs
  */
 import {
-  GuardedHttpClient, SINK_TABLES, fetchCapability, findSpec, loadAllSpecs, normalizeCapability, probeSession, type SinkTable,
+  GuardedHttpClient, fetchCapability, findSpec, loadAllSpecs, normalizeCapability, probeSession,
   type AdapterSpec, type CapabilityResult, type FetchLike, type FetchResult, type SessionInfo,
 } from '../adapter/index.js';
 import { pgp, withTenant, type Db, type Tx } from '../db/index.js';
@@ -230,70 +230,32 @@ export async function writeRaw(db: Db, runId: number, job: Pick<CrawlJob, 'sourc
   await withTenant(db, (t) => t.none(pgp.helpers.insert(rows, rawColumns)));
 }
 
-export interface Sink { table: SinkTable; key: string; columns: string[]; extra: string[] }
+export interface Sink { table: 'records'; key: string; columns: string[]; extra: string[] }
 
 /**
- * Bảng đích của (hệ thống × capability) — đọc từ `sink` trong cấu hình adapter (CSDL), không viết trong code.
- * Tên bảng/cột đã được parseSpec đối chiếu với SINK_TABLES nên an toàn để ghép vào SQL.
+ * Nơi lưu của (hệ thống × capability) — đọc từ `sink` trong cấu hình adapter (CSDL). Mọi hệ thống dùng chung bảng
+ * `records`: khoá là trường key: true; trường = các trường output_schema (hoặc danh sách khai trong sink).
  */
 export function sinkOf(source: string, capability: string, specs = loadAllSpecs()): Sink | null {
   const spec = specs.find((x) => x.source_system === source && x.capabilities.some((c) => c.id === capability));
   const cap = spec?.capabilities.find((c) => c.id === capability);
   const s = cap?.sink;
   if (!cap || !s) return null;
-  if (s.table === 'records') {
-    // Bảng chung: khoá là trường key: true; cột = các trường output_schema (hoặc danh sách khai trong sink).
-    const key = cap.output_schema.find((f) => f.key)!.field;
-    const columns = s.columns.length ? s.columns : cap.output_schema.map((f) => f.field).filter((f) => f !== key);
-    return { table: 'records', key, columns, extra: s.extra };
-  }
-  return { table: s.table, key: SINK_TABLES[s.table].key, columns: s.columns, extra: s.extra };
+  const key = cap.output_schema.find((f) => f.key)!.field;
+  const columns = s.columns.length ? s.columns : cap.output_schema.map((f) => f.field).filter((f) => f !== key);
+  return { table: 'records', key, columns, extra: s.extra };
 }
 
+/**
+ * Ghi bản ghi đã chuẩn hoá vào kho chung `records`, có lịch sử (SCD2): bản ghi đổi nội dung (content_hash khác)
+ * ⇒ đóng bản cũ (valid_to) và thêm bản mới; không đổi ⇒ không ghi gì. org_unit_id là cột riêng để RLS phạm vi
+ * đơn vị lọc được; các trường còn lại nằm trong `data` (jsonb).
+ */
 export async function upsertCurrent(
   db: Db, runId: number, job: Pick<CrawlJob, 'source' | 'capability' | 'userId'>, result: CapabilityResult, context: Record<string, unknown>,
 ): Promise<number> {
   const sink = sinkOf(job.source, job.capability);
-  if (!sink) throw new Error(`Adapter ${job.source}:${job.capability} chưa khai báo sink (bảng đích)`);
-  if (sink.table === 'records') return upsertRecords(db, runId, job, result, context, sink);
-  const extra = sink.extra;
-  const cols = [sink.key, ...sink.columns, ...extra];
-
-  return withTenant(db, async (t: Tx) => {
-    let changed = 0;
-    for (let i = 0; i < result.rows.length; i++) {
-      const row = { ...result.rows[i], ...context } as Record<string, unknown>;
-      const hash = result.hashes[i]!;
-      const key = result.keys[i]!;
-      // Đóng bản cũ nếu khác hash; giữ lại first_seen_at để bản mới kế thừa.
-      const closed = await t.oneOrNone(
-        `UPDATE ${sink.table} SET valid_to = now()
-          WHERE source_system = $1 AND ${sink.key} = $2 AND owner_user_id = $3 AND valid_to IS NULL AND content_hash <> $4
-          RETURNING first_seen_at`,
-        [job.source, key, job.userId, hash], (r: { first_seen_at: Date } | null) => r?.first_seen_at);
-      const inserted = await t.result(
-        `INSERT INTO ${sink.table} (source_system, owner_user_id, ${cols.join(', ')}, content_hash, first_seen_at, last_crawl_run_id)
-         SELECT $1, $2, ${cols.map((_, j) => `$${j + 6}`).join(', ')}, $3, coalesce($4, now()), $5
-          WHERE NOT EXISTS (SELECT 1 FROM ${sink.table}
-                             WHERE source_system = $1 AND ${sink.key} = $${6} AND owner_user_id = $2
-                               AND valid_to IS NULL AND content_hash = $3)`,
-        [job.source, job.userId, hash, closed ?? null, runId, ...cols.map((c) => row[c] ?? null)],
-        (r) => r.rowCount,
-      );
-      changed += inserted;
-    }
-    return changed;
-  });
-}
-
-/**
- * Bảng chung records: cùng mô hình SCD2 như documents/tasks, trường nằm trong `data` (jsonb).
- * org_unit_id là cột riêng để RLS phạm vi đơn vị lọc được.
- */
-async function upsertRecords(
-  db: Db, runId: number, job: Pick<CrawlJob, 'source' | 'capability' | 'userId'>, result: CapabilityResult,
-  context: Record<string, unknown>, sink: Sink,
-): Promise<number> {
+  if (!sink) throw new Error(`Adapter ${job.source}:${job.capability} chưa khai báo sink (nơi lưu)`);
   return withTenant(db, async (t: Tx) => {
     let changed = 0;
     for (let i = 0; i < result.rows.length; i++) {
@@ -303,6 +265,7 @@ async function upsertRecords(
       const data: Record<string, unknown> = { [sink.key]: key };
       for (const c of sink.columns) data[c] = row[c] ?? null;
       for (const c of sink.extra) if (c !== 'org_unit_id' && c in context) data[c] = context[c] ?? null;
+      // Đóng bản cũ nếu khác hash; giữ lại first_seen_at để bản mới kế thừa.
       const closed = await t.oneOrNone(
         `UPDATE records SET valid_to = now()
           WHERE source_system = $1 AND capability = $2 AND owner_user_id = $3 AND record_key = $4 AND valid_to IS NULL AND content_hash <> $5
@@ -330,4 +293,26 @@ export async function touchSubscriptions(t: Tx, job: Pick<CrawlJob, 'source' | '
        FROM report_catalog rc
       WHERE rc.code = rs.report_code AND rs.app_user_id = $1 AND rc.source_system = $2 AND rc.capability = $3`,
     [job.userId, job.source, job.capability]);
+}
+
+/**
+ * Tạo chỉ mục cho các trường khai `index: true` (output_schema hoặc sink.extra_schema) trong kho chung. Việc dựng
+ * tên/biểu thức nằm trong hàm CSDL ensure_record_index (định danh đã kiểm, không nhận SQL); gọi lại nhiều lần an toàn.
+ */
+export async function ensureRecordIndexes(db: Db, specs = loadAllSpecs()): Promise<string[]> {
+  const made: string[] = [];
+  for (const spec of specs) {
+    for (const cap of spec.capabilities) {
+      if (!cap.sink) continue;
+      const fields = [
+        ...cap.output_schema.filter((f) => f.index).map((f) => ({ field: f.field, type: f.type })),
+        ...cap.sink.extra_schema.filter((f) => f.index).map((f) => ({ field: f.field, type: f.type })),
+      ];
+      for (const f of fields) {
+        made.push(await withTenant(db, (t) => t.one('SELECT ensure_record_index($1, $2, $3, $4) AS n',
+          [spec.source_system, cap.id, f.field, f.type], (r: { n: string }) => r.n)));
+      }
+    }
+  }
+  return made;
 }

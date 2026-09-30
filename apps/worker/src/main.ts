@@ -5,7 +5,7 @@
 import { Worker } from 'bullmq';
 import {
   CRAWL_CONCURRENCY, CRAWL_QUEUE, ConnectionSessions, CrawlabClient, MAINTENANCE_QUEUE, SessionManager, SourceRegistry, SsoClient, TENANT, closeAllPools,
-  crawlUserSource, crawlQueue, crawlabConfigFromEnv, envBool, runDueSchedules, fanOut, maintenanceQueue, redisConnection, refreshExpiringSessions, secretStore,
+  crawlUserSource, crawlQueue, crawlabConfigFromEnv, ensureRecordIndexes, envBool, runDueSchedules, fanOut, maintenanceQueue, redisConnection, refreshExpiringSessions, secretStore,
   ssoConfigFromEnv, withTenant, writerDb, type CrawlJob,
 } from '@vala/core';
 import { loadAllSpecs, registerSpecs } from '@vala/core/adapter';
@@ -52,6 +52,11 @@ await withTenant(writer, async (t) => {
   await registerSpecs(t, loadAllSpecs());
   await t.any('SELECT ensure_raw_partitions(2)');
 });
+// Chỉ mục cho các trường khai `index: true` trong cấu hình (kho chung records). Lỗi không chặn worker khởi động.
+ensureRecordIndexes(writer).then(
+  (n) => n.length && log.info('chỉ mục kho chung', { indexes: n.length }),
+  (e: Error) => log.error('tạo chỉ mục kho chung lỗi', { err: e.message }),
+);
 log.info('worker khởi động', { tenant: TENANT, adapters: loadAllSpecs().map((s) => `${s.id}@${s.version}`), concurrency: CRAWL_CONCURRENCY });
 
 const crawlWorker = new Worker<CrawlJob>(
@@ -59,10 +64,6 @@ const crawlWorker = new Worker<CrawlJob>(
   async (job) => {
     const out = await crawlUserSource({ writer, secrets, baseUrls, sessions, connections }, job.data);
     log.info('crawl xong', { job: job.id, user: job.data.userId, ...out });
-    if (out.status === 'ok' && out.recordsChanged > 0) {
-      // Gộp nhiều lần làm mới thành một: jobId cố định + trễ 30 giây.
-      await maintenance.add('refresh_aggregates', {}, { jobId: 'refresh_aggregates', delay: 30_000, removeOnComplete: true, removeOnFail: true });
-    }
     return out;
   },
   { connection, concurrency: CRAWL_CONCURRENCY },
@@ -73,8 +74,7 @@ const maintenanceWorker = new Worker(
   MAINTENANCE_QUEUE,
   async (job) => {
     switch (job.name) {
-      case 'refresh_aggregates':
-        await withTenant(writer, (t) => t.any('SELECT refresh_aggregates()'));
+      case 'refresh_aggregates':   // job cũ còn trong hàng đợi (bảng tổng hợp theo tháng đã bỏ ở migration 016)
         return;
       case 'raw_partitions':
         await withTenant(writer, async (t) => {

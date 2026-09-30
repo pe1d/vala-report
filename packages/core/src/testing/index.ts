@@ -21,16 +21,15 @@ export function testUrls() {
   };
 }
 
-/** Chèn một văn bản hiện hành trực tiếp (bỏ qua adapter) — chỉ để test phân quyền. */
-export async function insertDocument(
+/** Chèn một bản ghi hiện hành vào kho chung trực tiếp (bỏ qua adapter) — chỉ để test phân quyền (RLS). */
+export async function insertRecord(
   t: Tx,
-  d: { ma: string; owner: number; org: number | null; node?: number; ngay_nhan?: string; trich_yeu?: string },
+  r: { source: string; capability: string; key: string; owner: number; org: number | null; data?: Record<string, unknown> },
 ) {
   await t.none(
-    `INSERT INTO documents (ma_van_ban, owner_user_id, org_unit_id, node_id, node_ten, trich_yeu, ngay_nhan, content_hash)
-     VALUES ($1, $2, $3, $4, 'Văn bản mới kết thúc', $5, $6, $7)`,
-    [d.ma, d.owner, d.org, d.node ?? 32, d.trich_yeu ?? `Văn bản ${d.ma}`, d.ngay_nhan ?? '2026-09-10',
-     createHash('sha256').update(d.ma).digest()],
+    `INSERT INTO records (source_system, capability, record_key, owner_user_id, org_unit_id, data, content_hash)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+    [r.source, r.capability, r.key, r.owner, r.org, JSON.stringify(r.data ?? {}), createHash('sha256').update(r.key).digest()],
   );
 }
 

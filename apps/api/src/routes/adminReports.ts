@@ -56,9 +56,11 @@ export const adminReportRoutes = (deps: ApiDeps): FastifyPluginAsync => async (a
   const wiring = async (source: string, dataset: Dataset, capability?: string) => {
     const ds = sourceDatasets(source).filter((d) => d.dataset === dataset && (!capability || d.capability === capability));
     if (!ds.length) throw new Problem('invalid_params', 'Hệ thống này không có tập dữ liệu đã chọn', `${source}: ${dataset}${capability ? `/${capability}` : ''}`);
-    const spider = dataset === 'records' ? null : await withTenant(deps.writer, (t) => t.oneOrNone(
-      `SELECT code FROM core.crawl_spiders WHERE source_system = $1 AND entity = $2 AND is_enabled ORDER BY code LIMIT 1`,
-      [source, dataset], (r: { code: string } | null) => r?.code ?? null));
+    // Spider lấy dữ liệu cho hệ thống này (nếu có) — để "Chạy ngay"/lịch chạy biết đường chạy spider trên Crawlab.
+    // Không có spider ⇒ worker chạy các bước lấy dữ liệu khai trong cấu hình adapter.
+    const spider = await withTenant(deps.writer, (t) => t.oneOrNone(
+      `SELECT code FROM core.crawl_spiders WHERE source_system = $1 AND is_enabled ORDER BY code LIMIT 1`,
+      [source], (r: { code: string } | null) => r?.code ?? null));
     return { capability: ds[0]!.capability, spider_code: spider };
   };
 

@@ -31,7 +31,7 @@ export interface SpiderRow {
   ten: string;
   mo_ta?: string | null;
   source_system: string;
-  entity: 'documents' | 'tasks' | 'records';
+  entity: 'records';
   is_enabled: boolean;
   crawlab_spider_id: string | null;
   /** Mã main.py lưu trong CSDL (sửa trên cổng). NULL = chưa chép từ repo. */
@@ -250,8 +250,5 @@ export async function finishSpiderRun(deps: SpiderDeps, runId: number, req: Fini
       `UPDATE report_subscriptions rs SET last_run_at = now() FROM report_catalog rc
         WHERE rc.code = rs.report_code AND rs.app_user_id = $1 AND rc.spider_code = $2`, [r.app_user_id, r.spider_code]);
   });
-  if (status === 'ok' && (r.records_changed ?? 0) > 0) {
-    await withTenant(deps.writer, (t) => t.any('SELECT refresh_aggregates()'));
-  }
   return { status };
 }

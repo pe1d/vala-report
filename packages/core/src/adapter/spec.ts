@@ -31,34 +31,31 @@ const OutputField = z.object({
   type: z.enum(['string', 'int', 'date']),
   format: z.string().optional(),
   key: z.boolean().optional(),
-  /** Nhãn hiển thị khi quản trị dựng báo cáo trên dữ liệu này (bảng records). */
+  /** Nhãn hiển thị khi quản trị dựng báo cáo trên dữ liệu này. */
   label: z.string().max(80).optional(),
+  /** Trường hay lọc/nhóm (ngày, trạng thái…) ⇒ máy chủ tạo chỉ mục cho trường này trong kho chung. */
+  index: z.boolean().optional(),
 });
 
 /**
- * Bảng đích trong kho cho dữ liệu của một capability — khai trong adapter (cấu hình), không viết trong code.
- * Tên bảng/cột chỉ được chọn trong danh sách dưới (khớp lược đồ CSDL), nên cấu hình không thể chèn SQL.
+ * Nơi lưu dữ liệu của một capability — khai trong adapter (cấu hình). Mọi hệ thống nguồn dùng CHUNG một kho:
+ * bảng `records` (trường nằm trong `data` jsonb theo output_schema; khoá = trường có key: true). Không có bảng riêng
+ * theo nghiệp vụ, thêm hệ thống mới không phải đổi lược đồ CSDL.
  */
-export const SINK_TABLES = {
-  documents: {
-    key: 'ma_van_ban',
-    columns: ['trich_yeu', 'so_ky_hieu', 'so_den_di', 'ngay_nhan', 'ngay_tao', 'nguoi_tao', 'nguoi_xu_ly_id', 'trang_thai', 'loai_van_ban_id', 'node_id', 'node_ten', 'org_unit_id'],
-  },
-  tasks: {
-    key: 'ma_cong_viec',
-    columns: ['tieu_de', 'mo_ta_ngan', 'nguoi_giao', 'nguoi_thuc_hien_id', 'trang_thai', 'do_uu_tien', 'ngay_giao', 'han_hoan_thanh', 'ngay_hoan_thanh', 'org_unit_id'],
-  },
-  /** Bảng chung: mọi trường output_schema nằm trong cột `data` (jsonb); khoá = trường có key: true. */
-  records: { key: 'record_key', columns: [] as string[] },
-} as const;
-export type SinkTable = keyof typeof SINK_TABLES;
-
+const ExtraField = z.object({
+  field: z.string().regex(/^[a-z][a-z0-9_]{0,40}$/),
+  type: z.enum(['string', 'int', 'date']).default('string'),
+  label: z.string().max(80).optional(),
+  index: z.boolean().optional(),
+});
 const Sink = z.object({
-  table: z.enum(['documents', 'tasks', 'records']),
-  /** Cột lấy từ output_schema (theo `field`). Bảng records: bỏ trống = mọi trường output_schema. */
+  table: z.literal('records', { message: "sink.table chỉ nhận 'records' (kho chung cho mọi hệ thống)" }),
+  /** Trường lấy từ output_schema (theo `field`). Bỏ trống = mọi trường output_schema. */
   columns: z.array(z.string()).default([]),
-  /** Cột lấy từ ngữ cảnh lúc crawl (vd node_id, node_ten của thư mục; org_unit_id của người dùng). */
+  /** Trường lấy từ ngữ cảnh lúc crawl (vd node_id, node_ten của thư mục; org_unit_id của người dùng). */
   extra: z.array(z.string()).default([]),
+  /** Kiểu + nhãn (+ chỉ mục) cho các trường ngữ cảnh ở `extra` — để dựng báo cáo có nhãn đẹp, lọc đúng kiểu. */
+  extra_schema: z.array(ExtraField).default([]),
 });
 
 const Capability = z.object({
@@ -145,23 +142,12 @@ export function parseSpec(yamlText: string): AdapterSpec {
   const spec = parsed.adapter;
   // content_hash_fields phải là tập con của output_schema, nếu không hash sẽ luôn thiếu trường.
   for (const cap of spec.capabilities) {
-    if (cap.sink?.table === 'records') {
+    if (cap.sink) {
       const out = new Set(cap.output_schema.map((f) => f.field));
-      if (!cap.output_schema.some((f) => f.key)) throw new Error(`${spec.id}/${cap.id}: bảng records cần một trường output_schema có key: true`);
+      if (!cap.output_schema.some((f) => f.key)) throw new Error(`${spec.id}/${cap.id}: cần một trường output_schema có key: true (khoá bản ghi)`);
       for (const c of cap.sink.columns) if (!out.has(c)) throw new Error(`${spec.id}/${cap.id}: sink.columns có '${c}' không nằm trong output_schema`);
       for (const c of cap.sink.extra) if (!/^[a-z][a-z0-9_]{0,40}$/.test(c)) throw new Error(`${spec.id}/${cap.id}: tên trường ngữ cảnh '${c}' không hợp lệ`);
-    } else if (cap.sink) {
-      const t = SINK_TABLES[cap.sink.table];
-      const out = new Set(cap.output_schema.map((f) => f.field));
-      if (!cap.sink.columns.length) throw new Error(`${spec.id}/${cap.id}: sink.columns không được trống với bảng ${cap.sink.table}`);
-      const allowed = new Set<string>(t.columns);
-      if (!out.has(t.key)) throw new Error(`${spec.id}/${cap.id}: output_schema phải có trường khoá '${t.key}' cho bảng ${cap.sink.table}`);
-      for (const c of [...cap.sink.columns, ...cap.sink.extra]) {
-        if (!allowed.has(c)) throw new Error(`${spec.id}/${cap.id}: bảng ${cap.sink.table} không có cột '${c}' (được phép: ${t.columns.join(', ')})`);
-      }
-      for (const c of cap.sink.columns) {
-        if (!out.has(c)) throw new Error(`${spec.id}/${cap.id}: sink.columns có '${c}' không nằm trong output_schema`);
-      }
+      for (const e of cap.sink.extra_schema) if (!cap.sink.extra.includes(e.field)) throw new Error(`${spec.id}/${cap.id}: extra_schema có '${e.field}' không nằm trong sink.extra`);
     }
     const fields = new Set(cap.output_schema.map((f) => f.field));
     for (const h of cap.content_hash_fields ?? []) {

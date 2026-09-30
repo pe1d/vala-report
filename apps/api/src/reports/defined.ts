@@ -7,25 +7,16 @@
  */
 import { z } from 'zod';
 import { Problem, type Tx } from '@vala/core';
-import { SINK_TABLES, loadAllSpecs } from '@vala/core/adapter';
+import { loadAllSpecs } from '@vala/core/adapter';
 import { resolvePeriod } from '../params.js';
 import type { Column, ReportInput, ReportOutput, Tile } from './index.js';
 
 export type FieldType = 'string' | 'int' | 'date';
 export interface FieldDef { name: string; label: string; type: FieldType; expr: string }
-export type Dataset = 'documents' | 'tasks' | 'records';
+/** Mọi hệ thống nguồn dùng chung kho `records`; một tập dữ liệu = (hệ thống × capability). */
+export type Dataset = 'records';
 
 // ---- danh mục trường ----------------------------------------------------------------------------
-const LABELS: Record<string, string> = {
-  ma_van_ban: 'Mã văn bản', trich_yeu: 'Trích yếu', so_ky_hieu: 'Số ký hiệu', so_den_di: 'Số đến/đi', ngay_nhan: 'Ngày nhận',
-  ngay_tao: 'Ngày tạo', nguoi_tao: 'Người tạo', nguoi_xu_ly_id: 'Mã người xử lý', trang_thai: 'Trạng thái', loai_van_ban_id: 'Loại văn bản',
-  node_id: 'Mã thư mục', node_ten: 'Thư mục', ma_cong_viec: 'Mã công việc', tieu_de: 'Tiêu đề', mo_ta_ngan: 'Mô tả',
-  nguoi_giao: 'Người giao', nguoi_thuc_hien_id: 'Mã người thực hiện', do_uu_tien: 'Ưu tiên', ngay_giao: 'Ngày giao',
-  han_hoan_thanh: 'Hạn hoàn thành', ngay_hoan_thanh: 'Ngày hoàn thành',
-};
-const DATE_COLS = new Set(['ngay_nhan', 'ngay_tao', 'ngay_giao', 'han_hoan_thanh', 'ngay_hoan_thanh']);
-const INT_COLS = new Set(['nguoi_xu_ly_id', 'node_id', 'nguoi_thuc_hien_id']);
-
 /** Trường chung của mọi tập dữ liệu: người sở hữu dữ liệu, đơn vị, lần đầu hệ thống thấy bản ghi. */
 const COMMON: FieldDef[] = [
   { name: 'nguoi_dung', label: 'Của người dùng', type: 'string', expr: 'u.ho_ten' },
@@ -33,41 +24,38 @@ const COMMON: FieldDef[] = [
   { name: 'lan_dau_thay', label: 'Lần đầu thấy', type: 'date', expr: '(t.first_seen_at AT TIME ZONE \'Asia/Ho_Chi_Minh\')::date' },
 ];
 
-/** Trường của một tập dữ liệu. records: theo output_schema của capability trong cấu hình adapter. */
-export function datasetFields(dataset: Dataset, source: string, capability?: string): FieldDef[] {
-  if (dataset === 'records') {
-    const spec = loadAllSpecs().find((s) => s.source_system === source);
-    const cap = spec?.capabilities.find((c) => c.id === capability && c.sink?.table === 'records');
-    if (!cap) throw new Problem('invalid_params', 'Hệ thống này không có dữ liệu chung với capability đã chọn', `${source}/${capability ?? '?'}`);
-    const fields: FieldDef[] = cap.output_schema.map((f) => {
-      // Tên trường đã qua kiểm tra trong parseSpec? Chưa chắc ⇒ chỉ nhận [a-z0-9_] rồi mới đưa vào biểu thức.
-      if (!/^[A-Za-z][A-Za-z0-9_]{0,60}$/.test(f.field)) throw new Problem('invalid_params', 'Tên trường không hợp lệ trong cấu hình adapter', f.field);
-      const raw = `(t.data->>'${f.field}')`;
-      const expr = f.type === 'int' ? `${raw}::bigint` : f.type === 'date' ? `${raw}::date` : raw;
-      return { name: f.field, label: f.label ?? f.field, type: f.type, expr };
-    });
-    for (const e of cap.sink!.extra) {
-      if (e !== 'org_unit_id' && /^[a-z][a-z0-9_]{0,40}$/.test(e)) fields.push({ name: e, label: e, type: 'string', expr: `(t.data->>'${e}')` });
-    }
-    return [...fields, ...COMMON];
+/**
+ * Trường của một tập dữ liệu (hệ thống × capability): theo output_schema + sink.extra_schema trong cấu hình adapter,
+ * cộng các trường chung. Tên trường chỉ nhận [A-Za-z0-9_] rồi mới đưa vào biểu thức; ngày đọc qua rec_date (khớp
+ * chỉ mục của trường khai `index: true`).
+ */
+export function datasetFields(_dataset: Dataset, source: string, capability?: string): FieldDef[] {
+  const spec = loadAllSpecs().find((s) => s.source_system === source && s.capabilities.some((c) => c.id === capability && c.sink));
+  const cap = spec?.capabilities.find((c) => c.id === capability && c.sink);
+  if (!cap) throw new Problem('invalid_params', 'Hệ thống này không có tập dữ liệu với capability đã chọn', `${source}/${capability ?? '?'}`);
+  const safe = (name: string) => {
+    if (!/^[A-Za-z][A-Za-z0-9_]{0,60}$/.test(name)) throw new Problem('invalid_params', 'Tên trường không hợp lệ trong cấu hình adapter', name);
+    return name;
+  };
+  const expr = (name: string, type: FieldType) => {
+    const raw = `(t.data->>'${safe(name)}')`;
+    return type === 'int' ? `${raw}::bigint` : type === 'date' ? `rec_date(t.data->>'${name}')` : raw;
+  };
+  const fields: FieldDef[] = cap.output_schema.map((f) => ({ name: f.field, label: f.label ?? f.field, type: f.type, expr: expr(f.field, f.type) }));
+  const typed = new Map(cap.sink!.extra_schema.map((e) => [e.field, e]));
+  for (const e of cap.sink!.extra) {
+    if (e === 'org_unit_id') continue;
+    const x = typed.get(e);
+    fields.push({ name: e, label: x?.label ?? e, type: x?.type ?? 'string', expr: expr(e, x?.type ?? 'string') });
   }
-  const t = SINK_TABLES[dataset];
-  const cols = [t.key, ...t.columns.filter((c) => c !== 'org_unit_id')];
-  return [
-    ...cols.map((c) => ({ name: c, label: LABELS[c] ?? c, type: (DATE_COLS.has(c) ? 'date' : INT_COLS.has(c) ? 'int' : 'string') as FieldType, expr: `t.${c}` })),
-    ...COMMON,
-  ];
+  return [...fields, ...COMMON];
 }
 
-/** Tập dữ liệu hệ thống nguồn có (theo sink trong cấu hình adapter). */
+/** Tập dữ liệu hệ thống nguồn có: mỗi capability có nơi lưu (sink) là một tập, nhãn = tên capability. */
 export function sourceDatasets(source: string): Array<{ dataset: Dataset; capability: string; label: string }> {
   const out: Array<{ dataset: Dataset; capability: string; label: string }> = [];
   for (const s of loadAllSpecs().filter((x) => x.source_system === source)) {
-    for (const c of s.capabilities) {
-      if (!c.sink) continue;
-      const label = c.sink.table === 'documents' ? 'Văn bản' : c.sink.table === 'tasks' ? 'Công việc' : c.ten;
-      out.push({ dataset: c.sink.table, capability: c.id, label: `${label} (${c.id})` });
-    }
+    for (const c of s.capabilities) if (c.sink) out.push({ dataset: 'records', capability: c.id, label: c.ten });
   }
   return out;
 }
@@ -97,8 +85,8 @@ export const PERIODS = ['thang_hien_tai', 'thang_truoc', 'quy_hien_tai', '30_nga
   '7_ngay_toi', '14_ngay_toi', '30_ngay_toi', 'tat_ca', 'tuy_chon'] as const;
 
 export const DefinitionSchema = z.object({
-  dataset: z.enum(['documents', 'tasks', 'records']),
-  capability: z.string().max(60).optional(),
+  dataset: z.literal('records').default('records'),
+  capability: z.string().max(60),
   mode: z.enum(['list', 'summary']),
   /** Trường ngày dùng cho tham số "Khoảng thời gian". Bỏ trống = không lọc theo thời gian. */
   date_field: FieldName.optional(),
@@ -134,7 +122,6 @@ export function checkDefinition(source: string, raw: unknown) {
     throw new Problem('invalid_params', 'Định nghĩa báo cáo chưa hợp lệ', `${i.path.join('.')}: ${i.message}`);
   }
   const def = p.data;
-  if (def.dataset === 'records' && !def.capability) throw new Problem('invalid_params', 'Định nghĩa báo cáo chưa hợp lệ', 'Dữ liệu chung cần chọn capability');
   const fields = new Map(datasetFields(def.dataset, source, def.capability).map((f) => [f.name, f]));
   const need = (name: string, where: string, type?: FieldType) => {
     const f = fields.get(name);
@@ -253,9 +240,9 @@ export async function runDefinition(t: Tx, source: string, raw: unknown, input: 
   const { def } = checkDefinition(source, raw);
   const fields = new Map(datasetFields(def.dataset, source, def.capability).map((f) => [f.name, f]));
   const q = new Sql();
-  const from = `${def.dataset} t LEFT JOIN app_users u ON u.id = t.owner_user_id LEFT JOIN org_units o ON o.id = t.org_unit_id`;
+  const from = `records t LEFT JOIN app_users u ON u.id = t.owner_user_id LEFT JOIN org_units o ON o.id = t.org_unit_id`;
   const where = [`t.valid_to IS NULL`, `t.source_system = ${q.param(source, 'string')}`];
-  if (def.dataset === 'records') where.push(`t.capability = ${q.param(def.capability, 'string')}`);
+  where.push(`t.capability = ${q.param(def.capability, 'string')}`);
   let applied: { tu_ngay: string; den_ngay: string } | undefined;
   let periodCond: string | null = null;
   if (def.date_field && input.params.khoang_thoi_gian !== 'tat_ca') {
@@ -429,7 +416,7 @@ export async function paramOptions(t: Tx, source: string, definition: unknown | 
   if (!v || !l) throw new Problem('invalid_params', 'x-options không hợp lệ', `${valueF}/${labelF}`);
   const q = new Sql();
   const where = [`t.valid_to IS NULL`, `t.source_system = ${q.param(source, 'string')}`, `${v.expr} IS NOT NULL`];
-  if (dataset === 'records') where.push(`t.capability = ${q.param(capability, 'string')}`);
+  where.push(`t.capability = ${q.param(capability, 'string')}`);
   return t.any(
     `SELECT DISTINCT ${v.expr} AS value, ${l.expr}::text AS label
        FROM ${dataset} t LEFT JOIN app_users u ON u.id = t.owner_user_id LEFT JOIN org_units o ON o.id = t.org_unit_id

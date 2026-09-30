@@ -6,7 +6,7 @@
  * Không xoá hệ thống: dữ liệu, lịch sử chạy và kết nối tham chiếu tới; tắt thay cho xoá.
  */
 import type { FastifyPluginAsync } from 'fastify';
-import { Problem, withTenant, type AuthMethod, type SourceRow } from '@vala/core';
+import { Problem, ensureRecordIndexes, withTenant, type AuthMethod, type SourceRow } from '@vala/core';
 import { AuthProfileSchema, parseSpec, registerSpecs, type AdapterSpec } from '@vala/core/adapter';
 import { audit } from '../audit.js';
 import type { ApiDeps } from '../deps.js';
@@ -222,6 +222,8 @@ export const adminSourceRoutes = (deps: ApiDeps): FastifyPluginAsync => async (a
       await audit(t, req, 'source_change', { type: 'source_system', id: cur.code }, { op: 'adapter', id: spec.id, version: spec.version });
     });
     await deps.sources.reload();
+    // Trường mới khai `index: true` ⇒ tạo chỉ mục ngay (hàm CSDL tự kiểm định danh, gọi lại nhiều lần an toàn).
+    await ensureRecordIndexes(deps.writer, [spec]);
     return view(deps.sources.get(cur.code)!, await counts());
   });
 };

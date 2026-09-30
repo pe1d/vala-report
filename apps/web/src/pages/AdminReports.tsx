@@ -11,7 +11,8 @@ import { GroupChips, GroupSection, NoMatch, Pager, TableToolbar, groupRows, useP
 // ---- kiểu định nghĩa (khớp apps/api/src/reports/defined.ts) --------------------------------------
 type FieldType = 'string' | 'int' | 'date';
 interface FieldInfo { name: string; label: string; type: FieldType }
-interface DatasetInfo { dataset: 'documents' | 'tasks' | 'records'; capability: string; label: string }
+/** Tập dữ liệu = (hệ thống × capability) trong kho chung records. */
+interface DatasetInfo { dataset: 'records'; capability: string; label: string }
 type Op = 'eq' | 'neq' | 'in' | 'contains' | 'gt' | 'gte' | 'lt' | 'lte' | 'is_null' | 'not_null'
   | 'truoc_hom_nay' | 'tu_hom_nay' | 'hom_nay' | 'den_hom_nay' | 'thang_nay' | 'trong_n_ngay_toi' | 'trong_n_ngay_qua';
 /** Chỉ dùng cho trường ngày. */
@@ -52,7 +53,7 @@ const CHARTS: Array<[ChartKind, string]> = [['bar', 'Cột ngang — so sánh h�
   ['line', 'Đường — xu hướng theo thời gian'], ['donut', 'Vành khuyên — phần của tổng (ít nhóm)'], ['heatmap', 'Lịch nhiệt — mật độ theo ngày']];
 const WIDTHS: Array<[1 | 2 | 3, string]> = [[3, 'Cả hàng'], [2, '2/3 hàng'], [1, '1/3 hàng']];
 const EMPTY = (dataset: DatasetInfo): Definition => ({
-  dataset: dataset.dataset, capability: dataset.dataset === 'records' ? dataset.capability : undefined, mode: 'summary',
+  dataset: 'records', capability: dataset.capability, mode: 'summary',
   default_period: 'thang_hien_tai', filters: [], param_filters: [], columns: [], group_by: [],
   measures: [{ fn: 'count', label: 'Số lượng', filters: [] }], tiles: [],
 });
@@ -148,7 +149,7 @@ function ReportEditor({ report, tabs, onClose, onSaved }: { report: ReportRow | 
   useEffect(() => {
     const d = meta.data;
     if (!configurable || !d) return;
-    if (!def || !d.datasets.some((x) => x.dataset === def.dataset && (def.dataset !== 'records' || x.capability === def.capability))) {
+    if (!def || !d.datasets.some((x) => x.capability === def.capability)) {
       setDef(d.datasets[0] ? EMPTY(d.datasets[0]) : null);
     }
   }, [meta.data]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -206,9 +207,9 @@ function ReportEditor({ report, tabs, onClose, onSaved }: { report: ReportRow | 
               )}
               {configurable && (
                 <Field label="Dữ liệu">
-                  <Select value={def ? `${def.dataset}:${def.capability ?? ''}` : ''} disabled={!meta.data?.datasets.length}
-                    onChange={(e) => { const d = meta.data!.datasets.find((x) => `${x.dataset}:${x.dataset === 'records' ? x.capability : ''}` === e.target.value); if (d) { setDef(EMPTY(d)); setPreview(null); } }}>
-                    {meta.data?.datasets.map((d) => <option key={`${d.dataset}:${d.capability}`} value={`${d.dataset}:${d.dataset === 'records' ? d.capability : ''}`}>{d.label}</option>)}
+                  <Select value={def?.capability ?? ''} disabled={!meta.data?.datasets.length}
+                    onChange={(e) => { const d = meta.data!.datasets.find((x) => x.capability === e.target.value); if (d) { setDef(EMPTY(d)); setPreview(null); } }}>
+                    {meta.data?.datasets.map((d) => <option key={d.capability} value={d.capability}>{d.label} ({d.capability})</option>)}
                   </Select>
                 </Field>
               )}
@@ -375,7 +376,7 @@ function Builder({ def, fields, ofType, up }: {
       <Section title="Thẻ KPI" hint="Con số hiện to ở đầu báo cáo và trên Tổng quan. Có thể đổi màu cảnh báo khi vượt ngưỡng.">
         <MeasureList items={def.tiles} fields={fields} max={4} tile onChange={(tiles) => up({ tiles: tiles as Tile[] })} />
       </Section>
-      <Muted className="text-xs">Đang dùng: {def.dataset === 'records' ? `dữ liệu chung (${def.capability})` : def.dataset === 'documents' ? 'văn bản' : 'công việc'}
+      <Muted className="text-xs">Đang dùng: {`dữ liệu ${def.capability}`}
         {def.group_by[0] ? ` · nhóm theo ${label(def.group_by[0].field).toLowerCase()}` : ''}</Muted>
     </div>
   );

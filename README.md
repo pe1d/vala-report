@@ -124,12 +124,21 @@ Kết nối qua tiện ích xong thì Tổng quan tự gọi "Lấy dữ liệu 
 - xác thực: cookie phiên, tên miền cookie, trang kiểm tra phiên, cách tự đăng nhập;
 - `allowed_endpoints`: các endpoint được phép gọi;
 - các capability và `output_schema`;
-- **`sink`**: bảng đích của từng capability (`documents` / `tasks` / `records`, cột nào). Trước đây phần này viết cứng trong `crawl.ts`. Tên bảng và cột chỉ được chọn trong `SINK_TABLES`, nên cấu hình không thể chèn SQL.
+- **`sink`**: nơi lưu của từng capability — luôn là **kho chung `records`** (xem mục *Kho dữ liệu chung* bên dưới). `columns` chọn trường từ `output_schema`, `extra` là trường ngữ cảnh lúc crawl (vd thư mục), `extra_schema` khai kiểu + nhãn cho các trường đó.
 
 Code không còn nhắc tới `egov`/`etask`. Hệ thống tạo nhanh (chỉ phiên đăng nhập) nâng lên cấu hình đầy đủ bằng cách dán adapter vào cùng hộp đó. Mọi lần lưu đều ghi `core.adapters` và audit `source_change`. Cổng áp dụng ngay; worker nạp lại mỗi phút.
 
+**Kho dữ liệu chung (cập nhật 30/09/2026, migration 016–017).** Mọi hệ thống nguồn — kể cả eGov, eTask — lưu vào
+**một bảng `records`**: `source_system` + `capability` cho biết dữ liệu của hệ thống nào, loại nào; `record_key` là khoá
+(trường `key: true`); các trường nằm trong `data` (jsonb) theo `output_schema`; `owner_user_id`/`org_unit_id` cho RLS;
+`valid_from`/`valid_to`/`content_hash` giữ lịch sử. Không còn bảng riêng theo nghiệp vụ (`documents`/`tasks` đã chuyển
+sang `records` rồi xoá, 12 báo cáo đối chiếu trước/sau giống hệt) ⇒ thêm hệ thống mới, hay triển khai cho đơn vị khác,
+**không đổi lược đồ CSDL**. Trường khai `index: true` (trong `output_schema` hoặc `sink.extra_schema`) được tạo chỉ mục
+qua hàm CSDL `ensure_record_index` (tự dựng tên/biểu thức, kiểm định danh — cấu hình không chèn được SQL); ngày đọc qua
+`rec_date()` để khớp chỉ mục. Mỗi đơn vị triển khai vẫn có schema riêng (`tenant_<mã>`).
+
 **Thêm hệ thống mới từ đầu đến Tổng quan, không sửa code (cập nhật 28/09/2026):**
-1. *Hệ thống nguồn → Thêm*: dán cấu hình adapter. Capability ghi vào `sink: { table: records }` là **bảng dữ liệu chung** (`records`): trường theo `output_schema`, nhãn lấy từ `label`, có lịch sử SCD2 và RLS cá nhân/đơn vị như văn bản. Muốn đưa vào bảng văn bản/công việc thì dùng `documents` / `tasks`.
+1. *Hệ thống nguồn → Thêm*: dán cấu hình adapter. Capability khai `sink: { table: records }`: trường theo `output_schema` (nhãn lấy từ `label`, `index: true` cho trường hay lọc/nhóm), có lịch sử SCD2 và RLS cá nhân/đơn vị.
 2. Người dùng kết nối: tiện ích, cookie, hoặc mật khẩu nếu adapter có `password_login`.
 3. *Lấy dữ liệu*: báo cáo không có spider thì **worker chạy thẳng các bước trong adapter**. Mỗi phút worker kiểm tra lịch đến hạn (`runDueSchedules`) và dời `next_run_at` ngay, nên lỗi không làm chạy lặp. Nút "Lấy dữ liệu ngay" cũng đi đường này. Spider Python chỉ còn cần cho trang phức tạp.
 4. *Cấu hình báo cáo → Tạo báo cáo* (`/cau-hinh-bao-cao`), không viết SQL. Chọn:

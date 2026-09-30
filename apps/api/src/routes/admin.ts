@@ -14,7 +14,7 @@ import { adminSourceRoutes } from './adminSources.js';
 
 interface SpiderBody {
   ten: string; mo_ta?: string | null; source_system: string;
-  entity: 'documents' | 'tasks' | 'records'; is_enabled?: boolean; main_py: string;
+  entity?: 'records'; is_enabled?: boolean; main_py: string;
 }
 const spiderBodySchema = {
   type: 'object', additionalProperties: false,
@@ -22,7 +22,7 @@ const spiderBodySchema = {
     ten: { type: 'string', minLength: 1, maxLength: 200 },
     mo_ta: { type: ['string', 'null'], maxLength: 1000 },
     source_system: { type: 'string', minLength: 1, maxLength: 64 },
-    entity: { type: 'string', enum: ['documents', 'tasks', 'records'] },
+    entity: { type: 'string', enum: ['records'] },
     is_enabled: { type: 'boolean' },
     main_py: { type: 'string', minLength: 1, maxLength: 200_000 },
   },
@@ -101,7 +101,7 @@ export const adminRoutes = (deps: ApiDeps): FastifyPluginAsync => async (app) =>
   });
 
   app.post<{ Body: SpiderBody & { code: string } }>('/admin/spiders', {
-    schema: { body: { ...spiderBodySchema, required: ['code', 'ten', 'source_system', 'entity', 'main_py'],
+    schema: { body: { ...spiderBodySchema, required: ['code', 'ten', 'source_system', 'main_py'],
       properties: { ...spiderBodySchema.properties, code: { type: 'string', pattern: '^[a-z][a-z0-9_]{1,62}$' } } } },
   }, async (req, reply) => {
     const b = req.body;
@@ -109,7 +109,7 @@ export const adminRoutes = (deps: ApiDeps): FastifyPluginAsync => async (app) =>
       await t.none(
         `INSERT INTO core.crawl_spiders (code, ten, mo_ta, source_system, entity, is_enabled, main_py, updated_by)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-        [b.code, b.ten, b.mo_ta ?? null, b.source_system, b.entity, b.is_enabled ?? true, b.main_py, req.user.id]).catch(spiderDbError);
+        [b.code, b.ten, b.mo_ta ?? null, b.source_system, 'records', b.is_enabled ?? true, b.main_py, req.user.id]).catch(spiderDbError);
       await audit(t, req, 'source_change', { type: 'spider', id: b.code }, { op: 'create', source_system: b.source_system });
     });
     return reply.status(201).send({ code: b.code, note: 'Bấm "Đồng bộ Crawlab" để đẩy spider lên Crawlab và tạo lịch.' });

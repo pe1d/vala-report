@@ -5,7 +5,8 @@ import { NoMatch, Pager, SearchBox, useTableView } from '../components/TableTool
 import { Empty, ErrorBox, Loading } from '../components/States';
 import { Badge, Banner, Button, Card, Field, Input, Muted, PageTitle, Select, Table, Td, Th, type Tone } from '../components/ui';
 
-type Entity = 'documents' | 'tasks' | 'records';
+/** Mọi spider ghi vào kho chung records (theo sink trong cấu hình adapter). */
+type Entity = 'records';
 interface Spider {
   code: string; ten: string; mo_ta: string | null; source_system: string; source_ten: string; entity: Entity;
   is_enabled: boolean; crawlab_spider_id: string | null; synced_at: string | null; schedules: number; subscribers: number;
@@ -16,7 +17,6 @@ interface SpiderList { crawlab_url: string | null; crawlab_configured: boolean; 
 interface SyncResult { spiders: Array<{ code: string; files: number; schedules: number }> }
 
 const RUN: Record<string, [Tone, string]> = { ok: ['ok', 'Thành công'], failed: ['err', 'Lỗi'], running: ['neutral', 'Đang chạy'], skipped: ['warn', 'Bỏ qua'] };
-const ENTITY: Array<[Entity, string]> = [['documents', 'Văn bản'], ['tasks', 'Công việc'], ['records', 'Dữ liệu chung (records)']];
 const ERR = (e: unknown) => (e instanceof ApiProblem ? `${e.title}${e.detail ? ` — ${e.detail}` : ''}` : e instanceof Error ? e.message : 'Lỗi');
 
 /** Mã khởi đầu cho spider mới — khung dùng vala_sdk, quản trị sửa đường dẫn/trường cho hệ thống nguồn. */
@@ -198,7 +198,7 @@ function SpiderEditor({ code, onClose, onSaved }: { code: string | null; onClose
   const save = async () => {
     if (!f) return;
     setBusy(true); setErr(null);
-    const body = { ten: f.ten.trim(), mo_ta: f.mo_ta.trim() || null, source_system: f.source_system, entity: f.entity, main_py: f.main_py };
+    const body = { ten: f.ten.trim(), mo_ta: f.mo_ta.trim() || null, source_system: f.source_system, entity: 'records' as const, main_py: f.main_py };
     try {
       if (isNew) await api.post('/admin/spiders', { code: f.code.trim(), ...body });
       else await api.patch(`/admin/spiders/${code}`, body);
@@ -244,10 +244,8 @@ function SpiderEditor({ code, onClose, onSaved }: { code: string | null; onClose
                     {sources.data?.map((s) => <option key={s.code} value={s.code}>{s.ten}{s.enabled ? '' : ' (đang tắt)'}</option>)}
                   </Select>
                 </Field>
-                <Field label="Ghi vào bảng dữ liệu">
-                  <Select className="w-full !min-w-0" value={f.entity} onChange={(e) => set({ entity: e.target.value as Entity })}>
-                    {ENTITY.map(([v, t]) => <option key={v} value={v}>{t}</option>)}
-                  </Select>
+                <Field label="Nơi lưu dữ liệu">
+                  <div className="py-1.5 text-sm text-slate-600 dark:text-slate-300">Kho chung — trường theo <code>output_schema</code> của capability mà spider gửi (<code>run.save</code>)</div>
                 </Field>
               </div>
 
