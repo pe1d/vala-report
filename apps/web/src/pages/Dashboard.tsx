@@ -3,6 +3,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { ApiProblem, DASH, api, fmtDate, fmtDateTime, fmtInt, type Column, type DashboardData, type DashboardTab, type DashboardWidget, type WidgetStatus } from '../api';
 import { ChartView } from '../components/Charts';
 import { StatTiles } from '../components/StatTiles';
+import { GroupSection, groupRows } from '../components/TableTools';
 import { ErrorBox, Loading } from '../components/States';
 import { Badge, Banner, Button, Card, Muted, PageTitle, ResultDialog, Tabs, type TabItem, type Tone } from '../components/ui';
 import { useValaExtension, type ExtensionEvent } from '../extension';
@@ -132,12 +133,20 @@ export function DashboardPage() {
           </div>
         </Card>
       )}
-      <div className="grid gap-4 lg:grid-cols-2">
-        {untabbed.map((w) => (
-          <Widget key={w.code} w={w} busy={busy === w.source_system}
-            onConnect={() => connect(w)} onRunNow={() => void runNow(w.source_system, w.source_ten)} />
-        ))}
-      </div>
+      {groupRows(untabbed, (w) => w.source_system, (w) => w.source_ten).map((g, _, all) => {
+        const grid = (
+          <div className="grid gap-4 lg:grid-cols-2">
+            {g.rows.map((w) => (
+              <Widget key={w.code} w={w} busy={busy === w.source_system}
+                onConnect={() => connect(w)} onRunNow={() => void runNow(w.source_system, w.source_ten)} />
+            ))}
+          </div>
+        );
+        // Chỉ một hệ thống ⇒ không cần tiêu đề nhóm.
+        return all.length > 1
+          ? <GroupSection key={g.key} id={`tong-quan-${g.key}`} title={g.label} count={g.rows.length} unit="báo cáo">{grid}</GroupSection>
+          : <div key={g.key}>{grid}</div>;
+      })}
       {dash.data && !untabbed.length && <Muted>Chưa có báo cáo nào hiện trên Tổng quan.</Muted>}
     </>
   );

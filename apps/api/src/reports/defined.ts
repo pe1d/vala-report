@@ -328,7 +328,7 @@ export async function runDefinition(t: Tx, source: string, raw: unknown, input: 
     const total = await t.one(`SELECT count(*)::int AS n FROM ${from} WHERE ${WL}`, q.args, (r: { n: number }) => r.n);
     const limit = Math.min(pageSize, def.limit);
     const rows = await t.any(`SELECT ${sel} FROM ${from} WHERE ${WL} ORDER BY ${order} LIMIT ${limit} OFFSET ${(page - 1) * limit}`, q.args);
-    const columns: Column[] = cols.map(({ c, f }) => ({ field: f.name, label: c.label ?? f.label, type: f.type, width: f.type === 'string' ? 220 : 120 }));
+    const columns: Column[] = cols.map(({ c, f }) => ({ field: f.name, label: c.label ?? f.label, type: f.type, width: colWidth(f) }));
     return { columns, rows, total_rows: Math.min(total, def.limit), tiles, applied };
   }
 
@@ -384,6 +384,10 @@ export async function runDefinition(t: Tx, source: string, raw: unknown, input: 
     chart_rows: chart ? rows.slice(0, g0.bucket === 'day' ? 400 : 60) : undefined,
   };
 }
+
+/** Bề rộng tối thiểu của cột: trường chữ dài (trích yếu, tiêu đề, mô tả) rộng hơn để không xuống dòng quá nhiều. */
+const LONG_TEXT = new Set(['trich_yeu', 'tieu_de', 'mo_ta_ngan']);
+const colWidth = (f: FieldDef) => (LONG_TEXT.has(f.name) ? 420 : f.type === 'string' ? 180 : 120);
 
 const pad = (n: number) => String(n).padStart(2, '0');
 /** Mọi nhãn ngày (DD/MM/YYYY) hoặc tháng (MM/YYYY) trong [tu, den] — null nếu quá dài để điền. */

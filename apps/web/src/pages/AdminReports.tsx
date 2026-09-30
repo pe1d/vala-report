@@ -6,7 +6,7 @@ import { StatTiles } from '../components/StatTiles';
 import { Empty, ErrorBox, Loading } from '../components/States';
 import { Badge, Banner, Button, Card, Field, Input, Menu, Muted, PageTitle, Select, Table, Tabs, Td, Th } from '../components/ui';
 import { useAsync } from '../hooks';
-import { NoMatch, Pager, TableToolbar, useTableView } from '../components/TableTools';
+import { GroupChips, GroupSection, NoMatch, Pager, TableToolbar, groupRows, usePaged, useTableView } from '../components/TableTools';
 
 // ---- kiểu định nghĩa (khớp apps/api/src/reports/defined.ts) --------------------------------------
 type FieldType = 'string' | 'int' | 'date';
@@ -67,7 +67,10 @@ export function AdminReportsPage() {
   const tabs = useAsync(() => api.get<DashTab[]>('/admin/dashboard-tabs'), []);
   const [view, setView] = useState<'reports' | 'tabs'>('reports');
   const tabName = (id: number | null) => (id === null ? 'Báo cáo của bạn' : tabs.data?.find((t) => t.id === id)?.ten ?? '?');
-  const tv = useTableView(list.data, (r) => `${r.ten} ${r.code} ${r.source_ten} ${r.mo_ta ?? ''} ${r.show_on_dashboard ? tabName(r.dashboard_tab) : ''}`);
+  // Tìm trên toàn bộ rồi chia nhóm theo hệ thống nguồn; mỗi nhóm tự phân trang khi dài.
+  const tv = useTableView(list.data, (r) => `${r.ten} ${r.code} ${r.source_ten} ${r.mo_ta ?? ''} ${r.show_on_dashboard ? tabName(r.dashboard_tab) : ''}`, 10_000);
+  const [src, setSrc] = useState('');
+  const groups = groupRows(tv.rows, (r) => r.source_system, (r) => r.source_ten);
   const [editing, setEditing] = useState<ReportRow | 'new' | null>(null);
   const [note, setNote] = useState<string | null>(null);
 
@@ -96,6 +99,7 @@ export function AdminReportsPage() {
           { id: 'tabs', label: 'Tab trên Tổng quan', count: tabs.data ? { n: tabs.data.length } : undefined }]} />
       {view === 'tabs' ? <TabManager tabs={tabs} onNote={setNote} onChanged={() => { tabs.reload(); list.reload(); }} /> : (<>
       <TableToolbar q={tv.q} onQ={tv.setQ} placeholder="Tìm theo tên, mã, hệ thống, tab…">
+        <GroupChips groups={groups.map((g) => ({ key: g.key, label: g.label, n: g.rows.length }))} value={src} onChange={setSrc} />
         <span className="flex-1" />
         <Button variant="primary" onClick={() => { setEditing('new'); setNote(null); }}>Tạo báo cáo</Button>
       </TableToolbar>
@@ -103,37 +107,12 @@ export function AdminReportsPage() {
       {list.error ? <ErrorBox error={list.error} onRetry={list.reload} /> : null}
       {list.data && !list.data.length && <Empty>Chưa có báo cáo nào.</Empty>}
       {!!list.data?.length && !tv.total && <NoMatch q={tv.q} onClear={() => tv.setQ('')} />}
-      {!!tv.total && (<>
-        <Table>
-          <thead><tr><Th>Báo cáo</Th><Th>Hệ thống</Th><Th>Loại</Th><Th>Phạm vi</Th><Th>Tổng quan</Th><Th num>Lịch đang bật</Th><Th /></tr></thead>
-          <tbody>
-            {tv.rows.map((r) => (
-              <tr key={r.code} className={r.is_active ? '' : 'opacity-60'}>
-                <Td><div className="font-medium">{r.ten}</div><Muted className="font-mono text-xs">{r.code}</Muted></Td>
-                <Td>{r.source_ten}</Td>
-                <Td>{r.kind === 'config' ? <Badge tone="info">Cấu hình</Badge> : <Badge tone="warn">Chưa có định nghĩa</Badge>}</Td>
-                <Td>{r.required_scope === 'ca_nhan' ? 'Cá nhân' : 'Đơn vị'}</Td>
-                <Td>
-                  <label className="flex items-center gap-2 text-sm">
-                    <input type="checkbox" checked={r.show_on_dashboard}
-                      onChange={() => void patch(r, { show_on_dashboard: !r.show_on_dashboard }, `${r.show_on_dashboard ? 'Đã ẩn' : 'Đã hiện'} “${r.ten}” trên Tổng quan.`)} />
-                    <span>{r.show_on_dashboard ? `${tabName(r.dashboard_tab)} · thứ tự ${r.dashboard_order}` : 'Ẩn'}</span>
-                  </label>
-                </Td>
-                <Td num>{r.lich}</Td>
-                <Td>
-                  <div className="flex justify-end gap-1.5">
-                    <Button onClick={() => { setEditing(r); setNote(null); }}>Sửa</Button>
-                    <Button onClick={() => void patch(r, { is_active: !r.is_active }, `Đã ${r.is_active ? 'tắt' : 'bật'} “${r.ten}”.`)}>{r.is_active ? 'Tắt' : 'Bật'}</Button>
-                    <Menu label={`Thêm thao tác cho ${r.ten}`} items={[{ label: 'Xoá báo cáo', danger: true, onClick: () => void remove(r) }]} />
-                  </div>
-                </Td>
-              </tr>
-            ))}
-          </tbody>
-        </Table>
-        <Pager page={tv.page} pageSize={tv.pageSize} total={tv.total} onPage={tv.setPage} onPageSize={tv.setPageSize} unit="báo cáo" />
-      </>)}
+      {groups.filter((g) => !src || g.key === src).map((g) => (
+        <GroupSection key={g.key} id={`cau-hinh-${g.key}`} title={g.label} count={g.rows.length} unit="báo cáo"
+          extra={g.rows.some((r) => !r.is_active) && <Muted className="text-sm">· {g.rows.filter((r) => !r.is_active).length} đang tắt</Muted>}>
+          <ReportGroup rows={g.rows} tabName={tabName} onEdit={(r) => { setEditing(r); setNote(null); }} patch={patch} remove={remove} />
+        </GroupSection>
+      ))}
       </>)}
       {editing && <ReportEditor report={editing === 'new' ? null : editing} tabs={tabs.data ?? []} onClose={() => setEditing(null)}
         onSaved={(m) => { setEditing(null); setNote(m); list.reload(); tabs.reload(); }} />}
@@ -197,7 +176,7 @@ function ReportEditor({ report, tabs, onClose, onSaved }: { report: ReportRow | 
   const canSave = !busy && !!ten.trim() && (!isNew || !!code) && (!configurable || !!def);
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/50 dark:bg-black/60 sm:p-4" role="dialog" aria-modal="true">
-      <div className="mx-auto flex min-h-full w-full flex-col bg-white dark:bg-slate-950 sm:min-h-0 sm:max-w-6xl sm:rounded-xl sm:border sm:border-slate-200 sm:shadow-xl dark:sm:border-slate-800 lg:h-[90vh] lg:overflow-hidden">
+      <div className="mx-auto flex min-h-full w-full flex-col bg-white dark:bg-slate-950 sm:min-h-0 sm:max-w-[1600px] sm:rounded-xl sm:border sm:border-slate-200 sm:shadow-xl dark:sm:border-slate-800 lg:h-[90vh] lg:overflow-hidden">
         {/* Đầu trang: tên báo cáo đang sửa + đóng */}
         <header className="flex shrink-0 items-center gap-3 border-b border-slate-200 px-5 py-3 dark:border-slate-800">
           <div className="min-w-0">
@@ -592,6 +571,51 @@ function TabManager({ tabs, onNote, onChanged }: {
         </Table>
         <Pager page={tv.page} pageSize={tv.pageSize} total={tv.total} onPage={tv.setPage} onPageSize={tv.setPageSize} unit="tab" />
       </>)}
+    </>
+  );
+}
+
+/** Bảng báo cáo của một hệ thống nguồn (cột "Hệ thống" bỏ vì đã là tiêu đề nhóm). */
+function ReportGroup({ rows, tabName, onEdit, patch, remove }: {
+  rows: ReportRow[]; tabName: (id: number | null) => string; onEdit: (r: ReportRow) => void;
+  patch: (r: ReportRow, body: Partial<ReportRow>, msg: string) => Promise<void>; remove: (r: ReportRow) => Promise<void>;
+}) {
+  const pg = usePaged(rows);
+  return (
+    <>
+      <Table fixed>
+        <colgroup><col /><col className="w-28" /><col className="w-72" /><col className="w-32" /><col className="w-52" /></colgroup>
+        <thead><tr><Th>Báo cáo</Th><Th>Phạm vi</Th><Th>Tổng quan</Th><Th num>Lịch đang bật</Th><Th /></tr></thead>
+        <tbody>
+          {pg.rows.map((r) => (
+            <tr key={r.code} className={r.is_active ? '' : 'opacity-60'}>
+              <Td>
+                <div className="flex flex-wrap items-center gap-2"><span className="font-medium">{r.ten}</span>
+                  {r.kind === 'missing' && <Badge tone="warn">Chưa có định nghĩa</Badge>}
+                  {!r.is_active && <Badge tone="neutral">Đang tắt</Badge>}</div>
+                <Muted className="font-mono text-xs">{r.code}</Muted>
+              </Td>
+              <Td>{r.required_scope === 'ca_nhan' ? 'Cá nhân' : 'Đơn vị'}</Td>
+              <Td>
+                <label className="flex items-center gap-2 text-sm">
+                  <input type="checkbox" checked={r.show_on_dashboard}
+                    onChange={() => void patch(r, { show_on_dashboard: !r.show_on_dashboard }, `${r.show_on_dashboard ? 'Đã ẩn' : 'Đã hiện'} “${r.ten}” trên Tổng quan.`)} />
+                  <span>{r.show_on_dashboard ? `${tabName(r.dashboard_tab)} · thứ tự ${r.dashboard_order}` : 'Ẩn'}</span>
+                </label>
+              </Td>
+              <Td num>{r.lich}</Td>
+              <Td>
+                <div className="flex justify-end gap-1.5">
+                  <Button onClick={() => onEdit(r)}>Sửa</Button>
+                  <Button onClick={() => void patch(r, { is_active: !r.is_active }, `Đã ${r.is_active ? 'tắt' : 'bật'} “${r.ten}”.`)}>{r.is_active ? 'Tắt' : 'Bật'}</Button>
+                  <Menu label={`Thêm thao tác cho ${r.ten}`} items={[{ label: 'Xoá báo cáo', danger: true, onClick: () => void remove(r) }]} />
+                </div>
+              </Td>
+            </tr>
+          ))}
+        </tbody>
+      </Table>
+      {pg.total > 20 && <Pager page={pg.page} pageSize={pg.pageSize} total={pg.total} onPage={pg.setPage} onPageSize={pg.setPageSize} unit="báo cáo" />}
     </>
   );
 }

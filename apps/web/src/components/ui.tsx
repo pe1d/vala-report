@@ -178,10 +178,11 @@ export function PageTitle({ title, subtitle }: { title: string; subtitle?: React
 }
 
 // ---- bảng ----
-export function Table({ children }: { children: ReactNode }) {
+/** `fixed`: cột theo <colgroup> thay vì theo nội dung — để nhiều bảng xếp chồng (theo nhóm) thẳng cột với nhau. */
+export function Table({ children, fixed }: { children: ReactNode; fixed?: boolean }) {
   return (
     <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
-      <table className="w-full border-collapse">{children}</table>
+      <table className={cx('w-full border-collapse', fixed && 'min-w-[860px] table-fixed')}>{children}</table>
     </div>
   );
 }
