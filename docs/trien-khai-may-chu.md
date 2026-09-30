@@ -1,12 +1,14 @@
 # Triển khai Vala Reporting lên máy chủ
 
-Hướng dẫn đưa hệ thống lên một máy chủ Linux (ví dụ `10.2.65.146`) bằng Docker. Tất cả chạy trong container;
+> Máy chủ 10.2.65.146 đã có k3s ⇒ dùng [trien-khai-k3s.md](trien-khai-k3s.md). Tài liệu này dành cho máy chưa có k3s.
+
+Hướng dẫn đưa hệ thống lên một máy chủ Linux bằng Docker Compose. Tất cả chạy trong container;
 dữ liệu nằm trong volume Docker nên cập nhật code không làm mất dữ liệu.
 
 ```
 Người dùng / tiện ích ──HTTP(S)──▶ máy chủ :80 / :443
                                     └─ web (nginx): giao diện + chuyển /api → api
-                                         ├─ api, worker            (image vala-node)
+                                         ├─ api, worker            (image vala-report-node)
                                          ├─ postgres, redis, vault (lưu bền, tự mở khoá)
                                          └─ crawlab + mongo        (chạy spider; giao diện chỉ ở 127.0.0.1:8080)
 ```
@@ -27,7 +29,7 @@ Chỉ cổng 80/443 mở ra ngoài. CSDL, Redis, Vault chỉ nằm trong mạng 
 
 ```bash
 sudo mkdir -p /opt/vala-reporting && sudo chown $USER /opt/vala-reporting
-git clone ssh://gitmxh.bkav.com:7999/vala-report/vala-reporting.git /opt/vala-reporting
+git clone ssh://git@gitmxh.bkav.com:7999/vala-report/vala-reporting.git /opt/vala-reporting
 cd /opt/vala-reporting
 
 deploy/gen-env.sh http://10.2.65.146        # tạo .env.prod với mật khẩu/khoá ngẫu nhiên (chmod 600)
@@ -118,8 +120,8 @@ $C run --rm tools scripts/migrate.ts
 $C up -d api worker
 ```
 
-Khôi phục Vault (phiên và mật khẩu nguồn): giải nén `vault-file.tgz` và `vault-keys.tgz` vào hai volume `vala_vault-file`
-và `vala_vault-keys` khi container vault đang tắt, rồi bật lại.
+Khôi phục Vault (phiên và mật khẩu nguồn): giải nén `vault-file.tgz` và `vault-keys.tgz` vào hai volume `vala-report_vault-file`
+và `vala-report_vault-keys` khi container vault đang tắt, rồi bật lại.
 
 ## 7. Vận hành hằng ngày
 

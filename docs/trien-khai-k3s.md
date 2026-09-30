@@ -1,0 +1,121 @@
+# Triển khai Vala Reporting lên k3s (máy chủ 10.2.65.146)
+
+Địa chỉ: **https://vala-report.demozone.vn:5443**. Mọi thứ chạy trong namespace riêng `vala-report` của k3s đang có sẵn
+trên máy chủ. Không cần cài Docker, không cần registry, không sửa cấu hình k3s và không đụng namespace khác.
+(Cách chạy bằng Docker Compose trên máy chưa có k3s: xem [trien-khai-may-chu.md](trien-khai-may-chu.md).)
+
+```
+Người dùng / tiện ích ──HTTPS──▶ 10.2.65.146:5443 (hostPort của pod web)
+                                   └─ web (nginx, chứng chỉ trong Secret vala-tls) ── /api → api
+namespace vala-report:  api, worker (image vala-report-node) · postgres, redis, vault · crawlab + mongo
+                        ổ đĩa: local-path (/var/lib/rancher/k3s/storage), đặt Retain — xoá PVC không mất dữ liệu
+```
+
+- Chỉ mở cổng 5443. CSDL, Redis, Vault, Crawlab chỉ có ClusterIP; NetworkPolicy chặn truy cập từ namespace khác.
+- Tài nguyên có trần: ResourceQuota của namespace (xin tối đa 6 CPU / 6 GiB, giới hạn 16 CPU / 12 GiB, kể cả Job build).
+  Khi chạy thực tế xin khoảng 1 CPU và 2 GiB.
+- Image build ngay trên máy chủ bằng BuildKit trong một Job (pod privileged, chỉ tồn tại lúc build), rồi nạp vào containerd
+  của k3s.
+
+## 0. Việc cần có trước
+
+| Việc | Ai làm |
+|---|---|
+| Chủ cluster đồng ý cho chạy namespace `vala-report` (có Job build privileged, hostPort 5443) | quản trị máy chủ |
+| DNS `vala-report.demozone.vn` → `10.2.65.146` | quản trị mạng |
+| Chứng chỉ HTTPS cho `vala-report.demozone.vn` (hoặc `*.demozone.vn`): `fullchain.pem` + `privkey.pem` | quản trị mạng |
+| Cổng 5443 trên máy chủ còn trống, tường lửa mở 5443 cho người dùng | kiểm tra: `sudo ss -ltnp \| grep :5443` |
+| Ổ đĩa: kubelet trục xuất pod khi ổ còn trống dưới khoảng 10–15% | kiểm tra: `df -h /var/lib/rancher` |
+| Máy chủ lấy được mã nguồn (git) | xem bước 1 |
+
+## 1. Lấy mã nguồn về máy chủ
+
+Máy chủ không phân giải được `gitmxh.bkav.com`, nên phải khai IP trước, rồi tạo khoá SSH chỉ đọc cho repo:
+
+```bash
+echo "10.2.54.60 gitmxh.bkav.com" | sudo tee -a /etc/hosts
+ssh-keygen -t ed25519 -N "" -f ~/.ssh/vala_deploy -C "vala-report@10.2.65.146"
+cat ~/.ssh/vala_deploy.pub      # dán vào Bitbucket: repo → Repository settings → Access keys (Read)
+printf 'Host gitmxh.bkav.com\n  IdentityFile ~/.ssh/vala_deploy\n' >> ~/.ssh/config
+
+sudo mkdir -p /opt/vala-report && sudo chown $USER /opt/vala-report
+git clone ssh://git@gitmxh.bkav.com:7999/vala-report/vala-reporting.git /opt/vala-report
+cd /opt/vala-report
+```
+
+## 2. Cấu hình
+
+```bash
+deploy/gen-env.sh https://vala-report.demozone.vn:5443     # tạo .env.prod (mật khẩu/khoá ngẫu nhiên, chmod 600)
+nano .env.prod                                             # xem lại SOURCE_HTTP_PROXY (máy chủ gọi thẳng eGov/eTask ⇒ để trống)
+cp <nơi để chứng chỉ>/fullchain.pem <nơi để chứng chỉ>/privkey.pem deploy/certs/
+```
+
+Chưa có chứng chỉ thì `deploy.sh` hỏi có tạo chứng chỉ tự ký tạm không. Dùng chứng chỉ tự ký thì trình duyệt cảnh báo và
+tiện ích có thể không gọi được máy chủ, nên chỉ dùng để thử.
+
+## 3. Triển khai
+
+```bash
+deploy/k8s/deploy.sh
+```
+
+Các bước script chạy:
+
+1. Tạo namespace, quota, NetworkPolicy, Secret `vala-env` (từ `.env.prod`), `vala-tls` (chứng chỉ), ConfigMap Vault.
+2. Build image nếu chưa có image của commit hiện tại. Lần đầu mất 5–15 phút.
+3. Bật postgres, redis, vault, crawlab. Đặt ổ đĩa sang Retain.
+4. Chạy migration CSDL. Lỗi thì dừng và không bật bản mới.
+5. Bật api, worker, web. Kiểm tra `https://127.0.0.1:5443/healthz`.
+
+Script dùng `kubectl`. Nếu user hiện tại không có kubeconfig, script tự dùng `sudo k3s kubectl`, còn image thì nạp bằng
+`sudo k3s ctr`.
+
+Sau đó chọn **một** trong hai cách:
+
+- **Cài mới:** `deploy/k8s/create-admin.sh admin "Quản trị hệ thống" admin@bkav.com`. Script in mật khẩu tạm một lần;
+  lần đầu đăng nhập phải đổi.
+- **Chuyển dữ liệu từ máy dev:** trên máy dev chạy `deploy/export-dev-data.sh`, chép file `.dump` sang máy chủ, rồi chạy
+  `deploy/k8s/import-data.sh deploy/backup/vala-dev-<ngày>.dump`. Hệ quả giống [trien-khai-may-chu.md](trien-khai-may-chu.md#2b-chuyển-dữ-liệu-từ-máy-đang-chạy):
+  spider tự đồng bộ lên Crawlab mới, phiên nguồn phải gửi lại, người dùng giữ mật khẩu cũ.
+
+Tiện ích trình duyệt: vào **Tùy chọn** → địa chỉ máy chủ `https://vala-report.demozone.vn:5443` → đăng nhập lại.
+
+## 4. Cập nhật phiên bản mới
+
+```bash
+cd /opt/vala-report && git pull && deploy/k8s/deploy.sh
+```
+
+Script build image mới (tag là mã commit), chạy migration trước rồi mới thay api/worker/web. Image của 3 bản build gần
+nhất được giữ lại để quay lại khi cần. Đổi `.env.prod` hoặc chứng chỉ rồi chạy lại `deploy.sh` thì pod tự khởi động lại.
+
+## 5. Sao lưu
+
+```bash
+deploy/k8s/backup.sh     # CSDL + dữ liệu Vault + khoá mở Vault → deploy/backup/<thời điểm>/, giữ 14 bản
+```
+
+Đặt cron hằng đêm (mẫu có trong đầu file) và chép bản sao lưu sang máy khác. `vault-keys.tgz` là khoá mở Vault: cất riêng.
+
+## 6. Vận hành
+
+| Việc | Lệnh |
+|---|---|
+| Tình trạng | trang **Vận hành**, hoặc `kubectl -n vala-report get pods` |
+| Log | `kubectl -n vala-report logs -f deploy/api` (hoặc `deploy/worker`, `deploy/web`, `statefulset/crawlab`) |
+| Giao diện Crawlab | trên máy chủ: `kubectl -n vala-report port-forward svc/crawlab 8080:8080`, rồi SSH tunnel tới `localhost:8080` |
+| Đặt lại mật khẩu quản trị | `deploy/k8s/create-admin.sh <tên đăng nhập>` |
+| Khởi động lại một dịch vụ | `kubectl -n vala-report rollout restart deploy/api` |
+| Gỡ hẳn (GIỮ dữ liệu) | `kubectl delete ns vala-report` (thư mục dữ liệu còn trong `/var/lib/rancher/k3s/storage`, PV đặt Retain) |
+
+Máy chủ khởi động lại thì k3s tự bật lại các pod, và Vault tự mở khoá.
+
+## 7. Nếu gặp lỗi
+
+- **Pod web `Pending`, báo cổng 5443 đã bị chiếm:** có dịch vụ khác đang giữ 5443 (`sudo ss -ltnp | grep :5443`).
+- **Không vào được từ máy khác, nhưng `curl -k https://127.0.0.1:5443/healthz` trên máy chủ chạy được:** tường lửa, hoặc
+  CNI không hỗ trợ hostPort (Calico cần plugin `portmap`, bản cài mặc định đã có).
+- **Pod bị `Evicted` do ephemeral-storage / DiskPressure:** ổ đĩa máy chủ gần đầy. Dọn bớt; cache build nằm ở
+  `/var/lib/vala-report/buildkit` và xoá được.
+- **Máy chủ phải qua proxy mới ra Internet:** `BUILD_HTTP_PROXY=http://proxy:3128 deploy/k8s/deploy.sh`.

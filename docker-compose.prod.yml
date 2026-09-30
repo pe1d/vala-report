@@ -7,10 +7,10 @@
 # Chỉ mở ra ngoài: web (HTTP_PORT/HTTPS_PORT). CSDL, Redis, Vault, Crawlab chỉ trong mạng Docker
 # (Crawlab UI ở 127.0.0.1:CRAWLAB_PORT — xem qua SSH tunnel).
 # =====================================================================
-name: vala
+name: vala-report
 
 x-node: &node
-  image: vala-node:${VALA_VERSION:-latest}
+  image: vala-report-node:${VALA_VERSION:-latest}
   build: { context: ., dockerfile: infra/node.Dockerfile }
   restart: unless-stopped
   env_file: .env.prod
@@ -90,12 +90,14 @@ services:
     command: ["scripts/migrate.ts"]
 
   web:
-    image: vala-web:${VALA_VERSION:-latest}
+    image: vala-report-web:${VALA_VERSION:-latest}
     build: { context: ., dockerfile: infra/web/Dockerfile }
     restart: unless-stopped
     ports:
       - "${HTTP_PORT:-80}:80"
       - "${HTTPS_PORT:-443}:443"
+    environment:
+      PUBLIC_WEB_URL: ${PUBLIC_WEB_URL:-}      # HTTP → HTTPS giữ đúng cổng công khai
     volumes: ["./deploy/certs:/etc/nginx/certs:ro"]
     depends_on: [api]
 

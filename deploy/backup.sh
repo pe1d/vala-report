@@ -11,7 +11,7 @@ DIR="deploy/backup/$(date +%Y%m%d-%H%M)"
 mkdir -p "$DIR"
 "${C[@]}" exec -T postgres pg_dump -U vala_owner -Fc vala > "$DIR/vala.dump"
 for v in vault-file vault-keys; do
-  docker run --rm -v "vala_${v}:/v:ro" -v "$PWD/$DIR:/b" alpine tar czf "/b/${v}.tgz" -C /v .
+  docker run --rm -v "vala-report_${v}:/v:ro" -v "$PWD/$DIR:/b" alpine tar czf "/b/${v}.tgz" -C /v .
 done
 ls -1dt deploy/backup/2* | tail -n +15 | xargs -r rm -rf
 echo "Đã sao lưu vào $DIR ($(du -sh "$DIR" | cut -f1))"

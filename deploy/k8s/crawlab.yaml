@@ -1,0 +1,99 @@
+# Crawlab (chạy spider Python) + MongoDB của nó. Giao diện Crawlab KHÔNG mở ra ngoài — xem bằng
+#   kubectl -n vala-report port-forward svc/crawlab 8080:8080   (trên máy chủ, rồi SSH tunnel nếu cần)
+apiVersion: v1
+kind: Service
+metadata:
+  name: crawlab-mongo
+spec:
+  selector: { app: crawlab-mongo }
+  ports: [{ name: mongo, port: 27017 }]
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: crawlab-mongo
+spec:
+  serviceName: crawlab-mongo
+  replicas: 1
+  selector:
+    matchLabels: { app: crawlab-mongo }
+  template:
+    metadata:
+      labels: { app: crawlab-mongo }
+    spec:
+      enableServiceLinks: false
+      containers:
+        - name: mongo
+          image: mongo:5
+          args: [--wiredTigerCacheSizeGB, "0.25"]
+          ports: [{ containerPort: 27017 }]
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { cpu: "1", memory: 768Mi }
+          volumeMounts: [{ name: data, mountPath: /data/db }]
+  volumeClaimTemplates:
+    - metadata: { name: data }
+      spec:
+        accessModes: [ReadWriteOnce]
+        storageClassName: local-path
+        resources: { requests: { storage: 2Gi } }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: crawlab
+spec:
+  selector: { app: crawlab }
+  ports: [{ name: http, port: 8080 }]
+---
+# Ghim đúng bản đã kiểm chứng trên máy dev (0.6.x, 09/10/2024) — tránh `latest` đổi API ngầm.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: crawlab
+spec:
+  serviceName: crawlab
+  replicas: 1
+  selector:
+    matchLabels: { app: crawlab }
+  template:
+    metadata:
+      labels: { app: crawlab }
+    spec:
+      enableServiceLinks: false
+      containers:
+        - name: crawlab
+          image: crawlabteam/crawlab@sha256:a0f72ac7325ad97dd9452f56871b0c0bc90225021abbd7857f447fc14fd68abb
+          env:
+            - { name: CRAWLAB_NODE_MASTER, value: "Y" }
+            - { name: CRAWLAB_MONGO_HOST, value: crawlab-mongo }
+            - { name: CRAWLAB_MONGO_PORT, value: "27017" }
+            - { name: TZ, value: Asia/Ho_Chi_Minh }
+            # Spider gọi hệ thống nguồn qua proxy (nếu SOURCE_HTTP_PROXY có giá trị) nhưng gọi API Vala trực tiếp.
+            # deploy.sh luôn đặt khoá này trong Secret (rỗng = gọi thẳng).
+            - name: SOURCE_HTTP_PROXY
+              valueFrom: { secretKeyRef: { name: vala-env, key: SOURCE_HTTP_PROXY } }
+            - { name: HTTP_PROXY, value: $(SOURCE_HTTP_PROXY) }
+            - { name: HTTPS_PROXY, value: $(SOURCE_HTTP_PROXY) }
+            - { name: http_proxy, value: $(SOURCE_HTTP_PROXY) }
+            - { name: https_proxy, value: $(SOURCE_HTTP_PROXY) }
+            - { name: NO_PROXY, value: "api,crawlab,crawlab-mongo,localhost,127.0.0.1,.svc,.cluster.local" }
+            - { name: no_proxy, value: "api,crawlab,crawlab-mongo,localhost,127.0.0.1,.svc,.cluster.local" }
+          ports: [{ containerPort: 8080 }]
+          resources:
+            requests: { cpu: 200m, memory: 512Mi }
+            limits: { cpu: "2", memory: 2Gi }
+          volumeMounts:
+            - { name: data, mountPath: /root/.crawlab }
+            - { name: workspace, mountPath: /root/crawlab_workspace }
+  volumeClaimTemplates:
+    - metadata: { name: data }
+      spec:
+        accessModes: [ReadWriteOnce]
+        storageClassName: local-path
+        resources: { requests: { storage: 2Gi } }
+    - metadata: { name: workspace }
+      spec:
+        accessModes: [ReadWriteOnce]
+        storageClassName: local-path
+        resources: { requests: { storage: 2Gi } }

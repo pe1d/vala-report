@@ -1,0 +1,156 @@
+# Dịch vụ lưu dữ liệu: PostgreSQL, Redis, Vault. Ổ đĩa: local-path (thư mục trên máy chủ, giữ nguyên khi pod tạo lại).
+# enableServiceLinks: false ở mọi pod — không để k8s tự thêm biến kiểu API_PORT=tcp://… đè lên cấu hình của Vala/Crawlab.
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+spec:
+  selector: { app: postgres }
+  ports: [{ name: pg, port: 5432 }]
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector:
+    matchLabels: { app: postgres }
+  template:
+    metadata:
+      labels: { app: postgres }
+    spec:
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          env:
+            - { name: POSTGRES_DB, value: vala }
+            - { name: POSTGRES_USER, value: vala_owner }
+            - name: POSTGRES_PASSWORD
+              valueFrom: { secretKeyRef: { name: vala-env, key: POSTGRES_PASSWORD } }
+            - { name: PGDATA, value: /var/lib/postgresql/data/pgdata }
+            - { name: TZ, value: Asia/Ho_Chi_Minh }
+          ports: [{ containerPort: 5432 }]
+          readinessProbe:
+            exec: { command: [pg_isready, -U, vala_owner, -d, vala] }
+            periodSeconds: 5
+          livenessProbe:
+            exec: { command: [pg_isready, -U, vala_owner, -d, vala] }
+            initialDelaySeconds: 30
+            periodSeconds: 20
+            failureThreshold: 6
+          resources:
+            requests: { cpu: 200m, memory: 512Mi }
+            limits: { cpu: "2", memory: 2Gi }
+          volumeMounts:
+            - { name: data, mountPath: /var/lib/postgresql/data }
+            - { name: shm, mountPath: /dev/shm }
+      volumes:
+        - name: shm
+          emptyDir: { medium: Memory, sizeLimit: 256Mi }
+  volumeClaimTemplates:
+    - metadata: { name: data }
+      spec:
+        accessModes: [ReadWriteOnce]
+        storageClassName: local-path
+        resources: { requests: { storage: 10Gi } }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+spec:
+  selector: { app: redis }
+  ports: [{ name: redis, port: 6379 }]
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: redis
+spec:
+  serviceName: redis
+  replicas: 1
+  selector:
+    matchLabels: { app: redis }
+  template:
+    metadata:
+      labels: { app: redis }
+    spec:
+      enableServiceLinks: false
+      containers:
+        - name: redis
+          image: redis:7-alpine
+          args: [redis-server, --appendonly, "yes"]
+          ports: [{ containerPort: 6379 }]
+          readinessProbe:
+            exec: { command: [redis-cli, ping] }
+            periodSeconds: 10
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { cpu: 500m, memory: 256Mi }
+          volumeMounts: [{ name: data, mountPath: /data }]
+  volumeClaimTemplates:
+    - metadata: { name: data }
+      spec:
+        accessModes: [ReadWriteOnce]
+        storageClassName: local-path
+        resources: { requests: { storage: 2Gi } }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vault
+spec:
+  selector: { app: vault }
+  ports: [{ name: http, port: 8200 }]
+---
+# Vault lưu bền, tự khởi tạo / mở khoá (infra/vault/entrypoint.sh, đưa vào ConfigMap vala-vault bởi deploy.sh).
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: vault
+spec:
+  serviceName: vault
+  replicas: 1
+  selector:
+    matchLabels: { app: vault }
+  template:
+    metadata:
+      labels: { app: vault }
+    spec:
+      enableServiceLinks: false
+      containers:
+        - name: vault
+          image: hashicorp/vault:1.17
+          command: [/bin/sh, /vault/config/entrypoint.sh]
+          env:
+            - name: VAULT_APP_TOKEN
+              valueFrom: { secretKeyRef: { name: vala-env, key: VAULT_TOKEN } }
+          ports: [{ containerPort: 8200 }]
+          readinessProbe:
+            exec: { command: [/bin/sh, -c, "VAULT_ADDR=http://127.0.0.1:8200 vault status >/dev/null"] }
+            periodSeconds: 10
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { cpu: 500m, memory: 512Mi }
+          volumeMounts:
+            - { name: config, mountPath: /vault/config, readOnly: true }
+            - { name: file, mountPath: /vault/file }
+            - { name: keys, mountPath: /vault/keys }
+      volumes:
+        - name: config
+          configMap: { name: vala-vault, defaultMode: 0755 }
+  volumeClaimTemplates:
+    - metadata: { name: file }
+      spec:
+        accessModes: [ReadWriteOnce]
+        storageClassName: local-path
+        resources: { requests: { storage: 2Gi } }
+    - metadata: { name: keys }
+      spec:
+        accessModes: [ReadWriteOnce]
+        storageClassName: local-path
+        resources: { requests: { storage: 100Mi } }

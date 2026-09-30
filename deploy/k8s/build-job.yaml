@@ -1,0 +1,56 @@
+# Job build image — build-images.sh thay VALA_VERSION / SRC_DIR / IMAGES_DIR / CACHE_DIR rồi tạo.
+# Build 2 image (node + web) bằng BuildKit ngay trên máy chủ (máy chủ không có Docker/registry). Mã nguồn đọc từ
+# SRC_DIR (bản git clone trên máy chủ, chỉ đọc); kết quả là file .tar ở IMAGES_DIR, build-images.sh nạp vào containerd
+# của k3s. privileged: BuildKit cần để dựng image — Job chỉ chạy lúc build rồi bị xoá.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: vala-build
+  labels: { app: vala-build }
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels: { app: vala-build }
+    spec:
+      restartPolicy: Never
+      enableServiceLinks: false
+      containers:
+        - name: buildkit
+          image: moby/buildkit:v0.16.0
+          command: [/bin/sh, -c]
+          args:
+            - |
+              set -e
+              build() {
+                echo "==> build $1 ($2)"
+                buildctl-daemonless.sh build --progress plain --frontend dockerfile.v0 \
+                  --local context=/src --local dockerfile=/src --opt filename="$2" \
+                  --opt build-arg:HTTP_PROXY="$HTTP_PROXY" --opt build-arg:HTTPS_PROXY="$HTTP_PROXY" \
+                  --opt build-arg:http_proxy="$HTTP_PROXY" --opt build-arg:https_proxy="$HTTP_PROXY" \
+                  --output "type=docker,name=docker.io/library/$1:VALA_VERSION,dest=/out/$1-VALA_VERSION.tar.part"
+                mv "/out/$1-VALA_VERSION.tar.part" "/out/$1-VALA_VERSION.tar"
+              }
+              build vala-report-node infra/node.Dockerfile
+              build vala-report-web infra/web/Dockerfile
+              echo "==> xong"
+          env:
+            # Máy chủ phải qua proxy mới ra Internet (tải image gốc, thư viện npm)? build-images.sh điền BUILD_HTTP_PROXY.
+            - { name: HTTP_PROXY, value: "BUILD_PROXY" }
+            - { name: HTTPS_PROXY, value: "BUILD_PROXY" }
+          securityContext: { privileged: true }
+          resources:
+            requests: { cpu: "1", memory: 1Gi }
+            limits: { cpu: "4", memory: 3Gi }
+          volumeMounts:
+            - { name: src, mountPath: /src, readOnly: true }
+            - { name: out, mountPath: /out }
+            - { name: cache, mountPath: /var/lib/buildkit }
+      volumes:
+        - name: src
+          hostPath: { path: SRC_DIR, type: Directory }
+        - name: out
+          hostPath: { path: IMAGES_DIR, type: DirectoryOrCreate }
+        - name: cache
+          hostPath: { path: CACHE_DIR, type: DirectoryOrCreate }

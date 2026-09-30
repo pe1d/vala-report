@@ -1,0 +1,180 @@
+# Ứng dụng Vala: api, worker (image vala-report-node) và web (nginx, image vala-report-web).
+# Image build ngay trên máy chủ và nạp thẳng vào containerd của k3s (deploy/k8s/build-images.sh) — không có registry
+# ⇒ imagePullPolicy: Never. deploy.sh thay VALA_VERSION bằng mã commit, CONFIG_HASH bằng mã băm của .env.prod + chứng
+# chỉ (đổi cấu hình ⇒ pod tự khởi động lại).
+#
+# Cấu hình không bí mật dùng chung cho api + worker; bí mật nằm trong Secret vala-env (tạo từ .env.prod).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vala-app
+data:
+  REDIS_URL: redis://redis:6379
+  SECRET_STORE: vault
+  VAULT_ADDR: http://vault:8200
+  CRAWLAB_URL: http://crawlab:8080
+  # Spider (chạy trong Crawlab, cùng namespace) gọi ngược về API trực tiếp, không qua nginx.
+  SPIDER_API_URL: http://api:3000
+  API_PORT: "3000"
+  NO_PROXY: api,crawlab,vault,postgres,redis,localhost,127.0.0.1,.svc,.cluster.local
+  no_proxy: api,crawlab,vault,postgres,redis,localhost,127.0.0.1,.svc,.cluster.local
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: api
+spec:
+  selector: { app: api }
+  ports: [{ name: http, port: 3000 }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: api }
+  template:
+    metadata:
+      labels: { app: api }
+      annotations: { vala-report/config-hash: CONFIG_HASH }
+    spec:
+      enableServiceLinks: false
+      # Đợi CSDL/Redis/Vault nhận kết nối (pod mới có thể bị NetworkPolicy chặn vài giây đầu) rồi mới chạy.
+      initContainers:
+        - name: wait-deps
+          image: vala-report-node:VALA_VERSION
+          imagePullPolicy: Never
+          command:
+            - node
+            - -e
+            - |
+              const net = require('net');
+              const deps = [['postgres', 5432], ['redis', 6379], ['vault', 8200]];
+              const up = ([h, p]) => new Promise((ok) => { const s = net.connect(p, h, () => { s.end(); ok(true); }); s.on('error', () => ok(false)); s.setTimeout(2000, () => { s.destroy(); ok(false); }); });
+              (async () => { for (let i = 0; i < 150; i++) { const r = await Promise.all(deps.map(up)); if (r.every(Boolean)) process.exit(0); if (i % 10 === 0) console.log('đợi', deps.filter((_, j) => !r[j]).map((d) => d[0]).join(', ')); await new Promise((f) => setTimeout(f, 2000)); } process.exit(1); })();
+          resources:
+            requests: { cpu: 10m, memory: 32Mi }
+            limits: { cpu: 200m, memory: 128Mi }
+      containers:
+        - name: api
+          image: vala-report-node:VALA_VERSION
+          imagePullPolicy: Never
+          workingDir: /app/apps/api
+          command: [/app/apps/api/node_modules/.bin/tsx, src/main.ts]
+          envFrom:
+            - secretRef: { name: vala-env }
+            - configMapRef: { name: vala-app }
+          env:
+            - { name: DATABASE_OWNER_URL, value: "postgres://vala_owner:$(POSTGRES_PASSWORD)@postgres:5432/vala" }
+            - { name: DATABASE_READER_URL, value: "postgres://vala_reader:$(DB_READER_PASSWORD)@postgres:5432/vala" }
+            - { name: DATABASE_WRITER_URL, value: "postgres://vala_writer:$(DB_WRITER_PASSWORD)@postgres:5432/vala" }
+          ports: [{ containerPort: 3000 }]
+          readinessProbe:
+            exec:
+              command: [node, -e, "fetch('http://127.0.0.1:3000/healthz').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+            periodSeconds: 10
+            timeoutSeconds: 5
+          livenessProbe:
+            exec:
+              command: [node, -e, "fetch('http://127.0.0.1:3000/healthz').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+            timeoutSeconds: 5
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            failureThreshold: 5
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { cpu: "2", memory: 1Gi }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker
+spec:
+  replicas: 1
+  strategy: { type: Recreate }      # một worker duy nhất (hẹn giờ lịch chạy) — không chạy song song 2 bản
+  selector:
+    matchLabels: { app: worker }
+  template:
+    metadata:
+      labels: { app: worker }
+      annotations: { vala-report/config-hash: CONFIG_HASH }
+    spec:
+      enableServiceLinks: false
+      # Đợi CSDL/Redis/Vault nhận kết nối (pod mới có thể bị NetworkPolicy chặn vài giây đầu) rồi mới chạy.
+      initContainers:
+        - name: wait-deps
+          image: vala-report-node:VALA_VERSION
+          imagePullPolicy: Never
+          command:
+            - node
+            - -e
+            - |
+              const net = require('net');
+              const deps = [['postgres', 5432], ['redis', 6379], ['vault', 8200]];
+              const up = ([h, p]) => new Promise((ok) => { const s = net.connect(p, h, () => { s.end(); ok(true); }); s.on('error', () => ok(false)); s.setTimeout(2000, () => { s.destroy(); ok(false); }); });
+              (async () => { for (let i = 0; i < 150; i++) { const r = await Promise.all(deps.map(up)); if (r.every(Boolean)) process.exit(0); if (i % 10 === 0) console.log('đợi', deps.filter((_, j) => !r[j]).map((d) => d[0]).join(', ')); await new Promise((f) => setTimeout(f, 2000)); } process.exit(1); })();
+          resources:
+            requests: { cpu: 10m, memory: 32Mi }
+            limits: { cpu: 200m, memory: 128Mi }
+      containers:
+        - name: worker
+          image: vala-report-node:VALA_VERSION
+          imagePullPolicy: Never
+          workingDir: /app/apps/worker
+          command: [/app/apps/worker/node_modules/.bin/tsx, src/main.ts]
+          envFrom:
+            - secretRef: { name: vala-env }
+            - configMapRef: { name: vala-app }
+          env:
+            - { name: DATABASE_OWNER_URL, value: "postgres://vala_owner:$(POSTGRES_PASSWORD)@postgres:5432/vala" }
+            - { name: DATABASE_READER_URL, value: "postgres://vala_reader:$(DB_READER_PASSWORD)@postgres:5432/vala" }
+            - { name: DATABASE_WRITER_URL, value: "postgres://vala_writer:$(DB_WRITER_PASSWORD)@postgres:5432/vala" }
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { cpu: "2", memory: 1Gi }
+---
+# Web: giao diện + chuyển /api → api. Mở ra ngoài bằng hostPort (cluster không có Ingress, và cổng công khai 5443 nằm
+# ngoài dải NodePort 30000–32767): https://<máy chủ>:5443 → nginx :443 trong pod. Chứng chỉ: Secret vala-tls.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+spec:
+  replicas: 1
+  strategy: { type: Recreate }      # hostPort chỉ một pod giữ được — tắt bản cũ trước khi bật bản mới
+  selector:
+    matchLabels: { app: web }
+  template:
+    metadata:
+      labels: { app: web }
+      annotations: { vala-report/config-hash: CONFIG_HASH }
+    spec:
+      enableServiceLinks: false
+      containers:
+        - name: web
+          image: vala-report-web:VALA_VERSION
+          imagePullPolicy: Never
+          env:
+            # nginx không dùng search domain của pod ⇒ tên Service đầy đủ.
+            - { name: API_UPSTREAM, value: "http://api.vala-report.svc.cluster.local:3000" }
+            - name: PUBLIC_WEB_URL
+              valueFrom: { secretKeyRef: { name: vala-env, key: PUBLIC_WEB_URL } }
+          ports:
+            - { name: https, containerPort: 443, hostPort: 5443 }
+          readinessProbe:
+            exec: { command: [wget, -q, -O, /dev/null, --no-check-certificate, "https://127.0.0.1/"] }
+            periodSeconds: 10
+          resources:
+            requests: { cpu: 50m, memory: 32Mi }
+            limits: { cpu: "1", memory: 256Mi }
+          volumeMounts:
+            - { name: certs, mountPath: /etc/nginx/certs, readOnly: true }
+      volumes:
+        - name: certs
+          secret:
+            secretName: vala-tls
+            items:
+              - { key: tls.crt, path: fullchain.pem }
+              - { key: tls.key, path: privkey.pem }

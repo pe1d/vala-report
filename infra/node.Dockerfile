@@ -1,6 +1,6 @@
 # Image Node dùng chung cho api, worker và lệnh quản trị (migrate, tạo quản trị).
 # Mã TypeScript chạy trực tiếp bằng tsx (như môi trường dev) — không có bước biên dịch riêng.
-# Build:  docker build -f infra/node.Dockerfile -t vala-node .
+# Build:  docker build -f infra/node.Dockerfile -t vala-report-node .
 FROM node:18.20.5-bookworm-slim
 
 ENV TZ=Asia/Ho_Chi_Minh

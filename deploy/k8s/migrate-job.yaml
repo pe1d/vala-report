@@ -1,0 +1,48 @@
+# Job migration CSDL — deploy.sh thay VALA_VERSION rồi tạo (xoá Job cũ trước). Chạy TRƯỚC khi bật api/worker bản mới
+# (code mới đọc cột mới ⇒ phải có cột trước).
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: vala-migrate
+  labels: { app: vala-migrate }
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels: { app: vala-migrate }
+    spec:
+      restartPolicy: Never
+      enableServiceLinks: false
+      # Đợi CSDL/Redis/Vault nhận kết nối (pod mới có thể bị NetworkPolicy chặn vài giây đầu) rồi mới chạy.
+      initContainers:
+        - name: wait-deps
+          image: vala-report-node:VALA_VERSION
+          imagePullPolicy: Never
+          command:
+            - node
+            - -e
+            - |
+              const net = require('net');
+              const deps = [['postgres', 5432], ['redis', 6379], ['vault', 8200]];
+              const up = ([h, p]) => new Promise((ok) => { const s = net.connect(p, h, () => { s.end(); ok(true); }); s.on('error', () => ok(false)); s.setTimeout(2000, () => { s.destroy(); ok(false); }); });
+              (async () => { for (let i = 0; i < 150; i++) { const r = await Promise.all(deps.map(up)); if (r.every(Boolean)) process.exit(0); if (i % 10 === 0) console.log('đợi', deps.filter((_, j) => !r[j]).map((d) => d[0]).join(', ')); await new Promise((f) => setTimeout(f, 2000)); } process.exit(1); })();
+          resources:
+            requests: { cpu: 10m, memory: 32Mi }
+            limits: { cpu: 200m, memory: 128Mi }
+      containers:
+        - name: migrate
+          image: vala-report-node:VALA_VERSION
+          imagePullPolicy: Never
+          workingDir: /app/packages/core
+          command: [/app/packages/core/node_modules/.bin/tsx, scripts/migrate.ts]
+          envFrom:
+            - secretRef: { name: vala-env }
+            - configMapRef: { name: vala-app }
+          env:
+            - { name: DATABASE_OWNER_URL, value: "postgres://vala_owner:$(POSTGRES_PASSWORD)@postgres:5432/vala" }
+            - { name: DATABASE_READER_URL, value: "postgres://vala_reader:$(DB_READER_PASSWORD)@postgres:5432/vala" }
+            - { name: DATABASE_WRITER_URL, value: "postgres://vala_writer:$(DB_WRITER_PASSWORD)@postgres:5432/vala" }
+          resources:
+            requests: { cpu: 100m, memory: 128Mi }
+            limits: { cpu: "1", memory: 512Mi }

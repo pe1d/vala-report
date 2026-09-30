@@ -1,0 +1,66 @@
+# Namespace riêng cho Vala trên cluster DÙNG CHUNG: giới hạn tài nguyên tổng + chặn truy cập từ namespace khác.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: vala-report
+  labels:
+    app.kubernetes.io/part-of: vala-report
+---
+# Trần tài nguyên của cả namespace (kể cả Job build image) — không lấn sang dịch vụ khác trên máy chủ.
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: vala-report-quota
+spec:
+  hard:
+    requests.cpu: "6"
+    requests.memory: 6Gi
+    limits.cpu: "16"
+    limits.memory: 12Gi
+    requests.storage: 40Gi
+    persistentvolumeclaims: "12"
+    pods: "20"
+---
+# Container không ghi requests/limits thì nhận mặc định này (ResourceQuota bắt buộc phải có).
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: vala-report-defaults
+spec:
+  limits:
+    - type: Container
+      defaultRequest: { cpu: 50m, memory: 64Mi }
+      default: { cpu: "1", memory: 512Mi }
+---
+# Chặn mọi kết nối VÀO pod của Vala, trừ: pod trong cùng namespace, và cổng web (443) từ bên ngoài.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-same-namespace
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector: {}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-web-public
+spec:
+  podSelector:
+    matchLabels: { app: web }
+  policyTypes: [Ingress]
+  ingress:
+    - ports:
+        - { port: 443, protocol: TCP }
+        - { port: 80, protocol: TCP }
