@@ -8,7 +8,13 @@ export interface AuthUser {
   ho_ten: string;
   email: string;
   is_ops_admin: boolean;
+  /** Đang dùng mật khẩu tạm ⇒ chỉ được gọi /me và đổi mật khẩu. */
+  must_change_password: boolean;
+  has_password: boolean;
 }
+
+/** Khi còn phải đổi mật khẩu, chỉ các đường này được gọi (để hiện màn hình đổi mật khẩu). */
+const ALLOWED_BEFORE_PASSWORD_CHANGE = new Set(['/api/v1/me', '/api/v1/auth/change-password']);
 
 declare module 'fastify' {
   interface FastifyRequest {
@@ -27,9 +33,14 @@ export function authenticate(deps: ApiDeps) {
     if (!m) throw new Problem('unauthenticated', 'Cần đăng nhập');
     const payload = verify<{ uid: number; kind?: string }>(m[1]!, deps.config.jwtSecret);
     if (!payload || payload.kind !== 'portal') throw new Problem('unauthenticated', 'Phiên đăng nhập không hợp lệ hoặc đã hết hạn');
-    const user = await withTenant(deps.reader, (t) => t.oneOrNone<AuthUser>(
-      `SELECT id, ho_ten, email, is_ops_admin FROM app_users WHERE id = $1 AND is_active`, [payload.uid]));
+    // Pool writer: pool reader chỉ được đọc một số cột của app_users (không có cột mật khẩu / trạng thái mật khẩu).
+    const user = await withTenant(deps.writer, (t) => t.oneOrNone<AuthUser>(
+      `SELECT id, ho_ten, email, is_ops_admin, must_change_password, password_hash IS NOT NULL AS has_password
+         FROM app_users WHERE id = $1 AND is_active`, [payload.uid]));
     if (!user) throw new Problem('unauthenticated', 'Tài khoản không tồn tại hoặc đã bị khoá');
+    if (user.must_change_password && !ALLOWED_BEFORE_PASSWORD_CHANGE.has(req.url.split('?')[0]!)) {
+      throw new Problem('password_change_required', 'Cần đổi mật khẩu', 'Bạn đang dùng mật khẩu tạm — đổi mật khẩu để tiếp tục');
+    }
     req.user = user;
   };
 }

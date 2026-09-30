@@ -10,6 +10,8 @@ export const meRoutes = (deps: ApiDeps): FastifyPluginAsync => async (app) => {
       ho_ten: req.user.ho_ten,
       email: req.user.email,
       is_ops_admin: req.user.is_ops_admin,
+      must_change_password: req.user.must_change_password,
+      has_password: req.user.has_password,
       org_units: memberships,
       scopes: allowedScopes(memberships),
     };

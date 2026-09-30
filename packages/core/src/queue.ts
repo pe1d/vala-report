@@ -142,6 +142,7 @@ export async function runDueSchedules(
          FROM report_subscriptions rs
          JOIN report_catalog rc ON rc.code = rs.report_code AND rc.is_active
          JOIN core.source_systems ss ON ss.code = rc.source_system AND ss.enabled
+         JOIN app_users au ON au.id = rs.app_user_id AND au.is_active     -- người dùng bị vô hiệu hoá: lịch ngừng chạy
          LEFT JOIN source_grants g ON g.app_user_id = rs.app_user_id AND g.source_system = rc.source_system
          LEFT JOIN core.crawl_spiders sp ON sp.code = rc.spider_code
         WHERE rs.is_enabled

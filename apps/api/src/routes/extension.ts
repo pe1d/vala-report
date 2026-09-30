@@ -29,6 +29,9 @@ export const extensionLoginRoutes = (deps: ApiDeps): FastifyPluginAsync => async
     schema: { body: { ...loginBodySchema, properties: { ...loginBodySchema.properties, device_name: { type: 'string', maxLength: 100 } } } },
   }, async (req) => {
     const row = await checkPortalPassword(deps, req.body.username, req.body.password);
+    if (row.must_change_password) {
+      throw new Problem('password_change_required', 'Cần đổi mật khẩu', 'Đăng nhập cổng Vala một lần để đổi mật khẩu tạm, rồi đăng nhập lại tiện ích');
+    }
     const token = `vxt_${randomBytes(32).toString('base64url')}`;
     const user = await withTenant(deps.writer, async (t) => {
       const d = await t.one<{ id: number }>(
@@ -48,13 +51,14 @@ function authenticateDevice(deps: ApiDeps) {
     const m = /^Bearer (vxt_[\w-]{20,100})$/.exec(req.headers.authorization ?? '');
     if (!m) throw new Problem('unauthenticated', 'Tiện ích chưa đăng nhập');
     const row = await withTenant(deps.writer, (t) => t.oneOrNone<AuthUser & { device_id: number; stale: boolean }>(
-      `SELECT d.id AS device_id, u.id, u.ho_ten, u.email, u.is_ops_admin,
+      `SELECT d.id AS device_id, u.id, u.ho_ten, u.email, u.is_ops_admin, u.must_change_password, u.password_hash IS NOT NULL AS has_password,
               d.last_used_at IS NULL OR d.last_used_at < now() - interval '5 minutes' AS stale
          FROM extension_devices d JOIN app_users u ON u.id = d.app_user_id
         WHERE d.token_hash = $1 AND d.revoked_at IS NULL AND d.expires_at > now() AND u.is_active`, [hashToken(m[1]!)]));
     if (!row) throw new Problem('unauthenticated', 'Tiện ích đã bị ngắt kết nối hoặc hết hạn', 'Đăng nhập lại trong tiện ích');
     if (row.stale) await withTenant(deps.writer, (t) => t.none('UPDATE extension_devices SET last_used_at = now() WHERE id = $1', [row.device_id]));
-    req.user = { id: row.id, ho_ten: row.ho_ten, email: row.email, is_ops_admin: row.is_ops_admin };
+    req.user = { id: row.id, ho_ten: row.ho_ten, email: row.email, is_ops_admin: row.is_ops_admin,
+      must_change_password: row.must_change_password, has_password: row.has_password };
     req.extDeviceId = row.device_id;
   };
 }

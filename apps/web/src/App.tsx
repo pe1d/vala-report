@@ -5,6 +5,7 @@ import { useAsync } from './hooks';
 import { ReauthGate } from './components/Reauth';
 import { Loading } from './components/States';
 import { Shell } from './components/Shell';
+import { ForcedPasswordChange } from './components/ChangePassword';
 import { LoginPage } from './pages/Login';
 import { MyConnectionsPage } from './pages/MyConnections';
 import { AdminSpidersPage } from './pages/AdminSpiders';
@@ -15,6 +16,7 @@ import { OpsPage } from './pages/Ops';
 import { AdminConnectionsPage } from './pages/AdminConnections';
 import { AdminSourcesPage } from './pages/AdminSources';
 import { AdminReportsPage } from './pages/AdminReports';
+import { AdminUsersPage } from './pages/AdminUsers';
 import { DashboardPage } from './pages/Dashboard';
 
 const MeContext = createContext<Me | null>(null);
@@ -53,6 +55,8 @@ function Authed({ onLogout }: { onLogout: () => void }) {
   const me = useAsync(() => api.get<Me>('/me'), []);
   if (me.loading) return <div className="p-8"><Loading /></div>;
   if (!me.data) { onLogout(); return null; }
+  // Mật khẩu tạm (quản trị cấp/đặt lại) ⇒ đổi mật khẩu trước khi vào ứng dụng (máy chủ cũng chặn mọi API khác).
+  if (me.data.must_change_password) return <ForcedPasswordChange name={me.data.ho_ten} onDone={me.reload} onLogout={onLogout} />;
   return (
     <MeContext.Provider value={me.data}>
       <ReauthGate />
@@ -69,6 +73,7 @@ function Authed({ onLogout }: { onLogout: () => void }) {
           <Route path="/he-thong-nguon" element={me.data.is_ops_admin ? <AdminSourcesPage /> : <Navigate to="/" />} />
           <Route path="/ket-noi" element={me.data.is_ops_admin ? <AdminConnectionsPage /> : <Navigate to="/" />} />
           <Route path="/van-hanh" element={me.data.is_ops_admin ? <OpsPage /> : <Navigate to="/" />} />
+        <Route path="/nguoi-dung" element={me.data.is_ops_admin ? <AdminUsersPage /> : <Navigate to="/" />} />
           <Route path="*" element={<Navigate to="/" />} />
         </Routes>
       </Shell>

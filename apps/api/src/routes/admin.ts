@@ -11,6 +11,7 @@ import { configureConnection, connectionBodySchema, deleteConnection, listConnec
 import type { ApiDeps } from '../deps.js';
 import { adminReportRoutes } from './adminReports.js';
 import { adminSourceRoutes } from './adminSources.js';
+import { adminUserRoutes } from './adminUsers.js';
 
 interface SpiderBody {
   ten: string; mo_ta?: string | null; source_system: string;
@@ -44,6 +45,7 @@ export const adminRoutes = (deps: ApiDeps): FastifyPluginAsync => async (app) =>
 
   await app.register(adminSourceRoutes(deps));                 // hệ thống nguồn (thêm/sửa)
   await app.register(adminReportRoutes(deps));                 // cấu hình báo cáo (không viết code)
+  await app.register(adminUserRoutes(deps));                   // người dùng cổng
 
   // ---- kết nối dữ liệu ----
   app.get('/admin/connections', async () => listConnections(deps));

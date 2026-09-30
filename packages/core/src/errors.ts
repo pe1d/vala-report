@@ -15,6 +15,8 @@ export type ProblemType =
   | 'endpoint_not_allowed'
   | 'invalid_credentials'
   | 'otp_required'
+  /** Đăng nhập bằng mật khẩu tạm (quản trị cấp/đặt lại) ⇒ phải đổi mật khẩu trước khi dùng. */
+  | 'password_change_required'
   | 'internal';
 
 const STATUS: Record<ProblemType, number> = {
@@ -30,6 +32,7 @@ const STATUS: Record<ProblemType, number> = {
   endpoint_not_allowed: 500,
   invalid_credentials: 422,
   otp_required: 422,
+  password_change_required: 403,
   internal: 500,
 };
 

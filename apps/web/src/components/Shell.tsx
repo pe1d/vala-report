@@ -4,9 +4,11 @@
  * ngăn kéo mở bằng nút ☰ trên header.
  */
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { NavLink, useLocation } from 'react-router-dom';
 import type { Me } from '../api';
 import { ThemeToggle } from './ui';
+import { ChangePasswordForm } from './ChangePassword';
 
 interface NavItem { to: string; label: string; icon: ReactNode; end?: boolean; admin?: boolean }
 interface NavGroup { id: string; label: string; icon: ReactNode; items: NavItem[] }
@@ -27,6 +29,7 @@ const GROUPS: NavGroup[] = [
   { id: 'quan-tri', label: 'Quản trị', icon: I('M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z'), items: [
     { to: '/he-thong-nguon', label: 'Hệ thống nguồn', admin: true, icon: I('M2 4h20v6H2zM2 14h20v6H2zM6 7h.01M6 17h.01') },
     { to: '/script-crawl', label: 'Script crawl', admin: true, icon: I('M16 18l6-6-6-6M8 6l-6 6 6 6') },
+    { to: '/nguoi-dung', label: 'Người dùng', admin: true, icon: I('M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM19 8v6M22 11h-6') },
     { to: '/cau-hinh-bao-cao', label: 'Cấu hình báo cáo', admin: true, icon: I('M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6') },
     { to: '/van-hanh', label: 'Vận hành', admin: true, icon: I('M22 12h-4l-3 9L9 3l-3 9H2') },
   ] },
@@ -106,6 +109,7 @@ function Header({ me, onLogout, onMenu, drawer, collapsed, onCollapse }: {
 
 function UserMenu({ me, onLogout }: { me: Me; onLogout: () => void }) {
   const [open, setOpen] = useState(false);
+  const [pw, setPw] = useState<'form' | 'done' | null>(null);
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!open) return;
@@ -140,9 +144,32 @@ function UserMenu({ me, onLogout }: { me: Me; onLogout: () => void }) {
           </div>
           <NavLink role="menuitem" to="/uy-quyen" onClick={() => setOpen(false)}
             className="block px-3 py-2 text-sm text-slate-700 no-underline hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800">Tài khoản nguồn của tôi</NavLink>
+          {me.has_password && (
+            <button type="button" role="menuitem" onClick={() => { setOpen(false); setPw('form'); }}
+              className="block w-full px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800">Đổi mật khẩu</button>
+          )}
           <button type="button" role="menuitem" onClick={onLogout}
             className="block w-full px-3 py-2 text-left text-sm text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/40">Đăng xuất</button>
         </div>
+      )}
+      {/* Portal ra body: header có backdrop-blur nên mọi phần tử fixed bên trong bị giới hạn theo khung header. */}
+      {pw && createPortal(
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/50 p-4 dark:bg-black/60" role="dialog" aria-modal="true" aria-labelledby="doi-mk"
+          onKeyDown={(e) => e.key === 'Escape' && setPw(null)}>
+          <div className="mx-auto mt-16 w-full max-w-md rounded-xl border border-slate-200 bg-white p-5 shadow-xl dark:border-slate-800 dark:bg-slate-950">
+            <h2 id="doi-mk" className="mb-4 text-base font-semibold">Đổi mật khẩu</h2>
+            {pw === 'form'
+              ? <ChangePasswordForm onDone={() => setPw('done')} onCancel={() => setPw(null)} />
+              : (
+                <div className="grid gap-4">
+                  <p className="text-sm text-emerald-800 dark:text-emerald-300">Đã đổi mật khẩu. Lần đăng nhập sau (cả trên tiện ích) dùng mật khẩu mới.</p>
+                  <div className="flex justify-end"><button type="button" onClick={() => setPw(null)}
+                    className="rounded-md border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-700">Đóng</button></div>
+                </div>
+              )}
+          </div>
+        </div>,
+        document.body,
       )}
     </div>
   );

@@ -44,8 +44,12 @@ export const api = {
 export type Scope = 'ca_nhan' | 'don_vi';
 export type AuthMethod = 'password' | 'cookie' | 'sso' | 'extension';
 export interface ExtensionDevice { id: number; ten: string; created_at: string; last_used_at: string | null; expires_at: string }
-export interface Me { id: number; ho_ten: string; email: string; is_ops_admin: boolean; scopes: Scope[]; org_units: { id: number; ten: string; vai_tro: string }[] }
-export interface AdminUser { id: number; ho_ten: string; email: string; username: string | null; is_ops_admin: boolean }
+export interface Me { id: number; ho_ten: string; email: string; is_ops_admin: boolean; must_change_password: boolean; has_password: boolean; scopes: Scope[]; org_units: { id: number; ten: string; vai_tro: string }[] }
+export interface AdminUser {
+  id: number; ho_ten: string; email: string; username: string | null; is_ops_admin: boolean; is_active: boolean;
+  must_change_password: boolean; locked: boolean; has_password: boolean; has_sso: boolean;
+  created_at: string; last_login_at: string | null; password_changed_at: string | null; ket_noi: number; lich: number;
+}
 export interface Connection {
   app_user_id: number; ho_ten: string; email: string; source_system: string; source_ten: string;
   auth_method: AuthMethod | null; source_username: string | null;
