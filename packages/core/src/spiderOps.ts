@@ -9,7 +9,7 @@
  * Mã spider luôn lấy từ CSDL (spiderFiles) — Crawlab mất file (vd khởi động lại) thì tự đẩy lại, không cần bấm tay.
  */
 import { loadAllSpecs } from './adapter/index.js';
-import { spiderFiles, type CrawlabClient } from './crawlab.js';
+import { spiderFiles, syncCrawlab, type CrawlabClient, type SyncOptions } from './crawlab.js';
 import { withTenant, type Db } from './db/index.js';
 import { Problem } from './errors.js';
 import { getSpider, type SpiderRow } from './ingest/spider.js';
@@ -134,7 +134,7 @@ export async function heartbeat(db: Db, name: string, info: Record<string, unkno
  * Kiểm tra Crawlab: liên lạc được không, spider đã đồng bộ nào thiếu file (thiếu thì đẩy lại ngay). Ghi kết quả vào
  * heartbeat 'crawlab'. Worker gọi lúc khởi động và định kỳ.
  */
-export async function checkCrawlabHealth(db: Db, client: CrawlabClient | null): Promise<Record<string, unknown>> {
+export async function checkCrawlabHealth(db: Db, client: CrawlabClient | null, sync?: SyncOptions): Promise<Record<string, unknown>> {
   if (!client) {
     const info = { configured: false };
     await heartbeat(db, 'crawlab', info);
@@ -143,13 +143,19 @@ export async function checkCrawlabHealth(db: Db, client: CrawlabClient | null): 
   let info: Record<string, unknown>;
   try {
     await client.listSpiders();
+    // Spider chưa có trên Crawlab (máy chủ mới, hoặc dữ liệu vừa chuyển từ máy khác) ⇒ đồng bộ luôn — không cần bấm tay.
+    let synced: string[] = [];
+    if (sync) {
+      const unsynced = await withTenant(db, (t) => t.map('SELECT code FROM core.crawl_spiders WHERE is_enabled AND crawlab_spider_id IS NULL', [], (r: { code: string }) => r.code));
+      if (unsynced.length) synced = (await syncCrawlab(db, client, sync)).spiders.map((s) => s.code);
+    }
     const spiders = await withTenant(db, (t) => t.any<SpiderRow>('SELECT * FROM core.crawl_spiders WHERE is_enabled AND crawlab_spider_id IS NOT NULL'));
     const restored: string[] = [];
     const errors: string[] = [];
     for (const s of spiders) {
       try { if ((await ensureSpiderFiles(client, s)).length) restored.push(s.code); } catch (e) { errors.push(`${s.code}: ${(e as Error).message.slice(0, 120)}`); }
     }
-    info = { configured: true, reachable: true, spiders: spiders.length, restored, errors };
+    info = { configured: true, reachable: true, spiders: spiders.length, restored, errors, ...(synced.length ? { synced } : {}) };
   } catch (e) {
     info = { configured: true, reachable: false, error: (e as Error).message.slice(0, 200) };
   }

@@ -1,0 +1,136 @@
+# =====================================================================
+# Vala Reporting — cấu hình chạy trên máy chủ (vd 10.2.65.146). Tách hẳn khỏi docker-compose.yml (dev).
+#
+#   deploy/gen-env.sh      tạo .env.prod (mật khẩu/khoá ngẫu nhiên) — một lần
+#   deploy/deploy.sh       build + migrate + bật dịch vụ (chạy lại mỗi lần cập nhật code)
+#
+# Chỉ mở ra ngoài: web (HTTP_PORT/HTTPS_PORT). CSDL, Redis, Vault, Crawlab chỉ trong mạng Docker
+# (Crawlab UI ở 127.0.0.1:CRAWLAB_PORT — xem qua SSH tunnel).
+# =====================================================================
+name: vala
+
+x-node: &node
+  image: vala-node:${VALA_VERSION:-latest}
+  build: { context: ., dockerfile: infra/node.Dockerfile }
+  restart: unless-stopped
+  env_file: .env.prod
+  environment: &node-env
+    DATABASE_OWNER_URL: postgres://vala_owner:${POSTGRES_PASSWORD}@postgres:5432/vala
+    DATABASE_READER_URL: postgres://vala_reader:${DB_READER_PASSWORD}@postgres:5432/vala
+    DATABASE_WRITER_URL: postgres://vala_writer:${DB_WRITER_PASSWORD}@postgres:5432/vala
+    REDIS_URL: redis://redis:6379
+    SECRET_STORE: vault
+    VAULT_ADDR: http://vault:8200
+    CRAWLAB_URL: http://crawlab:8080
+    # Spider (chạy trong Crawlab) gọi ngược về API qua mạng Docker, không qua nginx.
+    SPIDER_API_URL: http://api:3000
+    API_PORT: "3000"
+    # Proxy công ty (nếu Docker tự thêm vào container): không đi proxy cho các dịch vụ nội bộ.
+    NO_PROXY: api,crawlab,vault,postgres,redis,localhost,127.0.0.1
+    no_proxy: api,crawlab,vault,postgres,redis,localhost,127.0.0.1
+  depends_on:
+    postgres: { condition: service_healthy }
+    redis: { condition: service_started }
+    vault: { condition: service_started }
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: vala
+      POSTGRES_USER: vala_owner
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      TZ: Asia/Ho_Chi_Minh
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vala_owner -d vala"]
+      interval: 5s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes: [redis:/data]
+
+  # Vault lưu bền, tự khởi tạo/mở khoá (infra/vault/entrypoint.sh). Token ứng dụng = VAULT_TOKEN trong .env.prod.
+  vault:
+    image: hashicorp/vault:1.17
+    restart: unless-stopped
+    entrypoint: ["/vault/config/entrypoint.sh"]
+    environment:
+      VAULT_APP_TOKEN: ${VAULT_TOKEN}
+    volumes:
+      - ./infra/vault:/vault/config:ro
+      - vault-file:/vault/file
+      - vault-keys:/vault/keys
+
+  api:
+    <<: *node
+    working_dir: /app/apps/api
+    command: ["/app/apps/api/node_modules/.bin/tsx", "src/main.ts"]
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:3000/healthz').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))\""]
+      interval: 10s
+      retries: 12
+
+  worker:
+    <<: *node
+    working_dir: /app/apps/worker
+    command: ["/app/apps/worker/node_modules/.bin/tsx", "src/main.ts"]
+
+  # Lệnh quản trị một lần: docker compose -f docker-compose.prod.yml --env-file .env.prod run --rm tools <lệnh>
+  tools:
+    <<: *node
+    profiles: [tools]
+    restart: "no"
+    working_dir: /app/packages/core
+    entrypoint: ["/app/packages/core/node_modules/.bin/tsx"]
+    command: ["scripts/migrate.ts"]
+
+  web:
+    image: vala-web:${VALA_VERSION:-latest}
+    build: { context: ., dockerfile: infra/web/Dockerfile }
+    restart: unless-stopped
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+    volumes: ["./deploy/certs:/etc/nginx/certs:ro"]
+    depends_on: [api]
+
+  crawlab-mongo:
+    image: mongo:5
+    restart: unless-stopped
+    volumes: [crawlab-mongo:/data/db]
+
+  # Ghim đúng bản đã kiểm chứng trên máy dev (0.6.x, 09/10/2024) — tránh `latest` đổi API ngầm.
+  crawlab:
+    image: ${CRAWLAB_IMAGE:-crawlabteam/crawlab@sha256:a0f72ac7325ad97dd9452f56871b0c0bc90225021abbd7857f447fc14fd68abb}
+    restart: unless-stopped
+    environment:
+      CRAWLAB_NODE_MASTER: "Y"
+      CRAWLAB_MONGO_HOST: crawlab-mongo
+      CRAWLAB_MONGO_PORT: "27017"
+      TZ: Asia/Ho_Chi_Minh
+      # Spider gọi hệ thống nguồn qua proxy công ty (nếu có) nhưng gọi API Vala trực tiếp.
+      HTTP_PROXY: ${SOURCE_HTTP_PROXY:-}
+      HTTPS_PROXY: ${SOURCE_HTTP_PROXY:-}
+      http_proxy: ${SOURCE_HTTP_PROXY:-}
+      https_proxy: ${SOURCE_HTTP_PROXY:-}
+      NO_PROXY: api,crawlab,localhost,127.0.0.1
+      no_proxy: api,crawlab,localhost,127.0.0.1
+    ports: ["127.0.0.1:${CRAWLAB_PORT:-8080}:8080"]
+    volumes:
+      - crawlab-data:/root/.crawlab
+      - crawlab-workspace:/root/crawlab_workspace
+    depends_on: [crawlab-mongo]
+
+volumes:
+  pgdata:
+  redis:
+  vault-file:
+  vault-keys:
+  crawlab-mongo:
+  crawlab-data:
+  crawlab-workspace:

@@ -23,6 +23,9 @@ const maintenance = maintenanceQueue(connection);
 // Lịch người dùng tự đặt có báo cáo dùng spider ⇒ worker bảo Crawlab chạy spider cho đúng người đến hạn.
 const crawlabCfg = crawlabConfigFromEnv();
 const crawlab = crawlabCfg ? new CrawlabClient(crawlabCfg) : null;
+// Đủ thông tin ⇒ worker tự đồng bộ spider chưa có trên Crawlab (máy chủ mới / vừa chuyển dữ liệu).
+const crawlabSync = process.env.SPIDER_API_URL && process.env.INTERNAL_TOKEN
+  ? { apiUrlForSpiders: process.env.SPIDER_API_URL, internalToken: process.env.INTERNAL_TOKEN } : undefined;
 const crawl = crawlQueue(connection);
 
 const baseUrls: Record<string, string> = {};
@@ -104,7 +107,7 @@ const maintenanceWorker = new Worker(
       }
       case 'crawlab_health': {
         // Crawlab còn liên lạc được không, spider nào mất file (vd sau khi khởi động lại) ⇒ đẩy lại mã từ CSDL.
-        const info = await checkCrawlabHealth(writer, crawlab);
+        const info = await checkCrawlabHealth(writer, crawlab, crawlabSync);
         if ((info.restored as string[] | undefined)?.length || info.reachable === false) log.warn('kiểm tra Crawlab', info);
         return;
       }
@@ -121,7 +124,7 @@ await maintenance.upsertJobScheduler('due_subscriptions', { every: 60_000 }, { n
 await maintenance.upsertJobScheduler('crawlab_health', { every: 10 * 60_000 }, { name: 'crawlab_health' });
 // Ngay khi khởi động: báo còn sống + kiểm tra Crawlab (máy chủ vừa khởi động lại thì Crawlab hay mất mã spider).
 await heartbeat(writer, 'worker', { pid: process.pid, started: true }).catch(() => {});
-checkCrawlabHealth(writer, crawlab).then(
+checkCrawlabHealth(writer, crawlab, crawlabSync).then(
   (info) => log.info('kiểm tra Crawlab lúc khởi động', info),
   (e: Error) => log.error('kiểm tra Crawlab lỗi', { err: e.message }),
 );

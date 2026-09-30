@@ -1,0 +1,16 @@
+# Không đưa vào image: thư viện cài sẵn trên máy, bản build, bí mật, dữ liệu cục bộ, git.
+**/node_modules
+**/dist
+**/dist-dev
+.git
+.env
+.env.*
+!.env.example
+.data
+.claude
+coverage
+**/*.log
+**/__pycache__
+apps/extension/vala-extension-*
+apps/extension/*.zip
+deploy/backup

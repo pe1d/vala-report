@@ -8,3 +8,9 @@ coverage
 *.log
 
 __pycache__/
+
+# Triển khai máy chủ: cấu hình thật, bản sao lưu, chứng chỉ HTTPS — không commit
+.env.prod
+deploy/backup/
+deploy/certs/*
+!deploy/certs/README.txt
