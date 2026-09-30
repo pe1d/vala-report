@@ -23,7 +23,8 @@ Cách dùng:
 
 Biến môi trường (Crawlab đặt sẵn qua "Environments", do "Đồng bộ Crawlab" cấu hình):
     VALA_API_URL, VALA_INTERNAL_TOKEN, CRAWLAB_TASK_ID (Crawlab tự đặt)
-Tham số dòng lệnh: --preset <preset> (lịch cố định truyền vào), --user <id> (chạy riêng một người)
+Tham số dòng lệnh: --user <id> (chạy riêng một người — lịch do worker Vala hẹn giờ, hoặc "chạy ngay"),
+--trigger schedule|manual (ghi nhận lượt chạy theo lịch hay chạy tay), --preset <preset> (cũ, trước 015)
 """
 import argparse
 import os
@@ -194,6 +195,7 @@ class Vala:
         p = argparse.ArgumentParser()
         p.add_argument('--preset')
         p.add_argument('--user', type=int)
+        p.add_argument('--trigger', choices=['schedule', 'manual'])
         self.args, _ = p.parse_known_args(argv)
         url = os.environ.get('VALA_API_URL')
         token = os.environ.get('VALA_INTERNAL_TOKEN')
@@ -208,6 +210,8 @@ class Vala:
             body['preset'] = self.args.preset
         if self.args.user is not None:
             body['user_id'] = self.args.user
+        if self.args.trigger:
+            body['trigger'] = self.args.trigger
         return self.api.post('/runs', body)
 
     def run(self, spider, crawl, max_fail_ratio=0.5, delay_s=0.3):

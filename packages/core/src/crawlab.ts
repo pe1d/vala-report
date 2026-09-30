@@ -2,15 +2,14 @@
  * Client REST của Crawlab (core v0.6.3, đã kiểm chứng trên image crawlabteam/crawlab ngày 26/09/2026)
  * và phép đồng bộ repo → Crawlab:
  *   crawlers/<code>/*  +  crawlers/_sdk/vala_sdk.py   →  spider <code> trong Crawlab
- *   SCHEDULE_PRESETS                                   →  một lịch cố định mỗi (spider × preset)
+ *   (không tạo lịch Crawlab — worker Vala hẹn giờ theo lịch từng người rồi chạy spider --user N)
  *   VALA_API_URL, VALA_INTERNAL_TOKEN                  →  biến môi trường toàn cục của Crawlab
- * Người dùng đổi lịch KHÔNG gọi Crawlab: spider chạy theo preset rồi tự hỏi API ai đã đặt preset đó.
+ * Người dùng đổi lịch KHÔNG gọi Crawlab: worker Vala đọc report_subscriptions.schedule mỗi phút và chạy spider cho người đến hạn.
  */
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { withTenant, type Db } from './db/index.js';
 import { REPO_ROOT } from './env.js';
-import { SCHEDULE_PRESETS } from './presets.js';
 import type { SpiderRow } from './ingest/spider.js';
 
 export interface CrawlabConfig {
@@ -81,6 +80,14 @@ export class CrawlabClient {
     const body = { ...s, cmd: 'python main.py', mode: 'random', description: 'Tạo bởi Vala Reporting — không sửa tay' };
     return id ? this.call<{ _id: string }>('PUT', `/schedules/${id}`, { _id: id, ...body }) : this.call<{ _id: string }>('POST', '/schedules', body);
   }
+  /** Crawlab 0.6 trả HTTP 200 thân rỗng khi xoá được; lịch đã mất thì báo "no documents" — coi như đã xoá. */
+  async deleteSchedule(id: string): Promise<void> {
+    try { await this.call('DELETE', `/schedules/${id}`); } catch (e) {
+      const m = (e as Error).message;
+      if (/HTTP 200$/.test(m) || /no documents/.test(m)) return;
+      throw e;
+    }
+  }
   listEnvironments() { return this.call<Array<{ _id: string; key: string; value: string }>>('GET', '/environments?page=1&size=1000').then((d) => d ?? []); }
   async setEnvironment(key: string, value: string) {
     const cur = (await this.listEnvironments()).find((e) => e.key === key);
@@ -140,19 +147,12 @@ export async function syncCrawlab(db: Db, client: CrawlabClient, opts: SyncOptio
     if (!sp.main_py) await withTenant(db, (t) => t.none('UPDATE core.crawl_spiders SET main_py = $2 WHERE code = $1 AND main_py IS NULL', [sp.code, files['main.py']]));
     for (const [path, data] of Object.entries(files)) await client.saveFile(id, path, data);
 
-    let n = 0;
-    for (const [preset, p] of Object.entries(SCHEDULE_PRESETS)) {
-      const name = `${sp.code}:${preset}`;
-      const cur = await withTenant(db, (t) => t.oneOrNone<{ crawlab_schedule_id: string | null }>(
-        'SELECT crawlab_schedule_id FROM core.spider_schedules WHERE spider_code = $1 AND schedule_preset = $2', [sp.code, preset]));
-      const known = cur?.crawlab_schedule_id && schedules.some((s) => s._id === cur.crawlab_schedule_id) ? cur.crawlab_schedule_id : schedules.find((s) => s.name === name)?._id ?? null;
-      const saved = await client.upsertSchedule(known, { name, spider_id: id, cron: p.cron, param: `--preset ${preset}`, enabled: sp.is_enabled });
-      await withTenant(db, (t) => t.none(
-        `INSERT INTO core.spider_schedules (spider_code, schedule_preset, cron_expr, crawlab_schedule_id) VALUES ($1, $2, $3, $4)
-         ON CONFLICT (spider_code, schedule_preset) DO UPDATE SET cron_expr = EXCLUDED.cron_expr, crawlab_schedule_id = EXCLUDED.crawlab_schedule_id`,
-        [sp.code, preset, p.cron, saved._id]));
-      n++;
-    }
+    // Lịch cố định theo preset (trước migration 015) thôi dùng: worker Vala tự hẹn giờ theo lịch từng người rồi
+    // chạy spider với --user. Xoá hết lịch Crawlab của spider này để không chạy trùng.
+    const stale = schedules.filter((x) => x.spider_id === id || x.name.startsWith(`${sp.code}:`));
+    for (const x of stale) await client.deleteSchedule(x._id);
+    await withTenant(db, (t) => t.none('DELETE FROM core.spider_schedules WHERE spider_code = $1', [sp.code]));
+    const n = 0;
     await withTenant(db, (t) => t.none('UPDATE core.crawl_spiders SET crawlab_spider_id = $2, synced_at = now() WHERE code = $1', [sp.code, id]));
     out.spiders.push({ code: sp.code, crawlab_spider_id: id, files: Object.keys(files).length, schedules: n });
   }

@@ -1,5 +1,5 @@
 import type { FastifyPluginAsync } from 'fastify';
-import { SCHEDULE_PRESETS, allowedScopes, isPreset, loadMemberships, nextRuns, withTenant, Problem } from '@vala/core';
+import { SCHEDULE_TEMPLATES, allowedScopes, describeSchedule, loadMemberships, nextScheduleRuns, parseSchedule, withTenant } from '@vala/core';
 import type { ApiDeps } from '../deps.js';
 
 export const meRoutes = (deps: ApiDeps): FastifyPluginAsync => async (app) => {
@@ -15,15 +15,16 @@ export const meRoutes = (deps: ApiDeps): FastifyPluginAsync => async (app) => {
     };
   });
 
-  /** Danh sách preset + các lần chạy kế tiếp, cho form đặt lịch. Người dùng không bao giờ thấy cron. */
-  app.get<{ Querystring: { preset?: string; count?: string } }>('/presets', async (req) => {
-    const count = Math.min(Number(req.query.count ?? 5) || 5, 10);
-    if (req.query.preset !== undefined) {
-      if (!isPreset(req.query.preset)) throw new Problem('invalid_params', 'Lịch không hợp lệ');
-      return { code: req.query.preset, label: SCHEDULE_PRESETS[req.query.preset].label, next_runs: nextRuns(req.query.preset, count) };
-    }
-    return Object.entries(SCHEDULE_PRESETS).map(([code, p]) => ({
-      code, label: p.label, next_runs: nextRuns(code as keyof typeof SCHEDULE_PRESETS, count),
-    }));
+  /** Mẫu lịch chọn nhanh (dạng có cấu trúc) + các lần chạy kế tiếp, cho form đặt lịch. Người dùng không thấy cron. */
+  app.get('/presets', async () => SCHEDULE_TEMPLATES.map((x) => ({
+    code: x.code, label: describeSchedule(x.schedule), schedule: x.schedule, next_runs: nextScheduleRuns(x.schedule, 5),
+  })));
+
+  /** Xem trước một lịch người dùng đang đặt: mô tả + 5 lần chạy tới; lịch sai ⇒ 422 nói rõ chỗ sai. */
+  app.post<{ Body: { schedule: unknown } }>('/schedules/preview', {
+    schema: { body: { type: 'object', required: ['schedule'], properties: { schedule: { type: 'object' } } } },
+  }, async (req) => {
+    const s = parseSchedule(req.body.schedule);
+    return { schedule: s, label: describeSchedule(s), next_runs: nextScheduleRuns(s, 5) };
   });
 };

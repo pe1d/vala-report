@@ -15,7 +15,6 @@ import {
 } from '../adapter/index.js';
 import { pgp, withTenant, type Db, type Tx } from '../db/index.js';
 import { Problem } from '../errors.js';
-import { nextRuns, isPreset } from '../presets.js';
 import type { SecretStore, SessionSecret } from '../secrets.js';
 import type { SessionManager } from '../sessions.js';
 import { canAutoRenew, isPermanentLoginError, type AuthMethod, type ConnectionSessions } from '../connections.js';
@@ -321,15 +320,14 @@ async function upsertRecords(
   });
 }
 
-export async function touchSubscriptions(t: Tx, job: Pick<CrawlJob, 'source' | 'capability' | 'userId' | 'preset'>): Promise<void> {
-  const subs = await t.any<{ id: number; schedule_preset: string }>(
-    `SELECT rs.id, rs.schedule_preset FROM report_subscriptions rs
-       JOIN report_catalog rc ON rc.code = rs.report_code
-      WHERE rs.app_user_id = $1 AND rc.source_system = $2 AND rc.capability = $3 AND rs.is_enabled
-        AND ($4::text IS NULL OR rs.schedule_preset = $4)`,
-    [job.userId, job.source, job.capability, job.preset ?? null]);
-  for (const s of subs) {
-    const next = isPreset(s.schedule_preset) ? nextRuns(s.schedule_preset, 1)[0] : null;
-    await t.none(`UPDATE report_subscriptions SET last_run_at = now(), next_run_at = $2 WHERE id = $1`, [s.id, next]);
-  }
+/**
+ * Lấy dữ liệu xong ⇒ ghi "lần chạy gần nhất" cho các lịch của người này dùng cùng dữ liệu. next_run_at do bộ hẹn giờ
+ * (runDueSchedules) quản lý, ở đây không đụng. Cả lịch một lần đã tự tắt cũng được ghi để người dùng thấy "đã chạy".
+ */
+export async function touchSubscriptions(t: Tx, job: Pick<CrawlJob, 'source' | 'capability' | 'userId'>): Promise<void> {
+  await t.none(
+    `UPDATE report_subscriptions rs SET last_run_at = now()
+       FROM report_catalog rc
+      WHERE rc.code = rs.report_code AND rs.app_user_id = $1 AND rc.source_system = $2 AND rc.capability = $3`,
+    [job.userId, job.source, job.capability]);
 }

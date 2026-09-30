@@ -245,13 +245,10 @@ export async function finishSpiderRun(deps: SpiderDeps, runId: number, req: Fini
     if (status !== 'ok') return;
     await t.none(`UPDATE source_grants SET last_refresh_at = now(), refresh_fail_count = 0, last_error = NULL
                    WHERE app_user_id = $1 AND source_system = $2`, [r.app_user_id, r.source_system]);
-    const subs = await t.any<{ id: number; schedule_preset: string }>(
-      `SELECT rs.id, rs.schedule_preset FROM report_subscriptions rs JOIN report_catalog rc ON rc.code = rs.report_code
-        WHERE rs.app_user_id = $1 AND rc.spider_code = $2 AND rs.is_enabled`, [r.app_user_id, r.spider_code]);
-    for (const s of subs) {
-      await t.none(`UPDATE report_subscriptions SET last_run_at = now(), next_run_at = $2 WHERE id = $1`,
-        [s.id, isPreset(s.schedule_preset) ? nextRuns(s.schedule_preset, 1)[0] : null]);
-    }
+    // next_run_at do bộ hẹn giờ quản lý; ở đây chỉ ghi lần chạy gần nhất (kể cả lịch một lần đã tự tắt).
+    await t.none(
+      `UPDATE report_subscriptions rs SET last_run_at = now() FROM report_catalog rc
+        WHERE rc.code = rs.report_code AND rs.app_user_id = $1 AND rc.spider_code = $2`, [r.app_user_id, r.spider_code]);
   });
   if (status === 'ok' && (r.records_changed ?? 0) > 0) {
     await withTenant(deps.writer, (t) => t.any('SELECT refresh_aggregates()'));

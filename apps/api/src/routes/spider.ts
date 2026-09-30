@@ -18,11 +18,14 @@ export const spiderInternalRoutes = (deps: ApiDeps): FastifyPluginAsync => async
   const sd = { writer: deps.writer, secrets: deps.secrets, connections: deps.connections, sourceInfo: deps.sourceInfo };
   const runId = (p: { id: string }) => Number(p.id);
 
-  app.post<{ Body: { spider: string; preset?: string; user_id?: number; crawlab_task_id?: string } }>('/runs', {
+  app.post<{ Body: { spider: string; preset?: string; user_id?: number; crawlab_task_id?: string; trigger?: 'schedule' | 'manual' } }>('/runs', {
     schema: { body: { type: 'object', required: ['spider'], properties: {
-      spider: { type: 'string' }, preset: { type: 'string' }, user_id: { type: 'integer' }, crawlab_task_id: { type: ['string', 'null'] } } } },
+      spider: { type: 'string' }, preset: { type: 'string' }, user_id: { type: 'integer' }, crawlab_task_id: { type: ['string', 'null'] },
+      // Worker hẹn giờ chạy spider riêng cho một người với --trigger schedule (khác "chạy ngay" của người dùng).
+      trigger: { type: 'string', enum: ['schedule', 'manual'] } } } },
   }, async (req) => startSpiderRun(sd, {
     spider: req.body.spider, preset: req.body.preset, userId: req.body.user_id, crawlabTaskId: req.body.crawlab_task_id ?? undefined,
+    trigger: req.body.trigger,
   }));
 
   app.post<{ Params: { id: string }; Body: { refresh?: boolean } }>('/runs/:id/session', async (req) => {

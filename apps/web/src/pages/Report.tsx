@@ -88,7 +88,7 @@ export function ReportPage() {
         {d?.applied?.ngay ? <Muted className="mt-3">Ngày: {fmtDate(d.applied.ngay)}</Muted> : null}
       </Card>
 
-      {scheduling && params && <ScheduleForm reportCode={code} params={params} onDone={() => { setScheduling(false); setSaved(true); }} />}
+      {scheduling && params && <ScheduleForm reportCode={code} params={params} onDone={() => { setScheduling(false); setSaved(true); }} onCancel={() => setScheduling(false)} />}
       {saved && <Banner tone="info">Đã lưu lịch. Xem và chỉnh ở <TextLink to="/lich-chay">Lịch chạy</TextLink>.</Banner>}
 
       {result.error ? <ErrorBox error={result.error} onRetry={() => run()} /> : null}

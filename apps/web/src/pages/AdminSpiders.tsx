@@ -50,8 +50,8 @@ if __name__ == '__main__':
 
 /**
  * Màn hình quản trị — Script crawl. Mã spider (Python, dùng vala_sdk) lưu trong CSDL và viết/sửa ngay ở đây —
- * thêm hệ thống nguồn mới không cần sửa code. "Đồng bộ Crawlab" đẩy mã + tạo lịch cố định cho từng preset;
- * người dùng đặt lịch ở cổng, spider tự hỏi API ai cần crawl khi đến giờ.
+ * thêm hệ thống nguồn mới không cần sửa code. "Đồng bộ Crawlab" đẩy mã lên Crawlab; người dùng tự đặt lịch ở cổng,
+ * worker Vala đến giờ thì chạy spider cho đúng người đó (--user).
  */
 export function AdminSpidersPage() {
   const list = useAsync(() => api.get<SpiderList>('/admin/spiders'), []);
@@ -65,14 +65,14 @@ export function AdminSpidersPage() {
     setBusy(true); setNote(null);
     try {
       const r = await api.post<SyncResult>('/admin/spiders/sync');
-      setNote({ tone: 'ok', text: `Đã đồng bộ ${r.spiders.length} spider lên Crawlab (${r.spiders.map((s) => `${s.code}: ${s.schedules} lịch`).join('; ')}).` });
+      setNote({ tone: 'ok', text: `Đã đồng bộ ${r.spiders.length} spider lên Crawlab (${r.spiders.map((s) => s.code).join(', ')}).` });
       list.reload();
     } catch (e) { setNote({ tone: 'err', text: ERR(e) }); }
     finally { setBusy(false); }
   };
   const toggle = async (s: Spider) => {
     await api.patch(`/admin/spiders/${s.code}`, { is_enabled: !s.is_enabled });
-    setNote({ tone: 'info', text: `Đã ${s.is_enabled ? 'tắt' : 'bật'} ${s.code}. Bấm "Đồng bộ Crawlab" để áp dụng cho lịch bên Crawlab.` });
+    setNote({ tone: 'info', text: `Đã ${s.is_enabled ? 'tắt' : 'bật'} ${s.code}. Lịch của người dùng dùng spider này sẽ tạm bỏ qua cho tới khi bật lại.` });
     list.reload();
   };
   const run = async (s: Spider) => {
@@ -108,7 +108,7 @@ export function AdminSpidersPage() {
             <Button onClick={() => { setEditing('new'); setNote(null); }}>Thêm spider</Button>
             <Button variant="primary" disabled={busy || !d.crawlab_configured} onClick={() => void sync()}>{busy ? 'Đang đồng bộ…' : 'Đồng bộ Crawlab'}</Button>
           </div>
-          <Muted className="mt-2">Đồng bộ đẩy mã spider đang lưu ở đây lên Crawlab (ghi đè bản trên Crawlab), tạo/cập nhật lịch cho mọi preset và cấu hình địa chỉ API cho spider. Sửa mã tại đây rồi đồng bộ — đừng sửa trực tiếp trên Crawlab vì lần đồng bộ sau sẽ ghi đè.</Muted>
+          <Muted className="mt-2">Đồng bộ đẩy mã spider đang lưu ở đây lên Crawlab (ghi đè bản trên Crawlab), xoá các lịch cố định cũ trên Crawlab (giờ chạy do worker Vala hẹn theo lịch từng người) và cấu hình địa chỉ API cho spider. Sửa mã tại đây rồi đồng bộ — đừng sửa trực tiếp trên Crawlab vì lần đồng bộ sau sẽ ghi đè.</Muted>
         </Card>
       )}
 
@@ -126,7 +126,7 @@ export function AdminSpidersPage() {
                   <Td><div className="font-medium">{s.ten}</div><Muted className="font-mono text-xs">{s.code}</Muted></Td>
                   <Td>{s.source_ten}</Td>
                   <Td>{s.crawlab_spider_id
-                    ? <><Badge tone="ok">Đã đồng bộ</Badge><Muted className="mt-1 text-xs">{s.schedules} lịch · {fmtDateTime(s.synced_at)}</Muted></>
+                    ? <><Badge tone="ok">Đã đồng bộ</Badge><Muted className="mt-1 text-xs">{fmtDateTime(s.synced_at)}</Muted></>
                     : <Badge tone="warn">Chưa đồng bộ</Badge>}
                     {!s.is_enabled && <div className="mt-1"><Badge tone="neutral">Đang tắt</Badge></div>}</Td>
                   <Td num>{s.subscribers}</Td>

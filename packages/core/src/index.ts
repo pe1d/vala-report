@@ -4,6 +4,7 @@ export * from './errors.js';
 export * from './authz.js';
 export * from './secrets.js';
 export * from './presets.js';
+export * from './schedule.js';
 export * from './ingest/crawl.js';
 export * from './queue.js';
 export * from './sso.js';

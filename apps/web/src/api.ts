@@ -88,8 +88,16 @@ export interface StatTile {
   unit?: '%'; part?: number; whole?: number;
   trend?: number[]; delta?: { now: number; before: number; vs: string };
 }
+/** Lịch có cấu trúc (khớp packages/core/src/schedule.ts). Ngày trong tuần: 1 = Thứ Hai … 7 = Chủ nhật. */
+export type Schedule =
+  | { kind: 'hang_ngay'; times: string[] }
+  | { kind: 'hang_tuan'; days: number[]; times: string[] }
+  | { kind: 'hang_thang'; days_of_month: number[]; times: string[] }
+  | { kind: 'lap_lai'; every_hours: number; from: string; to: string; days: number[] }
+  | { kind: 'mot_lan'; at: string };
 export interface Subscription {
-  id: number; report_code: string; report_ten: string; params: Record<string, unknown>; schedule_preset: string;
+  id: number; report_code: string; report_ten: string; params: Record<string, unknown>;
+  schedule: Schedule; schedule_label: string;
   is_enabled: boolean; next_run_at: string | null; last_run_at: string | null; last_status: string | null;
 }
 export type WidgetStatus = 'ok' | 'chua_co_du_lieu' | 'can_ket_noi' | 'het_han' | 'loi';
@@ -127,7 +135,8 @@ export interface AdapterSummary {
   capabilities: Array<{ id: string; ten: string; sink: string | null }>;
 }
 
-export interface Preset { code: string; label: string; next_runs: string[] }
+export interface Preset { code: string; label: string; schedule: Schedule; next_runs: string[] }
+export interface SchedulePreview { schedule: Schedule; label: string; next_runs: string[] }
 
 // ---- định dạng (hệ thiết kế mục 06) ----
 const TZ = 'Asia/Ho_Chi_Minh';

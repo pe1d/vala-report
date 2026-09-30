@@ -4,8 +4,8 @@
  */
 import { Worker } from 'bullmq';
 import {
-  CRAWL_CONCURRENCY, CRAWL_QUEUE, ConnectionSessions, MAINTENANCE_QUEUE, SessionManager, SourceRegistry, SsoClient, TENANT, closeAllPools,
-  crawlUserSource, crawlQueue, enqueueDueSubscriptions, envBool, fanOut, maintenanceQueue, redisConnection, refreshExpiringSessions, secretStore,
+  CRAWL_CONCURRENCY, CRAWL_QUEUE, ConnectionSessions, CrawlabClient, MAINTENANCE_QUEUE, SessionManager, SourceRegistry, SsoClient, TENANT, closeAllPools,
+  crawlUserSource, crawlQueue, crawlabConfigFromEnv, envBool, runDueSchedules, fanOut, maintenanceQueue, redisConnection, refreshExpiringSessions, secretStore,
   ssoConfigFromEnv, withTenant, writerDb, type CrawlJob,
 } from '@vala/core';
 import { loadAllSpecs, registerSpecs } from '@vala/core/adapter';
@@ -20,6 +20,9 @@ await registry.reload();
 registry.install();
 setInterval(() => { registry.reload().catch((e: Error) => log.error('nạp lại cấu hình hệ thống nguồn lỗi', { err: e.message })); }, 60_000).unref();
 const maintenance = maintenanceQueue(connection);
+// Lịch người dùng tự đặt có báo cáo dùng spider ⇒ worker bảo Crawlab chạy spider cho đúng người đến hạn.
+const crawlabCfg = crawlabConfigFromEnv();
+const crawlab = crawlabCfg ? new CrawlabClient(crawlabCfg) : null;
 const crawl = crawlQueue(connection);
 
 const baseUrls: Record<string, string> = {};
@@ -86,9 +89,9 @@ const maintenanceWorker = new Worker(
         return;
       }
       case 'due_subscriptions': {
-        // Báo cáo không có spider (hệ thống quản trị thêm): lấy dữ liệu theo các bước khai trong adapter.
-        const n = await enqueueDueSubscriptions(writer, crawl);
-        if (n) log.info('lịch đến hạn (không qua spider)', { queued: n });
+        // Bộ hẹn giờ lịch người dùng tự đặt: spider (qua Crawlab, --user) hoặc các bước lấy dữ liệu trong adapter.
+        const r = await runDueSchedules(writer, crawl, crawlab, new Date(), (msg, meta) => log.warn(msg, meta));
+        if (r.due) log.info('lịch đến hạn', { ...r });
         return;
       }
       case 'dev_fanout': {

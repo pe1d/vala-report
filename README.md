@@ -50,11 +50,11 @@ pnpm test           # bộ test cũ (phụ thuộc eGov/eTask giả lập) đã 
 ## Crawlab và script crawl (cập nhật 26/09/2026)
 
 ```
-Quản trị    Script crawl: main.py lưu CSDL (Python + vala_sdk) ──"Đồng bộ Crawlab"──▶ spider + lịch cố định (spider × preset)
+Quản trị    Script crawl: main.py lưu CSDL (Python + vala_sdk) ──"Đồng bộ Crawlab"──▶ spider (không tạo lịch Crawlab)
 Người dùng  "Tài khoản nguồn": tự cấp cookie/phiên hoặc tài khoản/mật khẩu (lưu trong vault)
-Người dùng  đặt lịch cho báo cáo (chọn preset, không nhập cron)
-Crawlab     đến giờ: python main.py --preset P
-  vala_sdk  → POST /internal/spider/runs            "ai đã đặt preset P, có kết nối còn hiệu lực?"
+Người dùng  tự đặt lịch cho báo cáo: giờ tuỳ ý, theo thứ, hàng tháng, nhiều lần trong ngày, một lần (không nhập cron)
+Worker      mỗi phút: lịch nào đến hạn ⇒ bảo Crawlab chạy python main.py --user N --trigger schedule
+  vala_sdk  → POST /internal/spider/runs            "người N có kết nối còn hiệu lực?"
             → POST /internal/spider/runs/:id/session cookie của người đó (backend tự đăng nhập lại khi cần)
             → spider gọi hệ thống nguồn
             → POST /internal/spider/runs/:id/records bản ghi THÔ → lớp thô → chuẩn hoá theo adapters/*.yaml → lịch sử
@@ -64,7 +64,13 @@ Cổng        dashboard có sẵn đọc từ kho, vd "Việc của tôi hôm na
 
 - **Script Python không bao giờ nhận mật khẩu**, chỉ nhận cookie đúng lúc dùng. Tự đăng nhập bằng mật khẩu nằm ở backend.
 - **Dữ liệu không lưu vào MongoDB của Crawlab**; Crawlab chỉ giữ script, lịch và log.
-- Lịch Crawlab là **cố định** (mỗi spider × preset một lịch). Người dùng đổi lịch không gọi Crawlab.
+- **Hẹn giờ nằm ở worker Vala, không ở Crawlab** (cập nhật 29/09/2026, migration 015). Lịch lưu dạng có cấu trúc trong
+  `report_subscriptions.schedule` ([packages/core/src/schedule.ts](packages/core/src/schedule.ts)); worker (`runDueSchedules`) mỗi
+  phút tìm lịch đến hạn, dời `next_run_at` ngay rồi chạy spider cho đúng người đó. Rào chắn: các giờ trong ngày cách nhau
+  ≥ 60 phút; gộp nhiều lịch cùng người × hệ thống thành một lượt; bỏ qua nếu người đó vừa có lượt chạy trong 50 phút
+  (`SCHEDULE_MIN_GAP_MINUTES`); rải giờ 0–4 phút sau giờ đặt; mỗi hệ thống tối đa 20 lượt bắt đầu mỗi phút
+  (`MAX_STARTS_PER_SOURCE_PER_MINUTE`), phần dư chạy phút sau; mỗi người tối đa 10 lịch đang bật (`MAX_SUBSCRIPTIONS_PER_USER`);
+  kết nối hết hạn thì bỏ qua lượt đó. Lịch một lần chạy xong tự tắt. "Đồng bộ Crawlab" xoá các lịch cố định (preset) cũ.
 - "Chạy ngay" của người dùng và "Chạy thử" của quản trị chạy spider trên Crawlab với `--user N`.
 - Lỗi của một người không làm hỏng cả lượt; spider báo lỗi Crawlab khi quá 50% người dùng lỗi.
 
@@ -125,7 +131,7 @@ Code không còn nhắc tới `egov`/`etask`. Hệ thống tạo nhanh (chỉ ph
 **Thêm hệ thống mới từ đầu đến Tổng quan, không sửa code (cập nhật 28/09/2026):**
 1. *Hệ thống nguồn → Thêm*: dán cấu hình adapter. Capability ghi vào `sink: { table: records }` là **bảng dữ liệu chung** (`records`): trường theo `output_schema`, nhãn lấy từ `label`, có lịch sử SCD2 và RLS cá nhân/đơn vị như văn bản. Muốn đưa vào bảng văn bản/công việc thì dùng `documents` / `tasks`.
 2. Người dùng kết nối: tiện ích, cookie, hoặc mật khẩu nếu adapter có `password_login`.
-3. *Lấy dữ liệu*: báo cáo không có spider thì **worker chạy thẳng các bước trong adapter**. Mỗi phút worker kiểm tra lịch đến hạn (`enqueueDueSubscriptions`) và dời `next_run_at` ngay, nên lỗi không làm chạy lặp. Nút "Lấy dữ liệu ngay" cũng đi đường này. Spider Python chỉ còn cần cho trang phức tạp.
+3. *Lấy dữ liệu*: báo cáo không có spider thì **worker chạy thẳng các bước trong adapter**. Mỗi phút worker kiểm tra lịch đến hạn (`runDueSchedules`) và dời `next_run_at` ngay, nên lỗi không làm chạy lặp. Nút "Lấy dữ liệu ngay" cũng đi đường này. Spider Python chỉ còn cần cho trang phức tạp.
 4. *Cấu hình báo cáo → Tạo báo cáo* (`/cau-hinh-bao-cao`), không viết SQL. Chọn:
    - hệ thống, tập dữ liệu, kiểu *Thống kê* (nhóm theo, phép tính, biểu đồ) hoặc *Danh sách* (cột);
    - trường ngày cho tham số khoảng thời gian, ô từ khoá, bộ lọc người xem tự chọn (lựa chọn lấy từ dữ liệu);
