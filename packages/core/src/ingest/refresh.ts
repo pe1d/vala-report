@@ -29,6 +29,13 @@ export async function refreshExpiringSessions(
         AND ($2::bigint[] IS NULL OR app_user_id = ANY($2::bigint[]))
       ORDER BY session_expires_at NULLS FIRST`, [withinMinutes, onlyUserIds ?? null]));
   const out: RefreshSummary = { checked: grants.length, refreshed: 0, expired: 0, failed: 0, skipped: 0 };
+  // Tiện ích báo kèm thời hạn cookie phiên: quá hạn ⇒ đánh dấu hết hạn ngay (tiện ích thấy và nhắc người dùng đăng
+  // nhập lại), thay vì chờ tới lượt crawl gặp lỗi 401.
+  out.expired += await withTenant(writer, (t) => t.result(
+    `UPDATE source_grants SET session_state = 'expired', last_error = 'Phiên trên trình duyệt đã quá thời hạn của cookie'
+      WHERE revoked_at IS NULL AND session_state = 'active' AND auth_method = 'extension'
+        AND session_expires_at IS NOT NULL AND session_expires_at < now()
+        AND ($1::bigint[] IS NULL OR app_user_id = ANY($1::bigint[]))`, [onlyUserIds ?? null], (r) => r.rowCount));
   for (const g of grants) {
     if (!canAutoRenew(g.auth_method)) { out.skipped++; continue; }   // cookie / tiện ích: chờ người dùng
     try {

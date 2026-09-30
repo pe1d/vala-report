@@ -22,6 +22,11 @@ export interface Source {
   cookie_names: string[];
   /** Nhóm cookie phiên: mỗi nhóm là các tên thay thế nhau, có một trong số đó là đủ (vd [bkavAuthen1, bkavAuthen]). */
   cookie_groups?: string[][];
+  /**
+   * Cookie định danh (vd meId/companyId của eTask) chỉ đọc được khi đang mở trang nguồn. Thiếu thì vẫn gửi phiên:
+   * máy chủ dùng lại giá trị lần gửi trước của chính người này.
+   */
+  stable_cookies?: string[];
   /** Mẫu quyền host cần xin (origin + tên miền cha của cookie phiên, vd https://*.bkav.com/*). */
   permission_origins?: string[];
   /** Tên miền tìm cookie phiên (vd bkav.com cho eGov thật, localhost cho dev). */

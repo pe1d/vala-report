@@ -152,6 +152,27 @@ export class ConnectionSessions {
     return { ok: true as const, required: Object.keys(keep), probes };
   }
 
+  /** Cookie định danh (stable_cookies) có trong cookies_required — tiện ích được phép gửi thiếu. */
+  stableCookies(source: string): string[] {
+    try {
+      const spec = this.spec(source);
+      const names = cookieNames(spec);
+      return spec.auth.stable_cookies.filter((n) => names.includes(n));
+    } catch { return []; }
+  }
+
+  /**
+   * Bổ sung cookie định danh tiện ích gửi thiếu bằng giá trị của phiên đang lưu của CHÍNH người này. Chỉ gọi khi
+   * kết nối hiện tại của người đó là qua tiện ích và chưa thu hồi. Trả tên đã bổ sung (không bao giờ log giá trị).
+   */
+  async fillStableCookies(userId: number, source: string, raw: Record<string, string>): Promise<{ cookies: Record<string, string>; filled: string[] }> {
+    const want = this.stableCookies(source).filter((n) => !raw[n]);
+    if (!want.length) return { cookies: raw, filled: [] };
+    const prev = await this.o.secrets.get<SessionSecret>(this.sessionRef(userId, source));
+    const filled = want.filter((n) => !!prev?.cookies[n]);
+    return { cookies: { ...raw, ...Object.fromEntries(filled.map((n) => [n, prev!.cookies[n]!])) }, filled };
+  }
+
   /** Phiên do tiện ích trình duyệt gửi về (đã qua verifyCookies). */
   async saveSession(userId: number, source: string, cookies: Record<string, string>): Promise<SessionSecret> {
     const secret: SessionSecret = { cookies, obtained_at: new Date().toISOString() };

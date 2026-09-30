@@ -89,6 +89,11 @@ export const AdapterSpecSchema = z.object({
       cookies_required: z.array(z.union([z.string(), z.array(z.string()).min(1)])).min(1),
       // Gửi kèm nếu trình duyệt có, nhưng thiếu cũng không sao (vd cookie phiên ASP.NET mà vài API dữ liệu cần).
       cookies_optional: z.array(z.string()).default([]),
+      // Cookie ĐỊNH DANH không đổi theo phiên (vd meId/companyId của eTask — id người dùng, id công ty) mà tiện ích
+      // chỉ đọc được khi đang mở trang nguồn. Tiện ích gửi phiên mới thiếu các cookie này ⇒ máy chủ dùng lại giá trị
+      // của lần gửi trước của CHÍNH người đó (cùng kết nối tiện ích), rồi vẫn probe như thường. Chỉ nhận tên có
+      // trong cookies_required.
+      stable_cookies: z.array(z.string()).default([]),
       // Cookie phiên đặt ở tên miền cha (vd `.bkav.com` dùng chung giữa eGov, eTask, SSO). Tiện ích trình duyệt
       // phải xin quyền cả tên miền này mới đọc được cookie — Chrome lọc cookie theo tên miền của chính cookie.
       cookie_domain: z.string().regex(/^[a-z0-9.-]+$/).optional(),

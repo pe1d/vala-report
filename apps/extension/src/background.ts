@@ -73,13 +73,21 @@ async function readPageCookies(src: Source, names: string[]): Promise<Record<str
   return {};
 }
 
+/** Thời hạn (giây epoch) của các cookie phiên đọc được qua chrome.cookies — chỉ thời hạn, không bao giờ kèm giá trị. */
+const cookieExpiry = new Map<string, Record<string, number>>();
+
 /** Đọc đúng các cookie phiên của một nguồn. null nếu chưa có quyền đọc các tên miền cần. */
 async function readCookies(src: Source): Promise<Record<string, string> | null> {
   if (!(await chrome.permissions.contains({ origins: sourcePermissions(src) }))) return null;
   const out: Record<string, string> = {};
+  const exp: Record<string, number> = {};
   for (const c of await applicableCookies(src)) {
-    if (src.cookie_names.includes(c.name) && !(c.name in out)) out[c.name] = c.value;
+    if (src.cookie_names.includes(c.name) && !(c.name in out)) {
+      out[c.name] = c.value;
+      if (!c.session && c.expirationDate) exp[c.name] = Math.floor(c.expirationDate);
+    }
   }
+  cookieExpiry.set(src.code, exp);
   console.log(`[vala] ${src.code}: cần ${src.cookie_names.join(',')}; chrome.cookies lấy được ${Object.keys(out).join(',') || '(không có)'}`);
   // Cookie do JS đặt (non-HttpOnly) như companyId/meId của eTask không lộ qua chrome.cookies — đọc bù từ trang.
   Object.assign(out, await readPageCookies(src, src.cookie_names.filter((n) => !(n in out))));
@@ -98,7 +106,9 @@ async function pushSource(src: Source, force: boolean): Promise<SyncStatus['resu
   if (src.managed) return setStatus(src.code, { result: 'managed', message: 'Hệ thống tự đăng nhập bằng tài khoản đã cấp, không cần tiện ích' });
   const cookies = await readCookies(src);
   if (!cookies) return setStatus(src.code, { result: 'no_permission', message: `Chưa cho phép đọc phiên ${src.cookie_domain ?? new URL(src.origin).host}` });
-  const missing = missingGroups(src, cookies);
+  // Thiếu cookie định danh (chỉ đọc được khi đang mở trang nguồn) thì vẫn gửi — máy chủ dùng lại giá trị lần trước.
+  const stable = new Set(src.stable_cookies ?? []);
+  const missing = missingGroups(src, cookies).filter((g) => !g.split('|').every((n) => stable.has(n)));
   if (missing.length) return setStatus(src.code, { result: 'not_logged_in', message: `Chưa đăng nhập ${src.ten} trên trình duyệt này (thiếu ${missing.join(', ')})` });
 
   // Chỉ lưu hash — không bao giờ lưu giá trị cookie. Cùng phiên đã gửi (hoặc đã bị từ chối) thì thôi.
@@ -111,7 +121,8 @@ async function pushSource(src: Source, force: boolean): Promise<SyncStatus['resu
       : { result: 'rejected', message: 'Phiên trên trình duyệt đã hết hạn — đăng nhập lại' });
   }
   try {
-    const r = await api<{ status: string; message?: string }>('PUT', `/ext/sources/${src.code}/session`, { cookies });
+    const r = await api<{ status: string; message?: string }>('PUT', `/ext/sources/${src.code}/session`,
+      { cookies, expires: cookieExpiry.get(src.code) ?? {} });
     await chrome.storage.local.set({ [key]: { hash, ok: true } });
     if (r.status !== 'active') return setStatus(src.code, { result: 'managed', message: r.message ?? 'Máy chủ không cần phiên này' });
     // Lần đầu kết nối / nối lại sau khi hết hạn ⇒ báo cho người dùng biết đã xong. Vừa đăng nhập ở tab

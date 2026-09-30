@@ -86,6 +86,7 @@ export const extensionRoutes = (deps: ApiDeps): FastifyPluginAsync => async (app
       out.push({
         code: r.code, ten: r.ten, origin: new URL(baseUrl).origin, login_url: baseUrl, cookie_names: cookieNames,
         cookie_groups: deps.connections.cookieGroups(r.code),
+        stable_cookies: deps.connections.stableCookies(r.code),
         permission_origins: deps.connections.permissionOrigins(r.code, baseUrl),
         cookie_domain: deps.connections.cookieDomain(r.code, baseUrl),
         state: r.session_state, auth_method: r.auth_method ?? null, last_push_at: r.last_push_at, last_error: r.last_error,
@@ -98,10 +99,15 @@ export const extensionRoutes = (deps: ApiDeps): FastifyPluginAsync => async (app
   /**
    * Tiện ích gửi phiên. Chỉ nhận đúng cookies_required, probe ngay (phiên sống + thuộc tài khoản nguồn nào)
    * rồi mới lưu vault. Kết nối mật khẩu/SSO đang tốt thì bỏ qua — hệ thống đã tự lo.
+   *
+   * Cookie định danh (stable_cookies, vd meId/companyId của eTask) tiện ích chỉ đọc được khi đang mở trang nguồn:
+   * gửi thiếu thì dùng lại giá trị của phiên đang lưu của chính người này (kết nối tiện ích, chưa thu hồi).
+   * `expires`: thời hạn cookie (giây epoch, KHÔNG có giá trị cookie) ⇒ lưu session_expires_at để biết trước khi hết hạn.
    */
-  app.put<{ Params: { source: string }; Body: { cookies: Record<string, string> } }>('/ext/sources/:source/session', {
+  app.put<{ Params: { source: string }; Body: { cookies: Record<string, string>; expires?: Record<string, number> } }>('/ext/sources/:source/session', {
     schema: { body: { type: 'object', required: ['cookies'], properties: {
-      cookies: { type: 'object', maxProperties: 30, additionalProperties: { type: 'string', maxLength: 4096 } } } } },
+      cookies: { type: 'object', maxProperties: 30, additionalProperties: { type: 'string', maxLength: 4096 } },
+      expires: { type: 'object', maxProperties: 30, additionalProperties: { type: 'number' } } } } },
   }, async (req) => {
     const userId = req.user.id;
     const source = req.params.source;
@@ -114,14 +120,27 @@ export const extensionRoutes = (deps: ApiDeps): FastifyPluginAsync => async (app
       'SELECT auth_method, session_state, revoked_at FROM source_grants WHERE app_user_id = $1 AND source_system = $2', [userId, source]));
     if (managed(g)) return { status: 'skipped', reason: 'managed', message: 'Kết nối đang dùng tài khoản/mật khẩu hoặc Bkav SSO, hệ thống tự lấy phiên' };
 
+    // Bổ sung cookie định danh chỉ khi kết nối hiện tại của người này là qua tiện ích (không lấy của kết nối khác).
+    const canFill = !!g && g.auth_method === 'extension' && g.revoked_at === null;
+    const { cookies: raw, filled } = canFill ? await deps.connections.fillStableCookies(userId, source, req.body.cookies) : { cookies: req.body.cookies, filled: [] as string[] };
     // Phiên trên trình duyệt chưa đăng nhập / đã hết hạn ⇒ session_expired (409), không ghi gì.
-    const { cookies, session } = await deps.connections.verifyCookies(source, req.body.cookies).catch((e) => {
+    const { cookies, session } = await deps.connections.verifyCookies(source, raw).catch((e) => {
       // Chỉ ghi tên cookie và lý do — không bao giờ ghi giá trị.
-      req.log.warn({ source, user: userId, names: Object.keys(req.body.cookies), reason: (e as Problem).detail ?? (e as Error).message }, 'tiện ích gửi phiên không dùng được');
+      req.log.warn({ source, user: userId, names: Object.keys(req.body.cookies), filled, reason: (e as Problem).detail ?? (e as Error).message }, 'tiện ích gửi phiên không dùng được');
+      const stable = deps.connections.stableCookies(source).filter((n) => !req.body.cookies[n] && !filled.includes(n));
+      if (e instanceof Problem && e.type === 'session_expired' && stable.length) {
+        throw new Problem('session_expired', 'Cần mở trang hệ thống nguồn một lần', `Mở ${source} trên trình duyệt để tiện ích đọc được ${stable.join(', ')}`);
+      }
       throw e;
     });
     await saveSourceAccount(deps.writer, { source, userId }, session);          // puid đã thuộc người khác ⇒ 403
     await deps.connections.saveSession(userId, source, cookies);
+    // Thời hạn phiên = thời hạn sớm nhất trong các cookie phiên trình duyệt vừa gửi (bỏ qua giá trị vô lý).
+    const now = Date.now() / 1000;
+    const exps = Object.entries(req.body.expires ?? {})
+      .filter(([n, v]) => n in cookies && !filled.includes(n) && Number.isFinite(v) && v > now - 86_400 && v < now + 400 * 86_400)
+      .map(([, v]) => v);
+    const expiresAt = exps.length ? new Date(Math.min(...exps) * 1000) : null;
 
     const all = loadAllSpecs().filter((x) => x.source_system === source).flatMap((x) => x.capabilities.map((c) => c.id));
     const changed = !g || g.revoked_at !== null || g.auth_method !== 'extension' || g.session_state !== 'active';
@@ -129,18 +148,18 @@ export const extensionRoutes = (deps: ApiDeps): FastifyPluginAsync => async (app
       await t.none(
         `INSERT INTO source_grants (app_user_id, source_system, scope_capabilities, vault_ref, session_state, auth_method,
                                     source_username, configured_by, session_expires_at, last_push_at, last_refresh_at, updated_at)
-         VALUES ($1, $2, $3, $4, 'active', 'extension', NULL, $1, NULL, now(), now(), now())
+         VALUES ($1, $2, $3, $4, 'active', 'extension', NULL, $1, $5, now(), now(), now())
          ON CONFLICT (app_user_id, source_system) DO UPDATE
            SET session_state = 'active', auth_method = 'extension', source_username = NULL, configured_by = $1,
-               session_expires_at = NULL, revoked_at = NULL, last_error = NULL, refresh_fail_count = 0,
+               session_expires_at = EXCLUDED.session_expires_at, revoked_at = NULL, last_error = NULL, refresh_fail_count = 0,
                last_push_at = now(), last_refresh_at = now(), updated_at = now(),
                scope_capabilities = CASE WHEN source_grants.auth_method = 'extension' AND source_grants.revoked_at IS NULL
                                          THEN source_grants.scope_capabilities ELSE EXCLUDED.scope_capabilities END`,
-        [userId, source, all, vaultRef(deps.config.tenant, userId, source)]);
+        [userId, source, all, vaultRef(deps.config.tenant, userId, source), expiresAt]);
       // Audit khi kết nối bắt đầu/đổi cách lấy; các lần gửi lại cùng cách chỉ cập nhật last_push_at.
       if (changed) await audit(t, req, 'grant', { type: 'connection', id: `${userId}/${source}` }, { auth_method: 'extension', by: 'self', device: req.extDeviceId });
     });
-    return { status: 'active' };
+    return { status: 'active', filled, expires_at: expiresAt };
   });
 
   /**
