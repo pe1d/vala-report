@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { api, auth, fmtDate, ApiProblem, type ReportDef, type ReportResult, type Scope } from '../api';
 import { useMe } from '../App';
+import { BASE } from '../base';
 import { useAsync } from '../hooks';
 import { ChartView } from '../components/Charts';
 import { StatTiles } from '../components/StatTiles';
@@ -45,7 +46,7 @@ export function ReportPage() {
   useEffect(() => { if (params) run(1); }, [params === null, scope]);
 
   const exportXlsx = async () => {
-    const res = await fetch(`/api/v1/reports/${code}/export`, {
+    const res = await fetch(`${BASE}/api/v1/reports/${code}/export`, {
       method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${auth.get()}` },
       body: JSON.stringify({ params, scope, format: 'xlsx', q: q || undefined }),
     });

@@ -22,6 +22,9 @@ if [ ! -s "$CERT" ] || [ ! -s "$KEY" ]; then
   echo "Đã tạo chứng chỉ tự ký cho $HOST (1 năm)."
 fi
 VER="$(version)"
+# Đường dẫn con của cổng (vd PUBLIC_WEB_URL=https://host:5443/vala-report ⇒ /vala-report/) — build web theo đó.
+WEB_BASE_PATH="$(echo "$PUBLIC_WEB_URL" | sed -E 's#^https?://[^/]+##; s#/+$##')/"
+export WEB_BASE_PATH
 
 echo "==> Namespace $NS + cấu hình (Secret vala-env, vala-tls; ConfigMap vala-vault)"
 $KUBECTL apply -f "$K8S/namespace.yaml" -n "$NS" >/dev/null
@@ -35,7 +38,7 @@ k create configmap vala-vault --from-file="$ROOT/infra/vault" --dry-run=client -
 CONFIG_HASH="$(cat "$ENV_TMP" "$CERT" "$KEY" "$ROOT"/infra/vault/* | sha256sum | cut -c1-16)"
 
 echo "==> Image phiên bản $VER"
-if [ "${SKIP_BUILD:-}" != 1 ] && { [[ "$VER" == *-dirty ]] || ! has_image vala-report-node "$VER" || ! has_image vala-report-web "$VER"; }; then
+if [ "${SKIP_BUILD:-}" != 1 ] && { [ "${FORCE_BUILD:-}" = 1 ] || [[ "$VER" == *-dirty ]] || ! has_image vala-report-node "$VER" || ! has_image vala-report-web "$VER"; }; then
   "$K8S/build-images.sh" "$VER"
 fi
 has_image vala-report-node "$VER" && has_image vala-report-web "$VER" || { echo "Chưa có image $VER trong k3s"; exit 1; }

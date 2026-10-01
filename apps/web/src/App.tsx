@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState } from 'react';
 import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { api, auth, type Me } from './api';
+import { BASE } from './base';
 import { useAsync } from './hooks';
 import { ReauthGate } from './components/Reauth';
 import { Loading } from './components/States';
@@ -44,7 +45,7 @@ function LoginDone({ onLogin }: { onLogin: (t: string) => void }) {
     const token = h.get('token');
     const next = h.get('next') ?? '/';
     try { sessionStorage.removeItem('vala.reauth'); } catch { /* bỏ qua */ }
-    window.history.replaceState(null, '', '/');
+    window.history.replaceState(null, '', `${BASE}/`);
     if (token) onLogin(token);
     navigate(token && next.startsWith('/') && !next.startsWith('//') ? next : '/', { replace: true });
   }, [navigate, onLogin]);

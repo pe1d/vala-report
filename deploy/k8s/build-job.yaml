@@ -29,6 +29,7 @@ spec:
                   --local context=/src --local dockerfile=/src --opt filename="$2" \
                   --opt build-arg:HTTP_PROXY="$HTTP_PROXY" --opt build-arg:HTTPS_PROXY="$HTTP_PROXY" \
                   --opt build-arg:http_proxy="$HTTP_PROXY" --opt build-arg:https_proxy="$HTTP_PROXY" \
+                  --opt build-arg:VITE_BASE_PATH="WEB_BASE_PATH" \
                   --output "type=docker,name=docker.io/library/$1:VALA_VERSION,dest=/out/$1-VALA_VERSION.tar.part"
                 mv "/out/$1-VALA_VERSION.tar.part" "/out/$1-VALA_VERSION.tar"
               }

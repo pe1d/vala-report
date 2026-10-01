@@ -64,13 +64,17 @@ export async function getCachedSources(): Promise<Source[]> {
   return ((await chrome.storage.local.get('sources')).sources as Source[]) ?? [];
 }
 
-/** Chuẩn hoá địa chỉ máy chủ: chỉ https, trừ localhost cho dev. Trả null nếu không hợp lệ. */
+/**
+ * Chuẩn hoá địa chỉ máy chủ: chỉ https, trừ localhost cho dev. Giữ đường dẫn con nếu cổng chạy dưới một thư mục
+ * (vd https://qtttboard-demo.demozone.vn:5443/vala-report), bỏ '/' cuối, đuôi /api, query/hash. Trả null nếu không hợp lệ.
+ */
 export function normalizeServer(raw: string): string | null {
   try {
     const u = new URL(raw.trim());
     const local = u.hostname === 'localhost' || u.hostname === '127.0.0.1';
     if (u.protocol !== 'https:' && !(local && u.protocol === 'http:')) return null;
-    return u.origin;
+    // Người dùng dán cả địa chỉ API (…/vala-report/api hoặc …/api/v1) ⇒ bỏ đuôi đó, tiện ích tự thêm /api/v1.
+    return `${u.origin}${u.pathname.replace(/\/+$/, '').replace(/\/api(\/v1)?$/, '')}`;
   } catch {
     return null;
   }

@@ -1,3 +1,5 @@
+import { BASE } from './base';
+
 /** Client API. Lỗi RFC 7807 thành ApiProblem để màn hình rẽ nhánh theo `type`. */
 export class ApiProblem extends Error {
   constructor(readonly type: string, readonly status: number, readonly title: string, readonly detail?: string, readonly body?: Record<string, unknown>) {
@@ -16,7 +18,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   const token = auth.get();
   if (token) headers.Authorization = `Bearer ${token}`;
   if (body !== undefined) headers['Content-Type'] = 'application/json';
-  const res = await fetch(`/api/v1${path}`, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
+  const res = await fetch(`${BASE}/api/v1${path}`, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
   if (res.status === 204) return undefined as T;
   const ct = res.headers.get('content-type') ?? '';
   if (!res.ok) {
