@@ -7,6 +7,7 @@
     "dev": "vite build --watch --mode development",
     "build": "tsc -p . && vite build",
     "build:dev": "tsc -p . && vite build --mode development",
+    "package": "sh scripts/package.sh",
     "typecheck": "tsc -p .",
     "test": "echo 'extension: thử bằng tools/… (Chrome thật), xem README'"
   },

@@ -46,8 +46,8 @@ export interface SyncStatus {
   message: string;
 }
 
-export const DEFAULT_SERVER = (import.meta.env.VITE_VALA_URL as string | undefined)
-  ?? (import.meta.env.MODE === 'development' ? 'http://localhost:5173' : '');
+/** Máy chủ mặc định: bản dev → localhost, bản phát hành → máy chủ thật (đặt lúc build, xem vite.config.ts). */
+export const DEFAULT_SERVER = (import.meta.env.VITE_VALA_URL as string | undefined) ?? '';
 
 export async function getSettings(): Promise<Settings> {
   const s = await chrome.storage.local.get(['serverUrl', 'token', 'user']);
