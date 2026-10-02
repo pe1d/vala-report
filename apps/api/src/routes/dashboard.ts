@@ -16,7 +16,8 @@ import { runReport } from './reports.js';
 
 const RUN_NOW_WINDOW_S = 600;   // "Đồng bộ ngay": mỗi hệ thống một lần / 10 phút cho mỗi người dùng
 
-type WidgetStatus = 'ok' | 'chua_co_du_lieu' | 'can_ket_noi' | 'het_han' | 'loi';
+/** trong = đã lấy dữ liệu thành công nhưng không bản ghi nào khớp điều kiện/khoảng thời gian của báo cáo (KHÔNG phải lỗi kết nối). */
+type WidgetStatus = 'ok' | 'trong' | 'chua_co_du_lieu' | 'can_ket_noi' | 'het_han' | 'loi';
 
 /** Capability có sink của một hệ thống — worker lấy dữ liệu được theo cấu hình adapter, không cần spider. */
 const workerCaps = (source: string) => loadAllSpecs()
@@ -61,9 +62,13 @@ export const dashboardRoutes = (deps: ApiDeps): FastifyPluginAsync => async (app
       };
       try {
         const r = await runReport(deps, req, rc.code, { scope, page: 1, page_size: 5 }, 'view_report', 5);
-        const hasData = r.out.total_rows > 0 || (r.out.tiles ?? []).some((x) => x.value > 0) || (r.out.chart_rows ?? []).length > 0;
+        // Đã từng lấy dữ liệu thành công ⇒ kết quả rỗng là do điều kiện lọc / khoảng thời gian của báo cáo, không phải do
+        // kết nối: thẻ KPI = 0 vẫn là số liệu thật (vd "0 văn bản quá hạn"); bảng/biểu đồ rỗng ⇒ "không có bản ghi khớp".
+        const fetched = !!r.freshness.last_success_at;
+        const hasRows = r.out.total_rows > 0 || (r.out.tiles ?? []).some((x) => x.value > 0) || (r.out.chart_rows ?? []).length > 0;
+        const hasData = hasRows || (fetched && (r.out.tiles ?? []).length > 0);
         const status: WidgetStatus = state === 'expired' || state === 'failed' ? 'het_han'
-          : hasData ? 'ok' : state === 'active' ? 'chua_co_du_lieu' : 'can_ket_noi';
+          : hasData ? 'ok' : fetched ? 'trong' : state === 'active' ? 'chua_co_du_lieu' : 'can_ket_noi';
         widgets.push({
           ...base, status, has_data: hasData, freshness: r.freshness, total_rows: r.out.total_rows,
           tiles: r.out.tiles ?? null, charts: r.out.charts ?? null,

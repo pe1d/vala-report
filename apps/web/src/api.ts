@@ -108,7 +108,7 @@ export interface Subscription {
   schedule: Schedule; schedule_label: string;
   is_enabled: boolean; next_run_at: string | null; last_run_at: string | null; last_status: string | null;
 }
-export type WidgetStatus = 'ok' | 'chua_co_du_lieu' | 'can_ket_noi' | 'het_han' | 'loi';
+export type WidgetStatus = 'ok' | 'trong' | 'chua_co_du_lieu' | 'can_ket_noi' | 'het_han' | 'loi';
 /** Một ô trên Tổng quan: báo cáo + tình trạng nguồn dữ liệu + số liệu tóm tắt. */
 export interface DashboardWidget {
   code: string; ten: string; mo_ta: string | null; view_template: string; scope: Scope;

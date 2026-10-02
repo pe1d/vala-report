@@ -10,7 +10,7 @@ import { useValaExtension, type ExtensionEvent } from '../extension';
 import { useAsync } from '../hooks';
 
 const STATUS: Record<WidgetStatus, [Tone, string]> = {
-  ok: ['ok', 'Có số liệu'], chua_co_du_lieu: ['neutral', 'Chưa có dữ liệu'], can_ket_noi: ['warn', 'Cần kết nối'],
+  ok: ['ok', 'Có số liệu'], trong: ['neutral', 'Không có bản ghi khớp'], chua_co_du_lieu: ['neutral', 'Chưa có dữ liệu'], can_ket_noi: ['warn', 'Cần kết nối'],
   het_han: ['err', 'Phiên hết hạn'], loi: ['err', 'Lỗi'],
 };
 
@@ -183,7 +183,8 @@ function TabPanel({ tab, blocks, busy, onConnect, onRunNow }: {
   const [tone, label]: [Tone, string] = src ? STATE_BADGE[src.state] ?? ['neutral', src.state] : ['neutral', ''];
   const connected = !src || src.state === 'active';
   const needFix = src?.state === 'expired' || src?.state === 'failed';
-  const hasData = blocks.some((b) => b.has_data);
+  // Đã lấy dữ liệu (kể cả khi bộ lọc của khối ra rỗng) ⇒ hiện các khối, không báo "chờ lượt đầu tiên".
+  const hasData = blocks.some((b) => b.has_data || b.status === 'trong');
   const updated = blocks.map((b) => b.freshness?.last_success_at).filter((x): x is string => !!x).sort().at(-1);
   return (
     <section className="grid gap-4" aria-label={tab.ten}>
@@ -249,10 +250,21 @@ function Block({ w, className, busy, onConnect, onRunNow }: {
         {w.status === 'chua_co_du_lieu' && (
           <Action text="Chưa có dữ liệu." button={busy ? 'Đang gửi…' : 'Lấy dữ liệu ngay'} onClick={onRunNow} disabled={busy || !w.can_run_now} />
         )}
+        {w.status === 'trong' && <NoMatch w={w} />}
         {w.status === 'loi' && <p className="text-sm text-red-700 dark:text-red-400">{w.message ?? 'Không tải được khối này.'}</p>}
         {w.has_data && <Summary w={w} />}
       </figure>
     </Card>
+  );
+}
+
+/** Dữ liệu vẫn cập nhật bình thường, chỉ là không bản ghi nào khớp điều kiện của báo cáo — nói rõ để không nhầm với lỗi kết nối. */
+function NoMatch({ w }: { w: DashboardWidget }) {
+  return (
+    <p className="text-sm text-slate-500 dark:text-slate-400">
+      Không có bản ghi nào khớp điều kiện của báo cáo trong khoảng thời gian này.
+      {w.freshness?.last_success_at && <> Dữ liệu {w.source_ten} vẫn cập nhật bình thường (lần cuối {fmtDateTime(w.freshness.last_success_at)}).</>}
+    </p>
   );
 }
 
@@ -279,13 +291,14 @@ function Widget({ w, busy, onConnect, onRunNow }: { w: DashboardWidget; busy: bo
       {w.status === 'chua_co_du_lieu' && (
         <Action text="Đã kết nối, chưa có dữ liệu." button={busy ? 'Đang gửi…' : 'Lấy dữ liệu ngay'} onClick={onRunNow} disabled={busy || !w.can_run_now} />
       )}
+      {w.status === 'trong' && <div className="mt-3"><NoMatch w={w} /></div>}
       {w.status === 'loi' && <p className="mt-3 text-sm text-red-700 dark:text-red-400">{w.message ?? 'Không tải được báo cáo này.'}</p>}
 
       {w.has_data && <Summary w={w} />}
 
       <div className="mt-3 flex items-center gap-3 text-sm">
         <Link to={`/bao-cao/${w.code}`} className="text-blue-700 no-underline hover:underline dark:text-blue-400">Xem chi tiết →</Link>
-        {w.status === 'ok' && w.can_run_now && (
+        {(w.status === 'ok' || w.status === 'trong') && w.can_run_now && (
           <button type="button" disabled={busy} onClick={onRunNow}
             className="text-slate-500 hover:text-slate-900 disabled:opacity-50 dark:text-slate-400 dark:hover:text-slate-100">
             {busy ? 'Đang gửi…' : 'Cập nhật ngay'}

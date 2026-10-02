@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { api, auth, fmtDate, ApiProblem, type ReportDef, type ReportResult, type Scope } from '../api';
+import { api, auth, fmtDate, fmtDateTime, ApiProblem, type ReportDef, type ReportResult, type Scope } from '../api';
 import { useMe } from '../App';
 import { BASE } from '../base';
 import { useAsync } from '../hooks';
@@ -108,7 +108,9 @@ export function ReportPage() {
           {d.rows.length === 0
             ? (q
               ? <Empty>Không có dòng nào khớp “{q}”. <button type="button" className="text-blue-700 underline dark:text-blue-400" onClick={() => search('')}>Xoá tìm kiếm</button></Empty>
-              : <Empty>Không có dữ liệu trong khoảng đã chọn.{d.freshness.status !== 'ok' && ' Dữ liệu có thể chưa được lấy về — xem dòng trạng thái ở trên.'}</Empty>)
+              : <Empty>{d.freshness.last_success_at
+                ? <>Không có bản ghi nào khớp điều kiện của báo cáo trong khoảng đã chọn. Dữ liệu vẫn cập nhật bình thường (lần cuối {fmtDateTime(d.freshness.last_success_at)}) — thử đổi khoảng thời gian hoặc bộ lọc.</>
+                : <>Chưa có dữ liệu — hệ thống chưa lấy được dữ liệu lần nào, xem dòng trạng thái ở trên.</>}</Empty>)
             : <DataTable columns={d.columns} rows={d.rows} />}
           {d.rows.length > 0 && <Pager page={page} pageSize={pageSize} total={d.total_rows} onPage={go} onPageSize={resize} />}
         </div>
