@@ -155,6 +155,8 @@ export async function crawlUserSource(deps: CrawlDeps, job: CrawlJob): Promise<C
       changed += await upsertCurrent(db, runId, job, result, { ...input.context, org_unit_id: orgUnitId }); // bước 7
     }
 
+    // Lấy đủ danh sách (không có cảnh báo có thể thiếu trang) ⇒ đóng bản ghi không còn trên nguồn.
+    if (!warnings.size) changed += await closeMissing(db, runId, job);
     await withTenant(db, async (t) => {
       await t.none(`UPDATE source_grants SET last_refresh_at = now(), refresh_fail_count = 0, last_error = NULL WHERE id = $1`, [grant.id]);
       await touchSubscriptions(t, job);
@@ -233,7 +235,7 @@ export async function writeRaw(db: Db, runId: number, job: Pick<CrawlJob, 'sourc
   await withTenant(db, (t) => t.none(pgp.helpers.insert(rows, rawColumns)));
 }
 
-export interface Sink { table: 'records'; key: string; columns: string[]; extra: string[] }
+export interface Sink { table: 'records'; key: string; columns: string[]; extra: string[]; close_missing: boolean }
 
 /**
  * Nơi lưu của (hệ thống × capability) — đọc từ `sink` trong cấu hình adapter (CSDL). Mọi hệ thống dùng chung bảng
@@ -246,7 +248,7 @@ export function sinkOf(source: string, capability: string, specs = loadAllSpecs(
   if (!cap || !s) return null;
   const key = cap.output_schema.find((f) => f.key)!.field;
   const columns = s.columns.length ? s.columns : cap.output_schema.map((f) => f.field).filter((f) => f !== key);
-  return { table: 'records', key, columns, extra: s.extra };
+  return { table: 'records', key, columns, extra: s.extra, close_missing: s.close_missing !== false };
 }
 
 /**
@@ -296,6 +298,27 @@ export async function touchSubscriptions(t: Tx, job: Pick<CrawlJob, 'source' | '
     `UPDATE data_schedules SET last_run_at = now()
       WHERE app_user_id = $1 AND source_system = $2 AND capability = $3 AND spider_code IS NULL`,
     [job.userId, job.source, job.capability]);
+}
+
+/**
+ * Lượt chạy đã lấy ĐỦ danh sách (thành công, không có cảnh báo có thể thiếu trang) ⇒ đóng các bản ghi "đang có" của
+ * người này mà lượt chạy không còn thấy (nguồn đã bỏ: văn bản rời thư mục, việc không còn trong danh sách…). "Thấy" =
+ * có trong lớp thô của chính lượt chạy. Không thấy bản ghi nào ⇒ KHÔNG đóng gì (lượt rỗng bất thường không được xoá
+ * sạch kho). Capability khai sink.close_missing = false ⇒ bỏ qua. Trả số bản ghi đã đóng.
+ */
+export async function closeMissing(db: Db, runId: number, job: Pick<CrawlJob, 'source' | 'capability' | 'userId'>, specs?: AdapterSpec[]): Promise<number> {
+  const sink = sinkOf(job.source, job.capability, specs);
+  if (!sink || !sink.close_missing) return 0;
+  return withTenant(db, async (t) => {
+    const seen = await t.one<{ n: number }>(
+      'SELECT count(*)::int AS n FROM raw_records WHERE crawl_run_id = $1 AND capability = $2', [runId, job.capability]);
+    if (!seen.n) return 0;
+    return t.result(
+      `UPDATE records r SET valid_to = now()
+        WHERE r.source_system = $1 AND r.capability = $2 AND r.owner_user_id = $3 AND r.valid_to IS NULL
+          AND NOT EXISTS (SELECT 1 FROM raw_records rr WHERE rr.crawl_run_id = $4 AND rr.capability = $2 AND rr.source_key = r.record_key)`,
+      [job.source, job.capability, job.userId, runId], (r) => r.rowCount);
+  });
 }
 
 /**

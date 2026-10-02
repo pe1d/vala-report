@@ -56,6 +56,12 @@ const Sink = z.object({
   extra: z.array(z.string()).default([]),
   /** Kiểu + nhãn (+ chỉ mục) cho các trường ngữ cảnh ở `extra` — để dựng báo cáo có nhãn đẹp, lọc đúng kiểu. */
   extra_schema: z.array(ExtraField).default([]),
+  /**
+   * Mỗi lượt chạy lấy ĐỦ danh sách của người dùng (vd mọi văn bản trong các thư mục, mọi việc của tôi) ⇒ bản ghi không
+   * còn trên nguồn được đóng lại (valid_to — vẫn giữ lịch sử, chỉ không còn tính là "đang có"). Mặc định bật. Tắt (false)
+   * khi capability chỉ lấy MỘT PHẦN mỗi lượt (vd theo khoảng ngày) — vắng mặt khi đó không có nghĩa là đã biến mất.
+   */
+  close_missing: z.boolean().default(true),
 });
 
 const Capability = z.object({

@@ -17,7 +17,7 @@ import { Problem } from '../errors.js';
 import { isPreset, nextRuns } from '../presets.js';
 import { markSpiderLaunchReported } from '../spiderOps.js';
 import type { SecretStore } from '../secrets.js';
-import { saveSourceAccount, sinkOf, upsertCurrent, writeRaw, type TriggerType } from './crawl.js';
+import { closeMissing, saveSourceAccount, sinkOf, upsertCurrent, writeRaw, type TriggerType } from './crawl.js';
 
 export interface SpiderDeps {
   writer: Db;
@@ -270,11 +270,21 @@ export interface FinishRequest {
 }
 
 export async function finishSpiderRun(deps: SpiderDeps, runId: number, req: FinishRequest) {
-  const r = await withTenant(deps.writer, (t) => t.oneOrNone<RunRow & { records_changed: number | null; preset: string | null }>(
-    `SELECT id, app_user_id, source_system, spider_code, status, records_changed FROM crawl_runs WHERE id = $1`, [runId]));
+  const r = await withTenant(deps.writer, (t) => t.oneOrNone<RunRow & { records_changed: number | null; preset: string | null; error_code: string | null }>(
+    `SELECT id, app_user_id, source_system, spider_code, status, records_changed, error_code FROM crawl_runs WHERE id = $1`, [runId]));
   if (!r || !r.spider_code) throw new Problem('not_found', 'Không có lượt chạy này');
   if (r.status !== 'running') return { status: r.status };   // đã đóng (vd backend đã đánh dấu lỗi) — idempotent
   const status = req.status === 'ok' ? 'ok' : 'failed';
+  // Spider báo xong, thành công, không có cảnh báo có thể thiếu trang ⇒ với mỗi capability đã lưu trong lượt này, đóng
+  // bản ghi không còn trên nguồn (spider luôn lấy đủ danh sách của người dùng; capability nào lấy một phần thì khai
+  // sink.close_missing = false trong cấu hình adapter).
+  if (status === 'ok' && !r.error_code) {
+    const caps = await withTenant(deps.writer, (t) => t.map(
+      'SELECT DISTINCT capability FROM raw_records WHERE crawl_run_id = $1', [runId], (x: { capability: string }) => x.capability));
+    let closed = 0;
+    for (const capability of caps) closed += await closeMissing(deps.writer, runId, { source: r.source_system, capability, userId: r.app_user_id }, deps.specs);
+    if (closed) await withTenant(deps.writer, (t) => t.none('UPDATE crawl_runs SET records_changed = coalesce(records_changed, 0) + $2 WHERE id = $1', [runId, closed]));
+  }
   await withTenant(deps.writer, async (t) => {
     await t.none(
       `UPDATE crawl_runs SET status = $2, finished_at = now(), http_calls = $3,
