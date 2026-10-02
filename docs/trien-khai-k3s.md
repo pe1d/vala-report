@@ -112,6 +112,14 @@ Sau đó chọn **một** trong hai cách:
 Đăng nhập cổng bằng tài khoản quản trị, vào **Quản trị → Cấu hình chung** đặt tên ứng dụng, tên đơn vị, logo, màu chủ đạo
 và tên hiển thị của SSO (vd "Bkav SSO", "SSO tỉnh"). Chưa đặt thì dùng tên "Vala Reporting", màu xanh mặc định.
 
+**Đăng nhập bằng SSO của đơn vị (tuỳ chọn).** Không cần cài Keycloak hay gì thêm — dùng SSO đơn vị đang có (chuẩn OIDC):
+1. Nhờ quản trị SSO đăng ký Vala làm một client (confidential, authorization code), redirect URI
+   `{PUBLIC_API_URL}/api/v1/sso/callback`, lấy `client_id` / `client_secret`.
+2. Sửa `.env.prod`: `LOGIN_SSO=true`, `SSO_ISSUER=<issuer>` (vd `https://sso.tinh.gov.vn/realms/cong-chuc`; SSO kiểu WSO2
+   không có discovery thì dùng `SSO_ORIGIN`), `SSO_CLIENT_ID`, `SSO_CLIENT_SECRET`. Chạy lại `deploy/k8s/deploy.sh`.
+3. Tạo sẵn người dùng trên cổng với **đúng email** (hoặc tên đăng nhập) như trên SSO — lần đầu đăng nhập SSO tự ghép vào
+   tài khoản đó. Muốn ai có tài khoản SSO cũng vào được thì đặt `SSO_AUTO_CREATE=true` (tạo người dùng thường).
+
 Tiện ích trình duyệt: vào **Tùy chọn** → địa chỉ máy chủ `https://vala-report.demozone.vn:5443` → đăng nhập lại.
 
 ## 4. Cập nhật phiên bản mới

@@ -47,7 +47,9 @@ const sourceInfo = (source: string) => withTenant(writer, (t) => t.one(
     baseUrl: baseUrls[source] ?? r.base_url,
     loginHosts: [...r.login_hosts, ...(devLoginHost ? [devLoginHost] : [])],
   })));
-const sessions = new SessionManager({ secrets, sso: new SsoClient(ssoConfigFromEnv()), tenant: TENANT, baseUrls, resolveBaseUrl });
+const ssoClient = new SsoClient(ssoConfigFromEnv());
+if (ssoClient.cfg.issuer) await ssoClient.discover().catch((e) => console.warn(`[sso] chưa đọc được cấu hình từ ${ssoClient.cfg.issuer}: ${(e as Error).message}`));
+const sessions = new SessionManager({ secrets, sso: ssoClient, tenant: TENANT, baseUrls, resolveBaseUrl });
 // Cách xác thực nào cũng lấy lại phiên qua đây: password (tự đăng nhập), cookie (chờ dán), sso (refresh token).
 // Tự đăng nhập gặp OTP ⇒ đánh dấu hệ thống có xác thực 2 lớp, bỏ cách kết nối bằng mật khẩu.
 const connections = new ConnectionSessions({ secrets, tenant: TENANT, sourceInfo, sso: sessions,

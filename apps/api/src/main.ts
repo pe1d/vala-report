@@ -25,6 +25,8 @@ const reader = readerDb();
 const writer = writerDb();
 const secrets = secretStore();
 const sso = new SsoClient(ssoConfigFromEnv());
+// SSO_ISSUER ⇒ đọc endpoint từ .well-known ngay lúc khởi động (luồng uỷ quyền cần sẵn). Lỗi ⇒ thử lại khi có người đăng nhập.
+if (sso.cfg.issuer) await sso.discover().catch((e) => console.warn(`[sso] chưa đọc được cấu hình từ ${sso.cfg.issuer}: ${(e as Error).message}`));
 // Dev: <NGUON>_BASE_URL (vd EGOV_BASE_URL, ETASK_BASE_URL) ghi đè base_url trong CSDL, trỏ vào hệ thống giả lập.
 const baseUrls: Record<string, string> = {};
 for (const [k, v] of Object.entries(process.env)) {

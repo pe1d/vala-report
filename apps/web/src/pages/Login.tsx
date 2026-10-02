@@ -10,8 +10,20 @@ import { BrandMark, useBranding } from '../branding';
  * Màn hình 1 — Đăng nhập cổng bằng tài khoản/mật khẩu (chuẩn).
  * Nếu quản trị bật thêm SSO thì hiện nút đăng nhập SSO bên dưới (tên SSO lấy từ Cấu hình chung).
  */
+/** Lý do SSO trả người dùng về trang đăng nhập (?loi=… do máy chủ đặt). */
+const SSO_ERRORS = (sso: string): Record<string, string> => ({
+  chua_co_tai_khoan: `Tài khoản ${sso} của bạn chưa có trên cổng. Nhờ quản trị tạo tài khoản (cùng email hoặc tên đăng nhập) rồi thử lại.`,
+  tai_khoan_da_lien_ket: `Tài khoản cổng cùng email / tên đăng nhập đã liên kết với một tài khoản ${sso} khác. Liên hệ quản trị.`,
+  tai_khoan_bi_khoa: 'Tài khoản cổng của bạn đang bị vô hiệu hoá. Liên hệ quản trị.',
+  sso_thieu_email: `${sso} không cung cấp email nên không tự tạo được tài khoản. Liên hệ quản trị.`,
+  sso_tu_choi: `Bạn đã huỷ đăng nhập trên ${sso}.`,
+  sso_loi: `Không đăng nhập được qua ${sso} (lỗi kết nối hoặc cấu hình). Thử lại sau hoặc đăng nhập bằng mật khẩu.`,
+  state_khong_hop_le: 'Phiên đăng nhập đã quá hạn — bấm đăng nhập lại.',
+});
+
 export function LoginPage({ onLogin }: { onLogin: (token: string) => void }) {
   const brand = useBranding();
+  const ssoErr = new URLSearchParams(window.location.search).get('loi');
   const cfg = useAsync(() => api.get<{ login_methods: Array<'password' | 'sso'> }>('/auth/config'), []);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -44,6 +56,7 @@ export function LoginPage({ onLogin }: { onLogin: (token: string) => void }) {
       </div>
       <p className="mb-6 text-slate-500 dark:text-slate-400">{brand.mo_ta ?? 'Cổng báo cáo theo lịch từ các hệ thống nguồn của đơn vị.'}</p>
 
+      {ssoErr && <Banner tone="err" role="alert">{SSO_ERRORS(brand.ten_sso)[ssoErr] ?? `Đăng nhập ${brand.ten_sso} không thành công.`}</Banner>}
       {cfg.loading && <Loading rows={2} />}
       {cfg.error ? <ErrorBox error={cfg.error} onRetry={cfg.reload} /> : null}
 

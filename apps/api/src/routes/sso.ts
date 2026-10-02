@@ -3,7 +3,7 @@
  * `state` (ký HMAC, hết hạn 10 phút) cho biết đây là quay về sau khi ĐĂNG NHẬP cổng hay sau khi UỶ QUYỀN.
  */
 import type { FastifyPluginAsync, FastifyReply } from 'fastify';
-import { Problem, withTenant, withUserContext, type UserContext } from '@vala/core';
+import { Problem, pkcePair, withTenant, withUserContext, type SsoUser, type UserContext } from '@vala/core';
 import { audit } from '../audit.js';
 import { issuePortalToken } from '../auth.js';
 import type { ApiDeps } from '../deps.js';
@@ -17,6 +17,13 @@ type GrantState = { kind: 'grant'; uid: number; src: string; caps: string[] };
 const safeNext = (n: unknown) => (typeof n === 'string' && n.startsWith('/') && !n.startsWith('//') ? n : '/');
 const own = (userId: number): UserContext => ({ userId, scope: 'ca_nhan', orgUnitsAllowed: [] });
 
+/** PKCE: code_verifier giữ trong cookie HttpOnly của trình duyệt đang đăng nhập (không đi qua URL / state). */
+const PKCE_COOKIE = 'vala_sso_pkce';
+const pkceCookie = (deps: ApiDeps, value: string, maxAge: number) =>
+  `${PKCE_COOKIE}=${value}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${deps.config.publicApiUrl.startsWith('https:') ? '; Secure' : ''}`;
+const readCookie = (header: string | undefined, name: string) =>
+  header?.split(';').map((c) => c.trim()).find((c) => c.startsWith(`${name}=`))?.slice(name.length + 1);
+
 export function grantStartUrl(deps: ApiDeps, st: Omit<GrantState, 'kind'>): string {
   const state = sign({ kind: 'grant', ...st }, deps.config.jwtSecret, 600);
   return deps.sso.authorizeUrl({ state, redirectUri: callbackUrl(deps), scope: deps.sso.cfg.grantScope });
@@ -25,14 +32,28 @@ export function grantStartUrl(deps: ApiDeps, st: Omit<GrantState, 'kind'>): stri
 export const ssoRoutes = (deps: ApiDeps): FastifyPluginAsync => async (app) => {
   /** Đăng nhập cổng qua Bkav SSO (tuỳ chọn, ngoài đăng nhập bằng mật khẩu). */
   app.get<{ Querystring: { next?: string } }>('/auth/sso/login', async (req, reply) => {
+    try { await deps.sso.discover(); } catch (e) {
+      req.log.error({ err: (e as Error).message }, 'không đọc được cấu hình SSO (discovery)');
+      return toWeb(reply, deps, '/dang-nhap', { loi: 'sso_loi' });
+    }
     const state = sign({ kind: 'login', next: safeNext(req.query.next) }, deps.config.jwtSecret, 600);
-    return reply.redirect(deps.sso.authorizeUrl({ state, redirectUri: callbackUrl(deps), scope: deps.sso.cfg.loginScope }));
+    let codeChallenge: string | undefined;
+    if (deps.sso.cfg.pkce) {
+      const p = pkcePair();
+      codeChallenge = p.challenge;
+      reply.header('Set-Cookie', pkceCookie(deps, p.verifier, 600));
+    }
+    return reply.redirect(deps.sso.authorizeUrl({ state, redirectUri: callbackUrl(deps), scope: deps.sso.cfg.loginScope, codeChallenge }));
   });
 
   app.get<{ Querystring: { state?: string; code?: string; error?: string } }>('/sso/callback', async (req, reply) => {
     const st = verify<LoginState | GrantState>(req.query.state ?? '', deps.config.jwtSecret);
     if (!st) return toWeb(reply, deps, '/dang-nhap', { loi: 'state_khong_hop_le' });
-    if (st.kind === 'login') return handleLogin(deps, reply, st, req.query.code);
+    if (st.kind === 'login') {
+      const verifier = readCookie(req.headers.cookie, PKCE_COOKIE);
+      reply.header('Set-Cookie', pkceCookie(deps, '', 0));          // dùng một lần
+      return handleLogin(deps, req, reply, st, req.query.code, verifier);
+    }
     return handleGrant(deps, req, reply, st, req.query.code);
   });
 };
@@ -45,19 +66,19 @@ function toWeb(reply: FastifyReply, deps: ApiDeps, path: string, q: Record<strin
   return reply.redirect(u.toString());
 }
 
-async function handleLogin(deps: ApiDeps, reply: FastifyReply, st: LoginState, code?: string) {
+async function handleLogin(deps: ApiDeps, req: Parameters<typeof audit>[1], reply: FastifyReply, st: LoginState, code?: string, verifier?: string) {
   if (!code) return toWeb(reply, deps, '/dang-nhap', { loi: 'sso_tu_choi' });
-  let who;
+  let who: SsoUser;
   try {
-    const tokens = await deps.sso.exchangeCode(code, callbackUrl(deps));
+    const tokens = await deps.sso.exchangeCode(code, callbackUrl(deps), verifier);
     who = await deps.sso.userinfo(tokens.access_token);
-  } catch {
+  } catch (e) {
+    req.log?.warn({ err: (e as Error).message }, 'đăng nhập SSO thất bại');
     return toWeb(reply, deps, '/dang-nhap', { loi: 'sso_loi' });
   }
-  // Người dùng cổng phải đã có trong danh bạ (đồng bộ cùng cây tổ chức). Không tự tạo tài khoản.
-  const user = await withTenant(deps.writer, (t) => t.oneOrNone<{ id: number }>(
-    `UPDATE app_users SET last_login_at = now() WHERE sso_subject = $1 AND is_active RETURNING id`, [who.sub]));
-  if (!user) return toWeb(reply, deps, '/dang-nhap', { loi: 'chua_co_tai_khoan' });
+  const found = await findOrLinkUser(deps, who);
+  if ('loi' in found) return toWeb(reply, deps, '/dang-nhap', { loi: found.loi });
+  const user = found;
   const token = issuePortalToken(user.id, deps.config.jwtSecret);
   // Token đặt trong fragment: không đi lên máy chủ, không vào log truy cập. Web đọc rồi xoá ngay.
   return toWeb(reply, deps, '/dang-nhap/xong', {}, { token, next: st.next });
@@ -92,4 +113,47 @@ async function handleGrant(deps: ApiDeps, req: Parameters<typeof audit>[1], repl
     await audit(t, req, 'grant', { type: 'source_grant', id: st.src }, { capabilities: st.caps }, st.uid);
   });
   return back(true);
+}
+
+/**
+ * Tài khoản cổng của người vừa đăng nhập SSO:
+ *   1. đã liên kết (sso_subject = sub) ⇒ dùng luôn;
+ *   2. lần đầu ⇒ ghép với tài khoản có sẵn theo SSO_MATCH_BY (email — chỉ khi SSO không báo email chưa xác thực —
+ *      rồi tên đăng nhập), liên kết sub vào tài khoản đó; tài khoản đã liên kết với định danh SSO KHÁC ⇒ từ chối;
+ *   3. vẫn chưa có ⇒ tự tạo nếu SSO_AUTO_CREATE=true (người dùng thường), không thì báo chưa có tài khoản.
+ */
+async function findOrLinkUser(deps: ApiDeps, who: SsoUser): Promise<{ id: number } | { loi: string }> {
+  const cfg = deps.sso.cfg;
+  const email = typeof who.email === 'string' && who.email.includes('@') && who.email_verified !== false ? who.email.trim().toLowerCase() : null;
+  const claim = who[cfg.usernameClaim];
+  const username = typeof claim === 'string' && claim.trim() ? claim.trim().toLowerCase() : null;
+  return withTenant(deps.writer, async (t) => {
+    const linked = await t.oneOrNone<{ id: number; is_active: boolean }>('SELECT id, is_active FROM app_users WHERE sso_subject = $1', [who.sub]);
+    if (linked) {
+      if (!linked.is_active) return { loi: 'tai_khoan_bi_khoa' };
+      await t.none('UPDATE app_users SET last_login_at = now() WHERE id = $1', [linked.id]);
+      return { id: linked.id };
+    }
+    for (const by of cfg.matchBy) {
+      const v = by === 'email' ? email : username;
+      if (!v) continue;
+      const u = await t.oneOrNone<{ id: number; is_active: boolean; sso_subject: string | null }>(
+        `SELECT id, is_active, sso_subject FROM app_users WHERE lower(${by === 'email' ? 'email' : 'username'}) = $1`, [v]);
+      if (!u) continue;
+      if (u.sso_subject && u.sso_subject !== who.sub) return { loi: 'tai_khoan_da_lien_ket' };
+      if (!u.is_active) return { loi: 'tai_khoan_bi_khoa' };
+      await t.none('UPDATE app_users SET sso_subject = $2, last_login_at = now() WHERE id = $1', [u.id, who.sub]);
+      return { id: u.id };
+    }
+    if (!cfg.autoCreate) return { loi: 'chua_co_tai_khoan' };
+    if (!email) return { loi: 'sso_thieu_email' };
+    // Tên đăng nhập: claim của SSO (nếu hợp lệ và chưa ai dùng), không thì phần trước @ của email + số.
+    const base = (username && /^[a-z0-9][a-z0-9._-]{2,39}$/.test(username) ? username : email.split('@')[0]!.replace(/[^a-z0-9._-]/g, '')).slice(0, 36) || 'nguoidung';
+    let uname = base;
+    for (let n = 2; await t.oneOrNone('SELECT 1 FROM app_users WHERE username = $1', [uname]); n++) uname = `${base}${n}`;
+    const created = await t.one<{ id: number }>(
+      `INSERT INTO app_users (sso_subject, email, ho_ten, username, is_active, last_login_at) VALUES ($1, $2, $3, $4, true, now()) RETURNING id`,
+      [who.sub, email, (typeof who.name === 'string' && who.name.trim()) || email, uname]);
+    return { id: created.id };
+  });
 }
