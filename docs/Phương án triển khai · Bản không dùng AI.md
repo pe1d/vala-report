@@ -2,6 +2,10 @@ Phương án triển khai · Bản không dùng AI · Giai đoạn nội bộ
 
 # Scheduled Reporting Platform
 
+> **Cập nhật 10/2026:** mô hình lấy dữ liệu đã đổi so với bản này — Vala lấy **dữ liệu cá nhân** của từng người dùng
+> (mỗi người tự kết nối tài khoản của mình), không dùng tài khoản dịch vụ và không làm báo cáo theo phòng ban. Xem mục
+> **11 · Điều chỉnh 10/2026** ở cuối tài liệu: lý do, hệ quả, phần giữ nguyên và lộ trình tiếp theo.
+
 Không có mô hình ngôn ngữ nào trong sản phẩm. Người dùng chọn báo cáo từ danh mục có sẵn và tự đặt lịch chạy; Crawlab thực thi spider theo lịch; dữ liệu tích luỹ trong kho riêng. Giai đoạn đầu dựng cho nội bộ, kết nối ba hệ thống dùng chung một SSO.
 
 LLM trong sản phẩm · **không có** Phạm vi đầu · **eGov · eTask · bMail** Xác thực · **một SSO cho cả ba** Kích hoạt · **lịch do người dùng đặt** Lấy lại được · **dữ liệu lịch sử**
@@ -215,3 +219,88 @@ Ngắn và ít rủi ro công nghệ hơn hai bản trước, vì mọi thành p
 Thứ tốn công nhất ở đây — spider tất định, vault, kho dữ liệu chuẩn hoá có lịch sử, tầng phân quyền — cũng chính là thứ một lớp hỏi đáp bằng AI sẽ cần nếu sau này bạn thêm vào. Khi đó chatbot không phải đi crawl gì cả: nó chỉ dịch câu hỏi thành một truy vấn trên kho dữ liệu đã có, với phân quyền đã được áp sẵn — rẻ hơn, nhanh hơn và an toàn hơn nhiều so với để mô hình trực tiếp điều khiển việc lấy dữ liệu.
 
 Nói cách khác, nếu chưa chắc về việc đưa AI vào sản phẩm, làm bản này trước là lựa chọn giữ được cả hai đường. Còn nếu giá trị bán hàng cốt lõi nằm ở chỗ “hỏi gì cũng trả lời được”, thì bản này không thay thế được — nó là một sản phẩm khác, cho một kỳ vọng khác.
+
+11
+
+## Điều chỉnh 10/2026 — Vala lấy dữ liệu cá nhân
+
+Sau khi dựng và chạy thật với eGov, eTask, mô hình lấy dữ liệu ở mục 07–08 được đổi. Phần này ghi lại quyết định, lý do
+và hệ quả để những người đọc tài liệu sau không hiểu nhầm bản gốc là bản đang chạy.
+
+### Quyết định
+
+**Vala là công cụ lấy và báo cáo dữ liệu công việc của chính người dùng.** Mỗi người tự kết nối tài khoản eGov, eTask… của
+mình; hệ thống lấy dữ liệu theo lịch người đó đặt (và tự cập nhật khi người đó đang dùng); mỗi người chỉ xem được dữ liệu
+của mình. Không có tài khoản dịch vụ, không có báo cáo theo phòng ban.
+
+### So với bản gốc
+
+| Nội dung | Bản gốc | Đang chạy |
+| -------- | ------- | --------- |
+| Ai đi lấy dữ liệu | Một tài khoản dịch vụ (`svc-report-bot`) cho cả đơn vị | Từng người dùng, bằng phiên / uỷ quyền của chính họ |
+| Lấy phiên | Worker tự đăng nhập SSO, không dùng phiên của nhân viên | Tiện ích trình duyệt gửi phiên của người dùng (đang dùng); uỷ quyền SSO (đang chờ xác nhận, xem dưới) |
+| Báo cáo | Cho lãnh đạo, phạm vi "phòng ban của tôi và cấp dưới" | Cá nhân; đã bỏ phạm vi đơn vị trên giao diện |
+| Phân quyền | Đồng bộ cây tổ chức, ánh xạ tài khoản, RLS theo phòng ban | RLS "ai xem dữ liệu nấy" (`records_own`) |
+| Phạm vi hệ thống | eGov, eTask, bMail | eGov, eTask; bMail chưa làm |
+
+Giữ nguyên như bản gốc: kho PostgreSQL có RLS, lưu lịch sử theo băm (`valid_from`/`valid_to`), lớp thô giữ 90 ngày, tách
+schema theo đơn vị, danh mục báo cáo do quản trị dựng (nay không cần viết code), Crawlab không lộ ra người dùng cuối, lịch
+do người dùng đặt (nay gắn theo nguồn dữ liệu).
+
+### Vì sao đổi
+
+1. **Bkav SSO có xác thực 2 lớp (OTP).** Tài khoản máy không tự đăng nhập lúc 3 giờ sáng được, trừ khi được miễn OTP hoặc
+   có cơ chế đăng nhập cho máy — chưa có.
+2. **API của eGov, eTask trả dữ liệu "của tôi"** (thư mục xử lý của người đang đăng nhập, việc được giao cho người đó). Tài
+   khoản dịch vụ gọi các API này chỉ thấy dữ liệu của chính nó; muốn số liệu cả đơn vị cần API cấp đơn vị — hiện không có.
+
+Lấy theo từng người là cách duy nhất có dữ liệu thật ngay, và tự nhiên đúng phân quyền: ai cũng chỉ lấy được thứ họ vốn
+được xem trên hệ thống nguồn.
+
+### Hệ quả và cách xử lý
+
+- **Không có báo cáo cấp đơn vị.** Tổng hợp nhiều người chỉ cộng được dữ liệu của những người đã kết nối — không đủ tin cậy
+  cho báo cáo hành chính, nên không làm.
+- **Truy vết:** nhật ký hệ thống nguồn ghi nhận tài khoản người dùng truy cập theo lịch. Chấp nhận được vì đó là dữ liệu
+  của chính họ, do họ tự kết nối và tự đặt lịch; cần ghi rõ điều này lúc người dùng kết nối (sự đồng ý) và trong quy chế
+  sử dụng nội bộ.
+- **Phiên dễ gãy** (eTask hay mất phiên, phải cài tiện ích). Đây là việc chính của giai đoạn tới.
+
+### Lộ trình tiếp theo (giai đoạn 3 — lấy dữ liệu cá nhân ổn định hơn)
+
+1. **Uỷ quyền qua SSO thay cho tiện ích.** Người dùng đăng nhập SSO một lần (nhập OTP lúc đó); Vala giữ token tự gia hạn
+   và tự lấy dữ liệu, không cần tiện ích. Code đã có sẵn nhưng **dựa trên giả định chưa kiểm chứng** — cần đội SSO / eGov /
+   eTask trả lời các câu hỏi bên dưới rồi mới hoàn thiện theo đúng cách chạy được.
+2. **Đề xuất API "văn bản của tôi" / "công việc của tôi"** cho eGov, eTask, nhận token của bước 1 (kèm các trường còn
+   thiếu, vd tên người đang xử lý văn bản).
+3. **Kết nối bằng mã truy cập cá nhân** (personal access token) — khi cần thêm hệ thống như Jira, GitLab, Redmine.
+4. **Tiện ích trình duyệt** giữ làm phương án cuối, không thêm tính năng.
+5. **bMail** (theo bản gốc): mô hình cá nhân ⇒ IMAP bằng tài khoản của chính người dùng; làm sau khi bước 1 ổn.
+
+Tạm dừng: hướng đóng gói cho khách hàng bên ngoài (cơ quan nhà nước). Phần đã làm — cấu hình nhận diện của đơn vị, đăng
+nhập cổng bằng SSO chuẩn OIDC — giữ lại, không phải ưu tiên.
+
+### Câu hỏi cần đội Bkav SSO / eGov / eTask trả lời
+
+Gửi đội **Bkav SSO** (iam.bkav.com, WSO2):
+
+1. Cấp được cho Vala một **client OAuth2** (confidential, authorization code) có **`offline_access`** (refresh token) không?
+   Redirect URI: `{địa chỉ cổng Vala}/api/v1/sso/callback`.
+2. Refresh token sống bao lâu, có xoay vòng không, có bị thu hồi khi người dùng đổi mật khẩu / đăng xuất không?
+3. Lấy phiên eGov/eTask từ token: trang `/oauth2/authorize` có nhận **access token dạng Bearer** để coi như người dùng đã
+   đăng nhập (không hỏi lại mật khẩu, OTP) không? Nếu không, WSO2 có bật được **token exchange** hoặc cơ chế tương đương
+   cho client này không?
+4. Phiên SSO trên trình duyệt (cookie `BkavSSOv2`) sống bao lâu; có cấu hình "ghi nhớ đăng nhập" dài hơn được không?
+
+Gửi đội **eGov**, **eTask**:
+
+5. API hiện tại (eGov `/home/GetDocuments`, eTask `serviceetask…`) có nhận **access token của Bkav SSO** trong header
+   `Authorization: Bearer …` thay cho cookie phiên không? Nếu có, Vala gọi thẳng API bằng token, khỏi cần phiên trình duyệt.
+6. Nếu chưa: có thể mở một API chỉ đọc "văn bản của tôi" / "công việc của tôi" nhận token đó không? Cần thêm trường **tên
+   người đang xử lý** (hiện chỉ có `UserCurrentId`).
+7. (eTask) Vì sao phiên phụ thuộc giá trị `meId` / `companyId` chỉ có khi tab đang mở — API có nhận được các giá trị này
+   qua tham số / header thay vì cookie do JavaScript đặt không?
+
+Câu 3 và 5 quyết định cách làm bước 1: nếu API nhận Bearer token (câu 5) ⇒ Vala gọi thẳng API, đơn giản và bền nhất; nếu chỉ
+có câu 3 ⇒ đổi token lấy phiên ứng dụng như code hiện có; nếu cả hai đều không ⇒ giữ tiện ích, chờ API ở bước 2.
+
