@@ -9,10 +9,10 @@ import { StatTiles } from '../components/StatTiles';
 import { DataTable } from '../components/DataTable';
 import { FreshnessBar } from '../components/Freshness';
 import { ParamForm } from '../components/ParamForm';
-import { ScheduleForm } from '../components/ScheduleForm';
+import { DataSourceBar } from '../components/DataSource';
 import { Empty, ErrorBox, Loading } from '../components/States';
 import { Pager, SearchBox } from '../components/TableTools';
-import { Banner, Button, Card, Field, Muted, PageTitle, Select, TextLink } from '../components/ui';
+import { Button, Card, Field, Muted, PageTitle, Select, TextLink } from '../components/ui';
 
 
 /** Màn hình 4 — Xem báo cáo: tham số, phạm vi, bảng, biểu đồ, độ tươi, xuất file, đặt lịch. */
@@ -28,8 +28,6 @@ export function ReportPage() {
   const [pageSize, setPageSize] = useState(50);
   const [q, setQ] = useState('');
   const [result, setResult] = useState<{ data?: ReportResult; error?: unknown; loading: boolean }>({ loading: false });
-  const [scheduling, setScheduling] = useState(false);
-  const [saved, setSaved] = useState(false);
 
   useEffect(() => {
     if (def && params === null) { setParams({ ...def.default_params }); setScope(unitOnly ? 'don_vi' : 'ca_nhan'); }
@@ -83,14 +81,12 @@ export function ReportPage() {
           <Button variant="primary" onClick={() => go(1)}>Xem báo cáo</Button>
           <span className="flex-1" />
           <Button disabled={!d} onClick={() => void exportXlsx()}>Xuất Excel</Button>
-          <Button onClick={() => { setScheduling(true); setSaved(false); }}>Đặt lịch</Button>
         </div>
         {d?.applied?.tu_ngay ? <Muted className="mt-3">Khoảng dữ liệu: {fmtDate(d.applied.tu_ngay)} – {fmtDate(d.applied.den_ngay)}</Muted> : null}
         {d?.applied?.ngay ? <Muted className="mt-3">Ngày: {fmtDate(d.applied.ngay)}</Muted> : null}
+        <DataSourceBar reportCode={code} />
       </Card>
 
-      {scheduling && params && <ScheduleForm reportCode={code} params={params} onDone={() => { setScheduling(false); setSaved(true); }} onCancel={() => setScheduling(false)} />}
-      {saved && <Banner tone="info">Đã lưu lịch. Xem và chỉnh ở <TextLink to="/lich-chay">Lịch chạy</TextLink>.</Banner>}
 
       {result.error ? <ErrorBox error={result.error} onRetry={() => run()} /> : null}
       {result.loading && !d && <Loading rows={6} />}

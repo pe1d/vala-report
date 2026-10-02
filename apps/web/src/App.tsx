@@ -12,7 +12,7 @@ import { MyConnectionsPage } from './pages/MyConnections';
 import { AdminSpidersPage } from './pages/AdminSpiders';
 import { CatalogPage } from './pages/Catalog';
 import { ReportPage } from './pages/Report';
-import { SubscriptionsPage } from './pages/Subscriptions';
+import { DataSchedulesPage } from './pages/DataSchedules';
 import { OpsPage } from './pages/Ops';
 import { AdminConnectionsPage } from './pages/AdminConnections';
 import { AdminSourcesPage } from './pages/AdminSources';
@@ -67,7 +67,7 @@ function Authed({ onLogout }: { onLogout: () => void }) {
           <Route path="/tong-quan" element={<DashboardPage />} />
           <Route path="/bao-cao" element={<CatalogPage />} />
           <Route path="/bao-cao/:code" element={<ReportPage />} />
-          <Route path="/lich-chay" element={<SubscriptionsPage />} />
+          <Route path="/lich-chay" element={<DataSchedulesPage />} />
           <Route path="/uy-quyen" element={<MyConnectionsPage />} />
           <Route path="/script-crawl" element={me.data.is_ops_admin ? <AdminSpidersPage /> : <Navigate to="/" />} />
           <Route path="/cau-hinh-bao-cao" element={me.data.is_ops_admin ? <AdminReportsPage /> : <Navigate to="/" />} />

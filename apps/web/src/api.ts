@@ -103,11 +103,19 @@ export type Schedule =
   | { kind: 'hang_thang'; days_of_month: number[]; times: string[] }
   | { kind: 'lap_lai'; every_hours: number; from: string; to: string; days: number[] }
   | { kind: 'mot_lan'; at: string };
-export interface Subscription {
-  id: number; report_code: string; report_ten: string; params: Record<string, unknown>;
-  schedule: Schedule; schedule_label: string;
-  is_enabled: boolean; next_run_at: string | null; last_run_at: string | null; last_status: string | null;
+/**
+ * Nguồn dữ liệu (script crawl hoặc capability adapter) + lịch tự cập nhật của người dùng cho nguồn đó. Một lần cập
+ * nhật làm mới số liệu cho MỌI báo cáo trong `reports`.
+ */
+export interface DataSource {
+  key: string; kind: 'spider' | 'capability'; ten: string;
+  source_system: string; source_ten: string; spider_code: string | null; capability: string | null;
+  reports: Array<{ code: string; ten: string }>;
+  grant_state: string; can_run: boolean;
+  schedule: null | { id: number; schedule: Schedule; schedule_label: string; is_enabled: boolean; next_run_at: string | null; last_run_at: string | null };
+  last_run: null | { status: string; started_at: string; finished_at: string | null; records_seen: number | null; error: string | null };
 }
+export const targetOf = (d: DataSource) => ({ source_system: d.source_system, spider_code: d.spider_code, capability: d.capability });
 export type WidgetStatus = 'ok' | 'trong' | 'chua_co_du_lieu' | 'can_ket_noi' | 'het_han' | 'loi';
 /** Một ô trên Tổng quan: báo cáo + tình trạng nguồn dữ liệu + số liệu tóm tắt. */
 export interface DashboardWidget {

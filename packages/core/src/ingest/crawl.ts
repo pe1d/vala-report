@@ -287,14 +287,14 @@ export async function upsertCurrent(
 }
 
 /**
- * Lấy dữ liệu xong ⇒ ghi "lần chạy gần nhất" cho các lịch của người này dùng cùng dữ liệu. next_run_at do bộ hẹn giờ
- * (runDueSchedules) quản lý, ở đây không đụng. Cả lịch một lần đã tự tắt cũng được ghi để người dùng thấy "đã chạy".
+ * Lấy dữ liệu xong ⇒ ghi "lần chạy gần nhất" cho lịch lấy dữ liệu của người này với nguồn này (capability do worker
+ * chạy). next_run_at do bộ hẹn giờ (runDueSchedules) quản lý, ở đây không đụng. Cả lịch một lần đã tự tắt cũng được
+ * ghi để người dùng thấy "đã chạy".
  */
 export async function touchSubscriptions(t: Tx, job: Pick<CrawlJob, 'source' | 'capability' | 'userId'>): Promise<void> {
   await t.none(
-    `UPDATE report_subscriptions rs SET last_run_at = now()
-       FROM report_catalog rc
-      WHERE rc.code = rs.report_code AND rs.app_user_id = $1 AND rc.source_system = $2 AND rc.capability = $3`,
+    `UPDATE data_schedules SET last_run_at = now()
+      WHERE app_user_id = $1 AND source_system = $2 AND capability = $3 AND spider_code IS NULL`,
     [job.userId, job.source, job.capability]);
 }
 

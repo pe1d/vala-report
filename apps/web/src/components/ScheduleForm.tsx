@@ -4,9 +4,9 @@
  * và trả mô tả + 5 lần chạy tới để xem trước ngay khi chỉnh.
  */
 import { useEffect, useState, type ReactNode } from 'react';
-import { ApiProblem, api, fmtDateTime, type Preset, type Schedule, type SchedulePreview } from '../api';
+import { ApiProblem, api, fmtDateTime, targetOf, type DataSource, type Preset, type Schedule, type SchedulePreview } from '../api';
 import { ErrorBox } from './States';
-import { Button, Card, Input, Muted, Select } from './ui';
+import { Button, Input, Muted, Select } from './ui';
 
 type Kind = Schedule['kind'];
 const KINDS: Array<[Kind, string]> = [
@@ -195,31 +195,40 @@ function TimesEditor({ times, onChange }: { times: string[]; onChange: (t: strin
   );
 }
 
-/** Đặt lịch mới cho một báo cáo (trang xem báo cáo). */
-export function ScheduleForm({ reportCode, params, onDone, onCancel }: {
-  reportCode: string; params: Record<string, unknown>; onDone: () => void; onCancel?: () => void;
-}) {
-  const [schedule, setSchedule] = useState<Schedule>(DEFAULT_SCHEDULE);
+/**
+ * Đặt / sửa lịch tự cập nhật cho một NGUỒN DỮ LIỆU (dùng ở trang Lịch cập nhật và trang báo cáo). Nói rõ lịch áp dụng
+ * cho mọi báo cáo dùng nguồn đó. Lưu ⇒ lịch bật (kể cả lịch một lần đã chạy xong).
+ */
+export function ScheduleDialog({ source, onClose, onSaved }: { source: DataSource; onClose: () => void; onSaved: (d: DataSource) => void }) {
+  const [schedule, setSchedule] = useState<Schedule>(source.schedule?.schedule ?? DEFAULT_SCHEDULE);
   const [valid, setValid] = useState(false);
   const [err, setErr] = useState<unknown>(null);
   const [saving, setSaving] = useState(false);
   const save = async () => {
     setSaving(true); setErr(null);
-    try { await api.post('/subscriptions', { report_code: reportCode, params, schedule }); onDone(); }
-    catch (e) { setErr(e); } finally { setSaving(false); }
+    try { onSaved(await api.put<DataSource>('/data-schedules', { ...targetOf(source), schedule })); }
+    catch (e) { setErr(e); setSaving(false); }
   };
   return (
-    <Card className="my-3">
-      <div className="mb-3 flex flex-wrap items-baseline gap-2">
-        <h3 className="font-semibold">Đặt lịch lấy dữ liệu</h3>
-        <Muted className="text-sm">Hệ thống tự lấy dữ liệu mới theo lịch này; khoảng thời gian như “Tháng hiện tại” tự trượt theo ngày chạy.</Muted>
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/50 p-4 dark:bg-black/60" role="dialog" aria-modal="true" aria-labelledby="dat-lich"
+      onKeyDown={(e) => e.key === 'Escape' && onClose()}>
+      <div className="mx-auto mt-10 w-full max-w-3xl rounded-xl border border-slate-200 bg-white p-5 shadow-xl dark:border-slate-800 dark:bg-slate-950">
+        <div className="mb-4">
+          <h2 id="dat-lich" className="text-base font-semibold">{source.schedule ? 'Sửa lịch cập nhật' : 'Đặt lịch cập nhật'}: {source.ten}</h2>
+          <Muted className="text-sm">
+            {source.schedule ? `Đang là: ${source.schedule.schedule_label}. ` : ''}
+            Mỗi lần chạy lấy lại dữ liệu {source.source_ten} của bạn và làm mới số liệu cho {source.reports.length
+              ? <><b>{source.reports.length} báo cáo</b>: {source.reports.map((r) => r.ten).join(', ')}.</>
+              : 'các báo cáo dùng nguồn này.'}
+          </Muted>
+        </div>
+        <ScheduleEditor value={schedule} onChange={setSchedule} onValid={setValid} />
+        {err ? <div className="mt-3"><ErrorBox error={err} /></div> : null}
+        <div className="mt-5 flex justify-end gap-2">
+          <Button onClick={onClose}>Huỷ</Button>
+          <Button variant="primary" disabled={saving || !valid} onClick={() => void save()}>{saving ? 'Đang lưu…' : 'Lưu lịch'}</Button>
+        </div>
       </div>
-      <ScheduleEditor value={schedule} onChange={setSchedule} onValid={setValid} />
-      {err ? <div className="mt-3"><ErrorBox error={err} /></div> : null}
-      <div className="mt-4 flex justify-end gap-2">
-        <Button onClick={onCancel ?? onDone}>Huỷ</Button>
-        <Button variant="primary" disabled={saving || !valid} onClick={() => void save()}>{saving ? 'Đang lưu…' : 'Lưu lịch'}</Button>
-      </div>
-    </Card>
+    </div>
   );
 }

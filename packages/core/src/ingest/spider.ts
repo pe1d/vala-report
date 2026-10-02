@@ -96,17 +96,15 @@ export async function startSpiderRun(deps: SpiderDeps, req: StartRequest) {
   const spec = specFor(deps, spider.source_system);
 
   // Có --user: chạy riêng một người (chạy ngay / quản trị chạy thử), chỉ cần kết nối còn hiệu lực.
-  // Không có: mọi người đã đặt lịch (preset) cho báo cáo dùng spider này.
+  // Không có: mọi người có lịch lấy dữ liệu đang bật cho spider này (preset của API cũ không còn ý nghĩa).
   const users = await withTenant(deps.writer, (t) => t.map(
     req.userId !== undefined
       ? `SELECT app_user_id FROM source_grants
           WHERE app_user_id = $3 AND source_system = $4 AND revoked_at IS NULL AND session_state = 'active'`
       : `SELECT DISTINCT g.app_user_id
-           FROM report_subscriptions rs
-           JOIN report_catalog rc ON rc.code = rs.report_code
-           JOIN source_grants g ON g.app_user_id = rs.app_user_id AND g.source_system = $4
-          WHERE rc.spider_code = $1 AND rs.is_enabled
-            AND ($2::text IS NULL OR rs.schedule_preset = $2)
+           FROM data_schedules ds
+           JOIN source_grants g ON g.app_user_id = ds.app_user_id AND g.source_system = $4
+          WHERE ds.spider_code = $1 AND ds.is_enabled
             AND g.revoked_at IS NULL AND g.session_state = 'active'
           ORDER BY g.app_user_id`,
     [spider.code, req.preset ?? null, req.userId ?? null, spider.source_system],
@@ -288,9 +286,7 @@ export async function finishSpiderRun(deps: SpiderDeps, runId: number, req: Fini
     await t.none(`UPDATE source_grants SET last_refresh_at = now(), refresh_fail_count = 0, last_error = NULL
                    WHERE app_user_id = $1 AND source_system = $2`, [r.app_user_id, r.source_system]);
     // next_run_at do bộ hẹn giờ quản lý; ở đây chỉ ghi lần chạy gần nhất (kể cả lịch một lần đã tự tắt).
-    await t.none(
-      `UPDATE report_subscriptions rs SET last_run_at = now() FROM report_catalog rc
-        WHERE rc.code = rs.report_code AND rs.app_user_id = $1 AND rc.spider_code = $2`, [r.app_user_id, r.spider_code]);
+    await t.none(`UPDATE data_schedules SET last_run_at = now() WHERE app_user_id = $1 AND spider_code = $2`, [r.app_user_id, r.spider_code]);
   });
   return { status };
 }

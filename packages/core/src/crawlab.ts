@@ -4,7 +4,7 @@
  *   crawlers/<code>/*  +  crawlers/_sdk/vala_sdk.py   →  spider <code> trong Crawlab
  *   (không tạo lịch Crawlab — worker Vala hẹn giờ theo lịch từng người rồi chạy spider --user N)
  *   VALA_API_URL, VALA_INTERNAL_TOKEN                  →  biến môi trường toàn cục của Crawlab
- * Người dùng đổi lịch KHÔNG gọi Crawlab: worker Vala đọc report_subscriptions.schedule mỗi phút và chạy spider cho người đến hạn.
+ * Người dùng đổi lịch KHÔNG gọi Crawlab: worker Vala đọc data_schedules.schedule mỗi phút và chạy spider cho người đến hạn.
  */
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';

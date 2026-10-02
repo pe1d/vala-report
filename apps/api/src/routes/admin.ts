@@ -76,8 +76,7 @@ export const adminRoutes = (deps: ApiDeps): FastifyPluginAsync => async (app) =>
       `SELECT sp.code, sp.ten, sp.mo_ta, sp.source_system, ss.ten AS source_ten, sp.entity, sp.is_enabled,
               sp.crawlab_spider_id, sp.synced_at,
               (SELECT count(*)::int FROM core.spider_schedules sc WHERE sc.spider_code = sp.code AND sc.crawlab_schedule_id IS NOT NULL) AS schedules,
-              (SELECT count(DISTINCT rs.app_user_id)::int FROM report_subscriptions rs JOIN report_catalog rc ON rc.code = rs.report_code
-                WHERE rc.spider_code = sp.code AND rs.is_enabled) AS subscribers,
+              (SELECT count(DISTINCT ds.app_user_id)::int FROM data_schedules ds WHERE ds.spider_code = sp.code AND ds.is_enabled) AS subscribers,
               (SELECT json_build_object('status', r.status, 'started_at', r.started_at, 'error_code', r.error_code)
                  FROM crawl_runs r WHERE r.spider_code = sp.code ORDER BY r.started_at DESC LIMIT 1) AS last_run
          FROM core.crawl_spiders sp JOIN core.source_systems ss ON ss.code = sp.source_system

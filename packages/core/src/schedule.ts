@@ -145,5 +145,5 @@ export const SCHEDULE_TEMPLATES: Array<{ code: string; schedule: Schedule }> = [
  * Rải giờ chạy để không dồn mọi người vào đúng một phút: lệch cố định 0…4 phút SAU giờ đặt, theo mã lịch
  * (không bao giờ chạy trước giờ người dùng hẹn). Người dùng vẫn thấy giờ đã đặt; chỉ worker dùng độ lệch này.
  */
-export const JITTER_SQL = `make_interval(mins => ((rs.id * 37) % 5)::int)`;
-export const jitterMinutes = (subscriptionId: number) => (subscriptionId * 37) % 5;
+export const JITTER_SQL = `make_interval(mins => ((ds.id * 37) % 5)::int)`;   // ds = data_schedules
+export const jitterMinutes = (scheduleId: number) => (scheduleId * 37) % 5;

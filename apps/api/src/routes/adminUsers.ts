@@ -50,7 +50,7 @@ export const adminUserRoutes = (deps: ApiDeps): FastifyPluginAsync => async (app
             (u.locked_until IS NOT NULL AND u.locked_until > now()) AS locked,
             u.password_hash IS NOT NULL AS has_password, u.sso_subject IS NOT NULL AS has_sso,
             (SELECT count(*)::int FROM source_grants g WHERE g.app_user_id = u.id AND g.revoked_at IS NULL AND g.session_state = 'active') AS ket_noi,
-            (SELECT count(*)::int FROM report_subscriptions s WHERE s.app_user_id = u.id AND s.is_enabled) AS lich
+            (SELECT count(*)::int FROM data_schedules s WHERE s.app_user_id = u.id AND s.is_enabled) AS lich
        FROM app_users u ORDER BY u.is_active DESC, lower(u.ho_ten)`)));
 
   app.post<{ Body: UserBody }>('/admin/users', { schema: { body: createSchema } }, async (req, reply) => {

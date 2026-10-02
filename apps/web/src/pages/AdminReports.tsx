@@ -147,8 +147,8 @@ export function AdminReportsPage() {
     list.reload();
   };
   const remove = async (r: ReportRow) => {
-    const lich = r.lich ? `\n\n${r.lich} lịch chạy đang bật của báo cáo này cũng bị xoá.` : '';
-    if (!confirm(`Xoá hẳn báo cáo “${r.ten}”?${lich}\n\nDữ liệu đã lấy về không bị ảnh hưởng. Không hoàn tác được.`)) return;
+    // Lịch tự cập nhật gắn với nguồn dữ liệu (dùng chung với báo cáo khác) nên không bị xoá theo báo cáo.
+    if (!confirm(`Xoá hẳn báo cáo “${r.ten}”?\n\nDữ liệu đã lấy về và lịch tự cập nhật của nguồn dữ liệu không bị ảnh hưởng. Không hoàn tác được.`)) return;
     try {
       await api.del(`/admin/reports/${r.code}`);
       setNote(`Đã xoá báo cáo “${r.ten}”.`);
@@ -742,7 +742,7 @@ function ReportGroup({ rows, tabName, onEdit, patch, remove }: {
     <>
       <Table fixed>
         <colgroup><col /><col className="w-28" /><col className="w-72" /><col className="w-32" /><col className="w-52" /></colgroup>
-        <thead><tr><Th>Báo cáo</Th><Th>Phạm vi</Th><Th>Tổng quan</Th><Th num>Lịch đang bật</Th><Th /></tr></thead>
+        <thead><tr><Th>Báo cáo</Th><Th>Phạm vi</Th><Th>Tổng quan</Th><Th num><span title="Số người có lịch tự cập nhật đang bật cho nguồn dữ liệu của báo cáo (dùng chung với báo cáo cùng nguồn)">Người có lịch</span></Th><Th /></tr></thead>
         <tbody>
           {pg.rows.map((r) => (
             <tr key={r.code} className={r.is_active ? '' : 'opacity-60'}>

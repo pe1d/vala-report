@@ -39,19 +39,19 @@ export function bindSelector(sql: string): string {
 }
 
 /**
- * Ai cần crawl cho (hệ thống × capability × preset): người có lịch bật cho một báo cáo dùng capability đó
- * và có kết nối còn hiệu lực trong phạm vi đã đồng ý. Cố định trong code — cấu hình adapter sửa được trên
- * cổng nên không được mang SQL (mục scheduling.selector trong YAML cũ bị bỏ qua).
+ * Ai cần crawl cho (hệ thống × capability): người có lịch lấy dữ liệu (data_schedules) đang bật cho capability đó
+ * (do worker chạy, không qua spider) và có kết nối còn hiệu lực trong phạm vi đã đồng ý. `preset` của API cũ không
+ * còn ý nghĩa (lịch giờ do bộ hẹn giờ của worker quản lý) — giữ tham số để lời gọi cũ không vỡ. Cố định trong code —
+ * cấu hình adapter sửa được trên cổng nên không được mang SQL.
  */
 export const FANOUT_SELECTOR = `
   SELECT DISTINCT s.app_user_id
-    FROM report_subscriptions rs
-    JOIN report_catalog rc ON rc.code = rs.report_code
-    JOIN source_grants  s  ON s.app_user_id = rs.app_user_id AND s.source_system = rc.source_system
-   WHERE rc.source_system = :source AND rc.capability = :capability
-     AND rs.schedule_preset = :preset AND rs.is_enabled
+    FROM data_schedules ds
+    JOIN source_grants  s  ON s.app_user_id = ds.app_user_id AND s.source_system = ds.source_system
+   WHERE ds.source_system = :source AND ds.capability = :capability AND ds.spider_code IS NULL
+     AND ds.is_enabled
      AND s.revoked_at IS NULL AND s.session_state = 'active'
-     AND rc.capability = ANY(s.scope_capabilities)`;
+     AND ds.capability = ANY(s.scope_capabilities)`;
 
 export async function selectFanOutUsers(
   writer: Db, spec: AdapterSpec, capability: string, preset: string, onlyUserId?: number,
@@ -115,7 +115,8 @@ export interface DueScheduleResult { due: number; started: number; skipped: numb
 
 
 /**
- * Bộ hẹn giờ lịch người dùng tự đặt (worker gọi mỗi phút). Với mỗi lịch đến hạn (giờ đặt + độ lệch rải giờ):
+ * Bộ hẹn giờ lịch lấy dữ liệu (data_schedules — mỗi người × một nguồn dữ liệu; worker gọi mỗi phút).
+ * Với mỗi lịch đến hạn (giờ đặt + độ lệch rải giờ):
  *   (giờ đặt + 0…4 phút rải giờ, xem jitterMinutes)
  *   1. dời next_run_at sang lần kế tiếp NGAY trong cùng transaction (lỗi không làm chạy lặp mỗi phút);
  *      lịch một lần thì tự tắt;
@@ -130,38 +131,37 @@ export async function runDueSchedules(
 ): Promise<DueScheduleResult> {
   type Row = {
     id: number; app_user_id: number; schedule: unknown; next_run_at: Date | null;
-    source_system: string; capability: string; spider_code: string | null; crawlab_spider_id: string | null; spider_enabled: boolean | null;
+    source_system: string; capability: string | null; spider_code: string | null; crawlab_spider_id: string | null; spider_enabled: boolean | null;
     grant_state: string | null;
   };
   const res: DueScheduleResult = { due: 0, started: 0, skipped: 0, deferred: 0 };
   const plan = await withTenant(writer, async (t) => {
     const rows = await t.any<Row>(
-      `SELECT rs.id, rs.app_user_id, rs.schedule, rs.next_run_at, rc.source_system, rc.capability, rc.spider_code,
+      `SELECT ds.id, ds.app_user_id, ds.schedule, ds.next_run_at, ds.source_system, ds.capability, ds.spider_code,
               sp.crawlab_spider_id, sp.is_enabled AS spider_enabled,
               CASE WHEN g.revoked_at IS NOT NULL THEN 'revoked' ELSE g.session_state END AS grant_state
-         FROM report_subscriptions rs
-         JOIN report_catalog rc ON rc.code = rs.report_code AND rc.is_active
-         JOIN core.source_systems ss ON ss.code = rc.source_system AND ss.enabled
-         JOIN app_users au ON au.id = rs.app_user_id AND au.is_active     -- người dùng bị vô hiệu hoá: lịch ngừng chạy
-         LEFT JOIN source_grants g ON g.app_user_id = rs.app_user_id AND g.source_system = rc.source_system
-         LEFT JOIN core.crawl_spiders sp ON sp.code = rc.spider_code
-        WHERE rs.is_enabled
-          AND (rs.next_run_at IS NULL
-               OR rs.next_run_at + ${JITTER_SQL} <= $1)
-        ORDER BY rs.next_run_at NULLS FIRST, rs.id
-        FOR UPDATE OF rs SKIP LOCKED`, [now]);
+         FROM data_schedules ds
+         JOIN core.source_systems ss ON ss.code = ds.source_system AND ss.enabled
+         JOIN app_users au ON au.id = ds.app_user_id AND au.is_active     -- người dùng bị vô hiệu hoá: lịch ngừng chạy
+         LEFT JOIN source_grants g ON g.app_user_id = ds.app_user_id AND g.source_system = ds.source_system
+         LEFT JOIN core.crawl_spiders sp ON sp.code = ds.spider_code
+        WHERE ds.is_enabled
+          AND (ds.next_run_at IS NULL
+               OR ds.next_run_at + ${JITTER_SQL} <= $1)
+        ORDER BY ds.next_run_at NULLS FIRST, ds.id
+        FOR UPDATE OF ds SKIP LOCKED`, [now]);
     const starts = new Map<string, number>();      // hệ thống ⇒ số lượt đã bắt đầu trong phút này
     const keys = new Map<string, Row>();            // người × hệ thống × cách lấy ⇒ một lượt
     for (const r of rows) {
       let sched: Schedule;
       try { sched = ScheduleSchema.parse(r.schedule); } catch {
-        await t.none('UPDATE report_subscriptions SET is_enabled = false, next_run_at = NULL WHERE id = $1', [r.id]);
+        await t.none('UPDATE data_schedules SET is_enabled = false, next_run_at = NULL WHERE id = $1', [r.id]);
         log('lịch hỏng — đã tắt', { id: r.id });
         continue;
       }
       // Lịch vừa bật / vừa sửa chưa có next_run_at: chỉ tính lần kế tiếp, chưa chạy.
       if (!r.next_run_at && sched.kind !== 'mot_lan') {
-        await t.none('UPDATE report_subscriptions SET next_run_at = $2 WHERE id = $1', [r.id, nextScheduleRuns(sched, 1, now)[0] ?? null]);
+        await t.none('UPDATE data_schedules SET next_run_at = $2 WHERE id = $1', [r.id, nextScheduleRuns(sched, 1, now)[0] ?? null]);
         continue;
       }
       res.due++;
@@ -173,7 +173,7 @@ export async function runDueSchedules(
       }
       const next = sched.kind === 'mot_lan' ? null : nextScheduleRuns(sched, 1, now)[0] ?? null;
       await t.none(
-        `UPDATE report_subscriptions SET next_run_at = $2, is_enabled = CASE WHEN $3 THEN false ELSE is_enabled END WHERE id = $1`,
+        `UPDATE data_schedules SET next_run_at = $2, is_enabled = CASE WHEN $3 THEN false ELSE is_enabled END WHERE id = $1`,
         [r.id, next, sched.kind === 'mot_lan']);
       if (!runnable) { res.skipped++; continue; }
       if (keys.has(key)) continue;                   // đã gộp vào lượt của lịch khác
@@ -204,12 +204,13 @@ export async function runDueSchedules(
       }
       continue;
     }
-    const spec = specs.find((s) => s.source_system === r.source_system && s.capabilities.some((c) => c.id === r.capability && c.sink));
+    const capability = r.capability!;               // không có spider ⇒ lịch theo capability (ràng buộc CSDL)
+    const spec = specs.find((s) => s.source_system === r.source_system && s.capabilities.some((c) => c.id === capability && c.sink));
     if (!spec) { res.skipped++; continue; }        // hệ thống chỉ có cấu hình nhanh: chưa lấy dữ liệu được
-    const k = `${r.app_user_id}:${r.source_system}:${r.capability}`;
+    const k = `${r.app_user_id}:${r.source_system}:${capability}`;
     jobs.push({
-      name: `${r.source_system}.${r.capability}`,
-      data: { source: r.source_system, capability: r.capability, userId: r.app_user_id, trigger: 'schedule' as const },
+      name: `${r.source_system}.${capability}`,
+      data: { source: r.source_system, capability, userId: r.app_user_id, trigger: 'schedule' as const },
       opts: { jobId: `due_${k}_${tick}`.replace(/[^\w-]/g, '_'), attempts: 1, removeOnComplete: 5000, removeOnFail: 5000 },
     });
   }

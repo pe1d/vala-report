@@ -13,7 +13,7 @@ import { myConnectionRoutes } from './routes/myConnections.js';
 import { opsRoutes } from './routes/ops.js';
 import { reportRoutes } from './routes/reports.js';
 import { ssoRoutes } from './routes/sso.js';
-import { subscriptionRoutes } from './routes/subscriptions.js';
+import { dataScheduleRoutes } from './routes/dataSchedules.js';
 
 export async function buildApp(deps: ApiDeps, opts: { logger?: boolean } = {}) {
   const app = Fastify({
@@ -59,7 +59,7 @@ export async function buildApp(deps: ApiDeps, opts: { logger?: boolean } = {}) {
     await api.register(grantRoutes(deps));
     await api.register(reportRoutes(deps));
     await api.register(dashboardRoutes(deps));                  // Tổng quan + lấy dữ liệu ngay
-    await api.register(subscriptionRoutes(deps));
+    await api.register(dataScheduleRoutes(deps));
     await api.register(opsRoutes(deps));
     await api.register(adminRoutes(deps));                      // cấu hình kết nối crawl (chỉ quản trị)
   }, { prefix: '/api/v1' });

@@ -68,7 +68,9 @@ export const adminReportRoutes = (deps: ApiDeps): FastifyPluginAsync => async (a
     const rows = await t.any<{ code: string; definition: unknown }>(
       `SELECT rc.code, rc.ten, rc.mo_ta, rc.source_system, ss.ten AS source_ten, rc.capability, rc.view_template, rc.required_scope,
               rc.is_active, rc.show_on_dashboard, rc.dashboard_order, rc.dashboard_tab, rc.dashboard_width, rc.definition, rc.spider_code, rc.updated_at,
-              (SELECT count(*)::int FROM report_subscriptions s WHERE s.report_code = rc.code AND s.is_enabled) AS lich
+              -- Số người có lịch lấy dữ liệu đang bật cho NGUỒN DỮ LIỆU của báo cáo (dùng chung với báo cáo cùng nguồn).
+              (SELECT count(*)::int FROM data_schedules ds WHERE ds.is_enabled AND ds.source_system = rc.source_system
+                  AND (ds.spider_code = rc.spider_code OR (rc.spider_code IS NULL AND ds.spider_code IS NULL AND ds.capability = rc.capability))) AS lich
          FROM report_catalog rc JOIN core.source_systems ss ON ss.code = rc.source_system
         ORDER BY rc.dashboard_order, rc.ten`);
     // Mọi báo cáo là báo cáo cấu hình; 'missing' = dòng cũ chưa có định nghĩa (cần sửa hoặc xoá).
@@ -169,15 +171,18 @@ export const adminReportRoutes = (deps: ApiDeps): FastifyPluginAsync => async (a
     return { code: req.params.code, updated: true };
   });
 
-  /** Xoá hẳn một báo cáo cùng các lịch chạy của nó (một transaction). Dữ liệu đã lấy về không bị ảnh hưởng. */
+  /**
+   * Xoá hẳn một báo cáo. Lịch lấy dữ liệu gắn với nguồn dữ liệu (dùng chung với báo cáo khác) nên KHÔNG bị xoá;
+   * dữ liệu đã lấy về không bị ảnh hưởng. Dòng lịch cũ (report_subscriptions, trước 020) của báo cáo được dọn theo.
+   */
   app.delete<{ Params: { code: string } }>('/admin/reports/:code', async (req) => {
     return withTenant(deps.writer, async (t) => {
       const cur = await t.oneOrNone<{ ten: string }>('SELECT ten FROM report_catalog WHERE code = $1', [req.params.code]);
       if (!cur) throw new Problem('not_found', 'Không có báo cáo này');
       const subs = await t.result('DELETE FROM report_subscriptions WHERE report_code = $1', [req.params.code], (r) => r.rowCount);
       await t.none('DELETE FROM report_catalog WHERE code = $1', [req.params.code]);
-      await audit(t, req, 'source_change', { type: 'report', id: req.params.code }, { op: 'delete', ten: cur.ten, subscriptions_deleted: subs });
-      return { code: req.params.code, deleted: true, subscriptions_deleted: subs };
+      await audit(t, req, 'source_change', { type: 'report', id: req.params.code }, { op: 'delete', ten: cur.ten, legacy_subscriptions_deleted: subs });
+      return { code: req.params.code, deleted: true };
     });
   });
 

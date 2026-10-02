@@ -20,7 +20,7 @@ const GROUPS: NavGroup[] = [
   { id: 'bao-cao', label: 'Báo cáo', icon: I('M4 19V5M10 19v-8M16 19v-4M22 19H2'), items: [
     { to: '/tong-quan', label: 'Tổng quan', icon: I('M3 3h7v9H3zM14 3h7v5h-7zM14 12h7v9h-7zM3 16h7v5H3z') },
     { to: '/bao-cao', label: 'Danh mục báo cáo', end: false, icon: I('M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M8 13h8M8 17h5') },
-    { to: '/lich-chay', label: 'Lịch chạy', icon: I('M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z') },
+    { to: '/lich-chay', label: 'Lịch cập nhật', icon: I('M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z') },
   ] },
   { id: 'ket-noi', label: 'Kết nối', icon: I('M9 15l6-6M11 6l1-1a4 4 0 0 1 6 6l-1 1M13 18l-1 1a4 4 0 0 1-6-6l1-1'), items: [
     { to: '/uy-quyen', label: 'Tài khoản nguồn', icon: I('M15 7a2 2 0 1 1 0 .01M21 2l-9.6 9.6M15.5 7.5 19 4l3 3-3.5 3.5M7.5 22a5.5 5.5 0 1 0 0-11 5.5 5.5 0 0 0 0 11z') },
