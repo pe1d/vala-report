@@ -49,7 +49,7 @@ function useExtState() {
 function Header({ compact }: { compact?: boolean }) {
   return (
     <header className="flex items-center gap-2.5">
-      <img src="icons/vala-48.png" alt="" className={compact ? 'h-6 w-6' : 'h-8 w-8'} />
+      <img src={chrome.runtime.getManifest().icons?.['48'] ?? 'icons/vala-48.png'} alt="" className={compact ? 'h-6 w-6' : 'h-8 w-8'} />
       <div className="flex-1">
         <div className={cx('font-bold', !compact && 'text-lg')}>Vala Reporting</div>
         {!compact && <Muted className="text-xs">Tiện ích gửi phiên hệ thống nguồn</Muted>}

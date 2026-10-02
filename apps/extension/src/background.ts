@@ -153,7 +153,7 @@ async function pushSource(src: Source, force: boolean): Promise<SyncStatus['resu
 
 function notify(title: string, message: string, opts: { id?: string; sticky?: boolean } = {}) {
   const o: chrome.notifications.NotificationOptions<true> = {
-    type: 'basic', iconUrl: 'icons/vala-128.png', title, message, priority: opts.sticky ? 2 : 1, requireInteraction: !!opts.sticky };
+    type: 'basic', iconUrl: chrome.runtime.getManifest().icons?.['128'] ?? 'icons/vala-128.png', title, message, priority: opts.sticky ? 2 : 1, requireInteraction: !!opts.sticky };
   if (opts.id) chrome.notifications.create(opts.id, o);
   else chrome.notifications.create(o);
 }

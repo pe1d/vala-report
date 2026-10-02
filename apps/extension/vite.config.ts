@@ -18,7 +18,9 @@ import pkg from './package.json';
 const PROD_SERVER = 'https://qtttboard-demo.demozone.vn:5443/vala-report';
 const DEV_SERVER = 'http://localhost:5173';
 function manifest(dev: boolean): Plugin {
-  const icons = { 16: 'icons/vala-16.png', 32: 'icons/vala-32.png', 48: 'icons/vala-48.png', 128: 'icons/vala-128.png' };
+  // Bản dev: icon nền cam + dải "DEV" (public/icons-dev, tạo bằng scripts/make-dev-icons.py) để không nhầm với bản thật.
+  const dir = dev ? 'icons-dev' : 'icons';
+  const icons = { 16: `${dir}/vala-16.png`, 32: `${dir}/vala-32.png`, 48: `${dir}/vala-48.png`, 128: `${dir}/vala-128.png` };
   const m = {
     manifest_version: 3,
     name: dev ? 'Vala Reporting (dev)' : 'Vala Reporting',
