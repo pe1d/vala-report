@@ -9,6 +9,7 @@ import { NavLink, useLocation } from 'react-router-dom';
 import type { Me } from '../api';
 import { ThemeToggle } from './ui';
 import { ChangePasswordForm } from './ChangePassword';
+import { BrandMark, useBranding } from '../branding';
 
 interface NavItem { to: string; label: string; icon: ReactNode; end?: boolean; admin?: boolean }
 interface NavGroup { id: string; label: string; icon: ReactNode; items: NavItem[] }
@@ -32,6 +33,7 @@ const GROUPS: NavGroup[] = [
     { to: '/nguoi-dung', label: 'Người dùng', admin: true, icon: I('M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM19 8v6M22 11h-6') },
     { to: '/cau-hinh-bao-cao', label: 'Cấu hình báo cáo', admin: true, icon: I('M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6') },
     { to: '/van-hanh', label: 'Vận hành', admin: true, icon: I('M22 12h-4l-3 9L9 3l-3 9H2') },
+    { to: '/cau-hinh-chung', label: 'Cấu hình chung', admin: true, icon: I('M12 2l2.4 4.8 5.3.8-3.8 3.7.9 5.3L12 14.1 7.2 16.6l.9-5.3L4.3 7.6l5.3-.8z') },
   ] },
 ];
 
@@ -81,6 +83,7 @@ export function Shell({ me, onLogout, children }: { me: Me; onLogout: () => void
 function Header({ me, onLogout, onMenu, drawer, collapsed, onCollapse }: {
   me: Me; onLogout: () => void; onMenu: () => void; drawer: boolean; collapsed: boolean; onCollapse: () => void;
 }) {
+  const brand = useBranding();
   return (
     <header className="sticky top-0 z-40 flex h-14 items-center gap-3 border-b border-slate-200 bg-white/95 px-3 backdrop-blur md:px-5 dark:border-slate-800 dark:bg-slate-900/95">
       <button type="button" onClick={onMenu} aria-label="Mở menu" aria-expanded={drawer} aria-controls="sidebar"
@@ -93,10 +96,12 @@ function Header({ me, onLogout, onMenu, drawer, collapsed, onCollapse }: {
         {I(collapsed ? 'M3 3h18v18H3zM9 3v18M13 9l3 3-3 3' : 'M3 3h18v18H3zM9 3v18M16 9l-3 3 3 3')}
       </button>
       <NavLink to="/tong-quan" className="flex items-center gap-2.5 text-slate-900 no-underline dark:text-slate-50">
-        <span aria-hidden className="grid h-8 w-8 place-items-center rounded-lg bg-blue-600 text-sm font-bold text-white shadow-sm dark:bg-blue-500">V</span>
-        <span className="leading-tight">
-          <span className="block whitespace-nowrap font-semibold">Vala Reporting</span>
-          <span className="hidden text-[11px] text-slate-500 sm:block dark:text-slate-400">Báo cáo tự động từ các hệ thống Bkav</span>
+        <BrandMark b={brand} />
+        <span className="min-w-0 leading-tight">
+          <span className="block truncate font-semibold">{brand.ten_ung_dung}</span>
+          <span className="hidden truncate text-[11px] text-slate-500 sm:block dark:text-slate-400">
+            {brand.mo_ta ?? brand.ten_don_vi ?? 'Báo cáo tự động từ các hệ thống nguồn'}
+          </span>
         </span>
       </NavLink>
       <span className="flex-1" />

@@ -11,6 +11,15 @@
         var dark = t === 'dark' || ((!t || t === 'system') && window.matchMedia('(prefers-color-scheme: dark)').matches);
         document.documentElement.classList.toggle('dark', dark);
       })();
+      // Nhận diện của đơn vị (màu chủ đạo, tiêu đề) đã lưu từ lần trước — áp trước khi React chạy, khỏi nháy màu mặc định.
+      (function () {
+        try {
+          var c = JSON.parse(localStorage.getItem('vala.branding') || 'null');
+          if (!c) return;
+          for (var k in c.vars) document.documentElement.style.setProperty(k, c.vars[k]);
+          if (c.title) document.title = c.title;
+        } catch (e) {}
+      })();
     </script>
   </head>
   <body>

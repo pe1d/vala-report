@@ -208,7 +208,7 @@ export class ConnectionSessions {
         'Mở hệ thống nguồn trên trình duyệt có cài tiện ích Vala và đăng nhập — tiện ích tự gửi phiên mới');
     }
     if (method === 'sso') {
-      if (!this.o.sso) throw new Problem('session_expired', 'Chưa cấu hình Bkav SSO cho luồng uỷ quyền');
+      if (!this.o.sso) throw new Problem('session_expired', 'Chưa cấu hình SSO cho luồng uỷ quyền');
       return this.o.sso.deriveAppSession(userId, source);
     }
     const cred = await this.o.secrets.get<SourceCredential>(this.credentialRef(userId, source));

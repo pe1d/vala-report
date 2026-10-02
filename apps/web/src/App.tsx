@@ -18,6 +18,7 @@ import { AdminConnectionsPage } from './pages/AdminConnections';
 import { AdminSourcesPage } from './pages/AdminSources';
 import { AdminReportsPage } from './pages/AdminReports';
 import { AdminUsersPage } from './pages/AdminUsers';
+import { AdminSettingsPage } from './pages/AdminSettings';
 import { DashboardPage } from './pages/Dashboard';
 
 const MeContext = createContext<Me | null>(null);
@@ -37,7 +38,7 @@ export function App() {
   return <Authed onLogout={() => { auth.set(null); setToken(null); }} />;
 }
 
-/** Quay về từ Bkav SSO: token cổng nằm trong fragment (#token=…). Lưu rồi xoá khỏi thanh địa chỉ ngay. */
+/** Quay về từ SSO: token cổng nằm trong fragment (#token=…). Lưu rồi xoá khỏi thanh địa chỉ ngay. */
 function LoginDone({ onLogin }: { onLogin: (t: string) => void }) {
   const navigate = useNavigate();
   useEffect(() => {
@@ -75,6 +76,7 @@ function Authed({ onLogout }: { onLogout: () => void }) {
           <Route path="/ket-noi" element={me.data.is_ops_admin ? <AdminConnectionsPage /> : <Navigate to="/" />} />
           <Route path="/van-hanh" element={me.data.is_ops_admin ? <OpsPage /> : <Navigate to="/" />} />
         <Route path="/nguoi-dung" element={me.data.is_ops_admin ? <AdminUsersPage /> : <Navigate to="/" />} />
+        <Route path="/cau-hinh-chung" element={me.data.is_ops_admin ? <AdminSettingsPage /> : <Navigate to="/" />} />
           <Route path="*" element={<Navigate to="/" />} />
         </Routes>
       </Shell>

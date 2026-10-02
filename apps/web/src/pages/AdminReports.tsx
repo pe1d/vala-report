@@ -58,7 +58,7 @@ const OP_HELP: Record<Op, { y_nghia: string; vd?: string[]; luu_y?: string }> = 
   contains: { y_nghia: 'Có chứa đoạn chữ ở bất kỳ vị trí nào, không phân biệt hoa thường.', vd: ['Trích yếu chứa "quá hạn"'], luu_y: 'Có phân biệt dấu: "qua han" không khớp "quá hạn".' },
   like: {
     y_nghia: 'So theo mẫu như LIKE trong SQL, không phân biệt hoa thường. % là chuỗi bất kỳ (kể cả rỗng), _ là đúng một ký tự.',
-    vd: ['báo cáo% → bắt đầu bằng "báo cáo"', '%/BKAV2024 → kết thúc bằng "/BKAV2024"', '%theo dõi% → có chứa "theo dõi" (giống "chứa")', '%công%văn% → có "công", sau đó có "văn"', 'KQ__ → "KQ" và đúng 2 ký tự nữa'],
+    vd: ['báo cáo% → bắt đầu bằng "báo cáo"', '%/QĐ-UBND → kết thúc bằng "/QĐ-UBND"', '%theo dõi% → có chứa "theo dõi" (giống "chứa")', '%công%văn% → có "công", sau đó có "văn"', 'KQ__ → "KQ" và đúng 2 ký tự nữa'],
     luu_y: 'Không có % thì phải khớp nguyên cả chuỗi. Có phân biệt dấu.',
   },
   not_like: { y_nghia: 'Ngược với "khớp mẫu": bỏ các bản ghi khớp mẫu. Bản ghi để trống vẫn được lấy.', vd: ['Trích yếu không khớp mẫu %test% → bỏ văn bản thử nghiệm'] },

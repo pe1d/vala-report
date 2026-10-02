@@ -4,6 +4,7 @@ import { api, type Grant } from '../api';
 import { appPath } from '../base';
 import { startGrant } from '../reauth';
 import { Button } from './ui';
+import { useBranding } from '../branding';
 
 export function ReauthButton({ source, label = 'Đăng nhập lại' }: { source: string; label?: string }) {
   const [busy, setBusy] = useState(false);
@@ -19,12 +20,13 @@ const COUNTDOWN = 5;
 
 /**
  * Kết nối cần phiên mới mà hệ thống KHÔNG tự lấy lại được ⇒ báo rõ, đúng theo cách kết nối:
- *   - Bkav SSO (refresh token bị từ chối): tự chuyển sang trang đăng nhập Bkav SSO sau vài giây (tài liệu kỹ thuật, mục 07);
+ *   - SSO (refresh token bị từ chối): tự chuyển sang trang đăng nhập SSO sau vài giây (tài liệu kỹ thuật, mục 07);
  *   - tiện ích / cookie / mật khẩu: nêu đúng lý do (phiên hết hạn trên nguồn, hay phiên đã lưu bị mất) và hướng dẫn
  *     mở hệ thống trên trình duyệt để tiện ích tự gửi phiên — không chuyển trang, không nói nhầm là SSO.
  * "Để sau" ⇒ chỉ nhắc lại ở lần mở cổng tiếp theo.
  */
 export function ReauthGate() {
+  const ssoName = useBranding().ten_sso;
   const navigate = useNavigate();
   const [expired, setExpired] = useState<Grant[]>([]);
   const [left, setLeft] = useState(COUNTDOWN);
@@ -58,11 +60,11 @@ export function ReauthGate() {
           <>
             <h2 id="reauth-title" className="text-lg font-semibold">Cần đăng nhập lại {sso.ten}</h2>
             <p className="mt-2 text-slate-600 dark:text-slate-300">
-              Phiên Bkav SSO dùng để lấy dữ liệu thay bạn đã hết hạn, nên hệ thống không tự lấy lại phiên {sso.ten} được nữa.
+              Phiên {ssoName} dùng để lấy dữ liệu thay bạn đã hết hạn, nên hệ thống không tự lấy lại phiên {sso.ten} được nữa.
               Các lịch chạy của bạn đang tạm dừng cho tới khi bạn đăng nhập lại.
             </p>
             <p className="mt-3 text-sm text-slate-500 dark:text-slate-400" aria-live="polite">
-              Tự chuyển tới trang đăng nhập Bkav SSO sau <span className="tabular-nums font-semibold">{Math.max(left, 0)}</span> giây…
+              Tự chuyển tới trang đăng nhập {ssoName} sau <span className="tabular-nums font-semibold">{Math.max(left, 0)}</span> giây…
             </p>
             <div className="mt-5 flex justify-end gap-2">
               <Button onClick={later}>Để sau</Button>

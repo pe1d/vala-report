@@ -103,11 +103,14 @@ Script dùng `kubectl`. Nếu user hiện tại không có kubeconfig, script t�
 
 Sau đó chọn **một** trong hai cách:
 
-- **Cài mới:** `deploy/k8s/create-admin.sh admin "Quản trị hệ thống" admin@bkav.com`. Script in mật khẩu tạm một lần;
-  lần đầu đăng nhập phải đổi.
+- **Cài mới:** `deploy/k8s/create-admin.sh admin "Quản trị hệ thống" admin@ten-don-vi.gov.vn`. Script in mật khẩu tạm một
+  lần; lần đầu đăng nhập phải đổi.
 - **Chuyển dữ liệu từ máy dev:** trên máy dev chạy `deploy/export-dev-data.sh`, chép file `.dump` sang máy chủ, rồi chạy
   `deploy/k8s/import-data.sh deploy/backup/vala-dev-<ngày>.dump`. Hệ quả giống [trien-khai-may-chu.md](trien-khai-may-chu.md#2b-chuyển-dữ-liệu-từ-máy-đang-chạy):
   spider tự đồng bộ lên Crawlab mới, phiên nguồn phải gửi lại, người dùng giữ mật khẩu cũ.
+
+Đăng nhập cổng bằng tài khoản quản trị, vào **Quản trị → Cấu hình chung** đặt tên ứng dụng, tên đơn vị, logo, màu chủ đạo
+và tên hiển thị của SSO (vd "Bkav SSO", "SSO tỉnh"). Chưa đặt thì dùng tên "Vala Reporting", màu xanh mặc định.
 
 Tiện ích trình duyệt: vào **Tùy chọn** → địa chỉ máy chủ `https://vala-report.demozone.vn:5443` → đăng nhập lại.
 

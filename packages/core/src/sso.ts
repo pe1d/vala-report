@@ -8,7 +8,7 @@
  *
  * Mọi địa chỉ đọc từ biến môi trường SSO_*. Dev trỏ vào một SSO giả lập nếu cần.
  */
-import { env } from './env.js';
+import { env, envBool } from './env.js';
 import { Problem } from './errors.js';
 import type { FetchLike } from './adapter/http.js';
 
@@ -25,17 +25,22 @@ export interface SsoConfig {
   grantScope: string;
 }
 
+/** Đơn vị chưa có SSO ⇒ địa chỉ giả không phân giải được: luồng SSO báo lỗi rõ thay vì làm dừng cả API/worker. */
+const SSO_NOT_CONFIGURED = 'https://sso-chua-cau-hinh.invalid';
+
 export function ssoConfigFromEnv(): SsoConfig {
-  const origin = env('SSO_ORIGIN').replace(/\/$/, '');
+  const raw = (process.env.SSO_ORIGIN ?? '').trim();
+  if (!raw && envBool('LOGIN_SSO')) throw new Error('LOGIN_SSO=true nhưng chưa đặt SSO_ORIGIN (địa chỉ SSO của đơn vị)');
+  const origin = (raw || SSO_NOT_CONFIGURED).replace(/\/$/, '');
   return {
     origin,
-    // Đường dẫn chuẩn của WSO2 Identity Server (iam.bkav.com).
+    // Đường dẫn chuẩn của WSO2 Identity Server (vd Bkav SSO iam.bkav.com).
     authorizeUrl: process.env.SSO_AUTHORIZE_URL ?? `${origin}/oauth2/authorize`,
     tokenUrl: process.env.SSO_TOKEN_URL ?? `${origin}/oauth2/token`,
     userinfoUrl: process.env.SSO_USERINFO_URL ?? `${origin}/oauth2/userinfo`,
     revokeUrl: process.env.SSO_REVOKE_URL ?? `${origin}/oauth2/revoke`,
-    clientId: env('SSO_CLIENT_ID'),
-    clientSecret: env('SSO_CLIENT_SECRET'),
+    clientId: raw ? env('SSO_CLIENT_ID') : process.env.SSO_CLIENT_ID || 'chua-cau-hinh',
+    clientSecret: raw ? env('SSO_CLIENT_SECRET') : process.env.SSO_CLIENT_SECRET || 'chua-cau-hinh',
     loginScope: process.env.SSO_LOGIN_SCOPE ?? 'openid profile email',
     grantScope: process.env.SSO_GRANT_SCOPE ?? 'openid offline_access',
   };

@@ -3,8 +3,9 @@ import { createRoot } from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 import { App } from './App';
 import { BASE } from './base';
+import { BrandingProvider } from './branding';
 import './index.css';
 
 createRoot(document.getElementById('root')!).render(
-  <StrictMode><BrowserRouter basename={BASE || undefined}><App /></BrowserRouter></StrictMode>,
+  <StrictMode><BrandingProvider><BrowserRouter basename={BASE || undefined}><App /></BrowserRouter></BrandingProvider></StrictMode>,
 );

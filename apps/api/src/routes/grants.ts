@@ -41,7 +41,7 @@ export const grantRoutes = (deps: ApiDeps): FastifyPluginAsync => async (app) =>
     if (unknown.length) throw new Problem('invalid_params', 'Capability không hợp lệ', unknown.join(', '));
 
     if (!deps.config.loginMethods.includes('sso')) {
-      throw new Problem('forbidden', 'Uỷ quyền qua Bkav SSO đang tắt', 'Kết nối dữ liệu do quản trị cấu hình');
+      throw new Problem('forbidden', 'Uỷ quyền qua SSO đang tắt', 'Kết nối dữ liệu do quản trị cấu hình');
     }
 
     await withUserContext(deps.reader, own(req.user.id), (t) => t.none(

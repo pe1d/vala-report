@@ -1,6 +1,7 @@
 import type { Freshness } from '../api';
 import { ReauthButton } from './Reauth';
 import { Badge, Banner, type Tone } from './ui';
+import { useBranding } from '../branding';
 
 const LABEL: Record<Freshness['status'], [Tone, string]> = {
   ok: ['ok', 'Dữ liệu mới'], stale: ['warn', 'Dữ liệu cũ'], failed: ['err', 'Lần lấy gần nhất lỗi'], no_grant: ['neutral', 'Chưa uỷ quyền'],
@@ -8,6 +9,7 @@ const LABEL: Record<Freshness['status'], [Tone, string]> = {
 
 /** Dòng "số liệu tính đến…" — bắt buộc trên mọi màn hình dữ liệu, không được bỏ (mục 05). */
 export function FreshnessBar({ f }: { f: Freshness }) {
+  const ssoName = useBranding().ten_sso;
   const [tone, label] = LABEL[f.status];
   return (
     <>
@@ -17,7 +19,7 @@ export function FreshnessBar({ f }: { f: Freshness }) {
       </div>
       {f.grant_state === 'expired' && (
         <Banner tone="warn">
-          <span>Phiên Bkav SSO đã hết hạn — đang hiển thị số liệu cũ.</span>
+          <span>Phiên {ssoName} đã hết hạn — đang hiển thị số liệu cũ.</span>
           <ReauthButton source={f.source_system} />
         </Banner>
       )}

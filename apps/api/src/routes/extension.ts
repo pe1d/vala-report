@@ -132,7 +132,7 @@ export const extensionRoutes = (deps: ApiDeps): FastifyPluginAsync => async (app
 
     const g = await withTenant(deps.writer, (t) => t.oneOrNone<GrantRow>(
       'SELECT auth_method, session_state, revoked_at FROM source_grants WHERE app_user_id = $1 AND source_system = $2', [userId, source]));
-    if (managed(g)) return { status: 'skipped', reason: 'managed', message: 'Kết nối đang dùng tài khoản/mật khẩu hoặc Bkav SSO, hệ thống tự lấy phiên' };
+    if (managed(g)) return { status: 'skipped', reason: 'managed', message: 'Kết nối đang dùng tài khoản/mật khẩu hoặc SSO, hệ thống tự lấy phiên' };
 
     // Bổ sung cookie định danh chỉ khi kết nối hiện tại của người này là qua tiện ích (không lấy của kết nối khác).
     const canFill = !!g && g.auth_method === 'extension' && g.revoked_at === null;

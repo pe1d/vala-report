@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import pgPromise from 'pg-promise';
-import { REPO_ROOT } from '../env.js';
+import { REPO_ROOT, TENANT } from '../env.js';
 import { hashPassword } from '../passwords.js';
 
 const pgp = pgPromise();
@@ -43,8 +43,8 @@ export async function migrate(opts: MigrateOptions): Promise<string[]> {
       // Tên đăng nhập = phần trước @ của email; một mật khẩu chung cho mọi tài khoản mẫu.
       const pw = await hashPassword(process.env.DEV_SEED_PASSWORD ?? 'Vala@2026');
       await db.none(
-        `UPDATE tenant_bkav.app_users SET username = split_part(email, '@', 1), password_hash = $1, password_changed_at = now()
-          WHERE password_hash IS NULL`, [pw]);
+        `UPDATE $2:name.app_users SET username = split_part(email, '@', 1), password_hash = $1, password_changed_at = now()
+          WHERE password_hash IS NULL`, [pw, TENANT]);
       log('đã nạp dữ liệu mẫu');
     }
   } finally {
@@ -69,7 +69,7 @@ async function ensureLoginRoles(db: pgPromise.IDatabase<unknown>, readerUrl: str
     const attrs = `LOGIN ${r.bypass ? 'BYPASSRLS' : 'NOBYPASSRLS'} NOSUPERUSER PASSWORD $2`;
     await db.none(exists ? `ALTER ROLE $1:name ${attrs}` : `CREATE ROLE $1:name ${attrs}`, [r.name, r.pass]);
     await db.none(`GRANT $1:name TO $2:name`, [r.group, r.name]);
-    await db.none(`ALTER ROLE $1:name SET search_path = tenant_bkav, core, public`, [r.name]);
+    await db.none(`ALTER ROLE $1:name SET search_path = $2:name, core, public`, [r.name, TENANT]);
   }
 }
 

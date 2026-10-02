@@ -9,12 +9,13 @@ import { Badge, Banner, Button, Card, Menu, Muted, PageTitle, ResultDialog, type
 import { useValaExtension, type ExtensionEvent } from '../extension';
 import { useMe } from '../App';
 import { METHOD_LABEL, STATE } from './AdminConnections';
+import { useBranding } from '../branding';
 
-const GRANT_ERRORS: Record<string, string> = {
-  sai_tai_khoan: 'Bạn đã đăng nhập Bkav SSO bằng một tài khoản khác với tài khoản đang dùng cổng báo cáo.',
-  khong_lay_duoc_phien: 'Đã đăng nhập Bkav SSO nhưng không lấy được phiên từ hệ thống nguồn. Vui lòng thử lại sau ít phút.',
-  sso_tu_choi: 'Bạn đã không đồng ý trên Bkav SSO.',
-};
+const grantErrors = (sso: string): Record<string, string> => ({
+  sai_tai_khoan: `Bạn đã đăng nhập ${sso} bằng một tài khoản khác với tài khoản đang dùng cổng báo cáo.`,
+  khong_lay_duoc_phien: `Đã đăng nhập ${sso} nhưng không lấy được phiên từ hệ thống nguồn. Vui lòng thử lại sau ít phút.`,
+  sso_tu_choi: `Bạn đã không đồng ý trên ${sso}.`,
+});
 
 /**
  * Màn hình 2 — Tài khoản nguồn. Người dùng tự cấp tài khoản (cookie/phiên hoặc tài khoản/mật khẩu)
@@ -22,6 +23,7 @@ const GRANT_ERRORS: Record<string, string> = {
  * Người dùng luôn thấy: hệ thống nào đang được lấy thay mình, lần cuối lúc nào, và gỡ được bằng một nút.
  */
 export function MyConnectionsPage() {
+  const ssoName = useBranding().ten_sso;
   const conns = useAsync(() => api.get<Connection[]>('/me/connections'), []);
   const cfg = useAsync(() => api.get<{ login_methods: Array<'password' | 'sso'> }>('/auth/config'), []);
   const ssoOn = cfg.data?.login_methods.includes('sso') ?? false;
@@ -98,8 +100,8 @@ export function MyConnectionsPage() {
     <>
       <PageTitle title="Tài khoản nguồn"
         subtitle="Cấp tài khoản của bạn trên từng hệ thống để hệ thống lấy dữ liệu thay bạn theo lịch. Mật khẩu và cookie được lưu trong kho bí mật, không ai xem lại được — kể cả quản trị." />
-      {params.get('ket_qua') === 'ok' && <Banner tone="ok">Đã uỷ quyền qua Bkav SSO.</Banner>}
-      {params.get('ket_qua') === 'loi' && <Banner tone="err">{GRANT_ERRORS[params.get('ly_do') ?? ''] ?? 'Uỷ quyền không thành công.'}</Banner>}
+      {params.get('ket_qua') === 'ok' && <Banner tone="ok">Đã uỷ quyền qua {ssoName}.</Banner>}
+      {params.get('ket_qua') === 'loi' && <Banner tone="err">{grantErrors(ssoName)[params.get('ly_do') ?? ''] ?? 'Uỷ quyền không thành công.'}</Banner>}
       {note && <Banner tone={note.tone} role="status">{note.text}</Banner>}
       {ext.info && !ext.info.logged_in && <Banner tone="info">Đã cài tiện ích Vala nhưng chưa đăng nhập. Bấm biểu tượng Vala trên thanh công cụ trình duyệt để đăng nhập, rồi quay lại đây.</Banner>}
       {extOtherUser && <Banner tone="warn">Tiện ích Vala đang đăng nhập bằng tài khoản khác ({ext.info!.email}). Đăng xuất tiện ích và đăng nhập bằng {me.email} để kết nối cho bạn.</Banner>}
@@ -148,7 +150,7 @@ export function MyConnectionsPage() {
                 const more: MenuItem[] = [
                   ...(extActive ? [{ label: 'Gửi lại phiên qua tiện ích', onClick: () => { setNote(null); ext.connect(c.source_system); }, disabled: busy !== null }] : []),
                   ...(configured ? [{ label: 'Thử kết nối', onClick: () => void test(c), disabled: busy !== null }] : []),
-                  ...(ssoOn && !configured ? [{ label: 'Uỷ quyền qua Bkav SSO', onClick: () => void startGrant(c.source_system), disabled: busy !== null }] : []),
+                  ...(ssoOn && !configured ? [{ label: `Uỷ quyền qua ${ssoName}`, onClick: () => void startGrant(c.source_system), disabled: busy !== null }] : []),
                   ...(configured ? [{ label: 'Gỡ tài khoản', onClick: () => void remove(c), danger: true, disabled: busy !== null }] : []),
                 ];
                 return (

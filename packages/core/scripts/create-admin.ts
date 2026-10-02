@@ -1,6 +1,6 @@
 /**
  * Tạo (hoặc đặt lại) tài khoản QUẢN TRỊ đăng nhập bằng mật khẩu — dùng khi cài mới trên máy chủ.
- *   tsx scripts/create-admin.ts --username admin --name "Quản trị" --email admin@bkav.com
+ *   tsx scripts/create-admin.ts --username admin --name "Quản trị" [--email admin@ten-don-vi.gov.vn]
  * Mật khẩu tạm được sinh ngẫu nhiên và in ra MỘT lần; lần đăng nhập đầu phải đổi (must_change_password).
  * Tài khoản đã có ⇒ giữ nguyên, cấp quyền quản trị, bật lại và đặt mật khẩu tạm mới.
  */

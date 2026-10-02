@@ -14,6 +14,7 @@ import { opsRoutes } from './routes/ops.js';
 import { reportRoutes } from './routes/reports.js';
 import { ssoRoutes } from './routes/sso.js';
 import { dataScheduleRoutes } from './routes/dataSchedules.js';
+import { brandingRoutes } from './routes/settings.js';
 
 export async function buildApp(deps: ApiDeps, opts: { logger?: boolean } = {}) {
   const app = Fastify({
@@ -44,6 +45,7 @@ export async function buildApp(deps: ApiDeps, opts: { logger?: boolean } = {}) {
 
   await app.register(async (pub) => {
     await pub.register(authRoutes(deps));                       // đăng nhập bằng mật khẩu + đổi mật khẩu
+    await pub.register(brandingRoutes(deps));                   // tên / logo / màu của đơn vị (trang đăng nhập cần)
     if (deps.config.loginMethods.includes('sso')) await pub.register(ssoRoutes(deps));
     await pub.register(extensionLoginRoutes(deps));             // tiện ích trình duyệt đăng nhập
   }, { prefix: '/api/v1' });

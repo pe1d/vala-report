@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { api, ApiProblem, type AuthMethod, type Connection } from '../api';
 import { ErrorBox } from './States';
 import { Button, Card, Field, Input, Muted, Select } from './ui';
+import { useBranding } from '../branding';
 
 /**
  * Hộp cấu hình một kết nối. `self` = người dùng tự cấp tài khoản của mình (/me/connections);
@@ -10,6 +11,7 @@ import { Button, Card, Field, Input, Muted, Select } from './ui';
 export function ConnectionEditor({ conn, self = false, onClose, onSaved }: {
   conn: Connection; self?: boolean; onClose: () => void; onSaved: (msg: string) => void;
 }) {
+  const ssoName = useBranding().ten_sso;
   const base = self ? `/me/connections/${conn.source_system}` : `/admin/connections/${conn.app_user_id}/${conn.source_system}`;
   const who = self ? 'bạn' : conn.ho_ten;
   // 'extension' không cấu hình qua form (do tiện ích tạo) ⇒ đổi sang cách khác thì mặc định mật khẩu.
@@ -32,7 +34,7 @@ export function ConnectionEditor({ conn, self = false, onClose, onSaved }: {
       const r = await api.put<{ state: string }>(base, body);
       onSaved(r.state === 'active'
         ? `Đã cấu hình và đăng nhập thử thành công cho ${who}.`
-        : `Đã lưu cấu hình cho ${who}. ${method === 'sso' ? 'Người dùng cần tự uỷ quyền qua Bkav SSO.' : 'Sẽ thử lại khi chạy.'}`);
+        : `Đã lưu cấu hình cho ${who}. ${method === 'sso' ? `Người dùng cần tự uỷ quyền qua ${ssoName}.` : 'Sẽ thử lại khi chạy.'}`);
     } catch (e) { setErr(e); setBusy(false); }
   };
 
@@ -58,7 +60,7 @@ export function ConnectionEditor({ conn, self = false, onClose, onSaved }: {
             <Select value={method} onChange={(e) => setMethod(e.target.value as AuthMethod)} disabled={!allowed.length}>
               {allowed.includes('password') && <option value="password">Tài khoản/mật khẩu — hệ thống tự đăng nhập</option>}
               {allowed.includes('cookie') && <option value="cookie">Dán cookie từ trình duyệt</option>}
-              {allowed.includes('sso') && <option value="sso">Người dùng tự uỷ quyền qua Bkav SSO</option>}
+              {allowed.includes('sso') && <option value="sso">Người dùng tự uỷ quyền qua {ssoName}</option>}
             </Select>
             {!allowed.length && <Muted className="mt-1">{conn.source_ten} chỉ kết nối qua tiện ích trình duyệt Vala.</Muted>}
           </Field>
@@ -80,13 +82,13 @@ export function ConnectionEditor({ conn, self = false, onClose, onSaved }: {
               <Field label="Chuỗi cookie">
                 <textarea value={cookie} onChange={(e) => setCookie(e.target.value)} rows={4}
                   className="min-w-[160px] rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-sm text-slate-900 focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-600/30 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                  placeholder="egov_sid=…; bkavAuthen=…; BkavSSOv2=…" />
+                  placeholder="ten_cookie_phien=…; ten_cookie_khac=…" />
               </Field>
               <Muted>Copy từ DevTools → Application → Cookies của hệ thống nguồn. Cookie hết hạn thì cần dán lại (hệ thống không tự làm mới được).</Muted>
             </>
           )}
 
-          {method === 'sso' && <Muted>Không nhập hộ được. Người dùng đăng nhập cổng rồi tự uỷ quyền qua Bkav SSO ở màn hình “Uỷ quyền dữ liệu”.</Muted>}
+          {method === 'sso' && <Muted>Không nhập hộ được. Người dùng đăng nhập cổng rồi tự uỷ quyền qua {ssoName} ở màn hình “Uỷ quyền dữ liệu”.</Muted>}
         </div>
 
         <div className="mt-5 flex items-center gap-2">

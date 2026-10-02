@@ -3,6 +3,12 @@
 @tailwind utilities;
 
 @layer base {
+  /* Màu chủ đạo (kênh RGB) — mặc định = blue của Tailwind; src/branding.ts ghi đè theo cấu hình của đơn vị. */
+  :root {
+    --brand-50: 239 246 255; --brand-100: 219 234 254; --brand-200: 191 219 254; --brand-300: 147 197 253;
+    --brand-400: 96 165 250; --brand-500: 59 130 246; --brand-600: 37 99 235; --brand-700: 29 78 216;
+    --brand-800: 30 64 175; --brand-900: 30 58 138; --brand-950: 23 37 84;
+  }
   html { color-scheme: light; }
   html.dark { color-scheme: dark; }
   body { @apply bg-slate-50 text-sm leading-relaxed text-slate-900 antialiased dark:bg-slate-950 dark:text-slate-100; }

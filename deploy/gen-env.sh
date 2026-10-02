@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Tạo .env.prod ở thư mục gốc repo từ deploy/env.prod.example, điền mật khẩu/khoá ngẫu nhiên.
-#   deploy/gen-env.sh http://10.2.65.146            (hoặc https://vala.bkav.com)
+#   deploy/gen-env.sh https://bao-cao.ten-don-vi.gov.vn   (hoặc http://<IP máy chủ>)
 # Đã có .env.prod thì dừng (tránh đổi mật khẩu CSDL/Vault của hệ thống đang chạy).
 set -euo pipefail
 cd "$(dirname "$0")/.."
