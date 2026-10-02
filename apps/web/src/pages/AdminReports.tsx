@@ -1,10 +1,10 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { ApiProblem, api, fmtDateTime, type AdminSource, type ReportResult, type StatTile } from '../api';
 import { ChartView } from '../components/Charts';
 import { DataTable } from '../components/DataTable';
 import { StatTiles } from '../components/StatTiles';
 import { Empty, ErrorBox, Loading } from '../components/States';
-import { Badge, Banner, Button, Card, Field, Input, Menu, Muted, PageTitle, Select, Table, Tabs, Td, Th } from '../components/ui';
+import { Badge, Banner, Button, Card, Field, HelpTip, Input, Menu, Muted, PageTitle, Select, Table, Tabs, Td, Th } from '../components/ui';
 import { useAsync } from '../hooks';
 import { GroupChips, GroupSection, NoMatch, Pager, TableToolbar, groupRows, usePaged, useTableView } from '../components/TableTools';
 
@@ -13,12 +13,16 @@ type FieldType = 'string' | 'int' | 'date';
 interface FieldInfo { name: string; label: string; type: FieldType }
 /** Tập dữ liệu = (hệ thống × capability) trong kho chung records. */
 interface DatasetInfo { dataset: 'records'; capability: string; label: string }
-type Op = 'eq' | 'neq' | 'in' | 'contains' | 'gt' | 'gte' | 'lt' | 'lte' | 'is_null' | 'not_null'
+type Op = 'eq' | 'neq' | 'in' | 'not_in' | 'contains' | 'like' | 'not_like' | 'gt' | 'gte' | 'lt' | 'lte' | 'is_null' | 'not_null'
   | 'truoc_hom_nay' | 'tu_hom_nay' | 'hom_nay' | 'den_hom_nay' | 'thang_nay' | 'trong_n_ngay_toi' | 'trong_n_ngay_qua';
 /** Chỉ dùng cho trường ngày. */
 const DATE_OPS: Op[] = ['truoc_hom_nay', 'tu_hom_nay', 'hom_nay', 'den_hom_nay', 'thang_nay', 'trong_n_ngay_toi', 'trong_n_ngay_qua'];
 const DAYS_OPS: Op[] = ['trong_n_ngay_toi', 'trong_n_ngay_qua'];
-interface Filter { field: string; op: Op; value?: string | number }
+type Scalar = string | number;
+interface Filter { field: string; op: Op; value?: Scalar | Scalar[] }
+/** Phép so có nhiều giá trị (mảng) / chỉ dùng cho chuỗi. */
+const MULTI_OPS: Op[] = ['in', 'not_in'];
+const TEXT_OPS: Op[] = ['contains', 'like', 'not_like'];
 interface Measure { fn: 'count' | 'count_distinct' | 'sum' | 'avg' | 'min' | 'max' | 'ty_le'; field?: string; label: string; filters: Filter[] }
 interface Tile extends Measure { warn_if_gt?: number; err_if_gt?: number; trend_field?: string }
 type ChartKind = 'bar' | 'column' | 'line' | 'donut' | 'heatmap';
@@ -39,11 +43,73 @@ interface ReportRow {
 interface DashTab { id: number; ten: string; source_system: string | null; source_ten: string | null; thu_tu: number; is_active: boolean; khoi: number }
 
 const OPS: Array<[Op, string, boolean]> = [
-  ['eq', 'bằng', true], ['neq', 'khác', true], ['contains', 'chứa', true], ['gt', 'lớn hơn', true], ['gte', 'từ', true],
+  ['eq', 'bằng', true], ['neq', 'khác', true], ['in', 'là một trong', true], ['not_in', 'không thuộc', true],
+  ['contains', 'chứa', true], ['like', 'khớp mẫu (%, _)', true], ['not_like', 'không khớp mẫu', true], ['gt', 'lớn hơn', true], ['gte', 'từ', true],
   ['lt', 'nhỏ hơn', true], ['lte', 'đến', true], ['is_null', 'trống', false], ['not_null', 'có giá trị', false],
   ['truoc_hom_nay', 'trước hôm nay', false], ['hom_nay', 'đúng hôm nay', false], ['den_hom_nay', 'đến hết hôm nay', false], ['tu_hom_nay', 'từ hôm nay trở đi', false],
   ['thang_nay', 'trong tháng này', false], ['trong_n_ngay_toi', 'trong số ngày tới', true], ['trong_n_ngay_qua', 'trong số ngày qua', true],
 ];
+/** Giải thích từng phép so (nút "?" cạnh điều kiện) — `vd` là ví dụ, `luu_y` là điều dễ nhầm. */
+const OP_HELP: Record<Op, { y_nghia: string; vd?: string[]; luu_y?: string }> = {
+  eq: { y_nghia: 'Giá trị phải giống hệt (kể cả dấu cách, hoa thường).', vd: ['Trạng thái bằng "Đã xử lý"'], luu_y: 'Không chắc cách viết thì dùng "chứa" hoặc chọn từ danh sách với "là một trong".' },
+  neq: { y_nghia: 'Lấy mọi bản ghi có giá trị khác giá trị này. Bản ghi để trống cũng được lấy.', vd: ['Trạng thái khác "Hủy"'] },
+  in: { y_nghia: 'Chọn nhiều giá trị: lấy bản ghi khớp MỘT trong số đó (tương đương IN trong SQL).', vd: ['Thư mục là một trong [Văn bản đến, Văn bản đang theo dõi]'], luu_y: 'Chọn từ danh sách gợi ý (giá trị có thật trong dữ liệu) để khỏi gõ sai; gõ tay thì Enter hoặc dấu phẩy để thêm.' },
+  not_in: { y_nghia: 'Bỏ các bản ghi có giá trị nằm trong danh sách (tương đương NOT IN). Bản ghi để trống vẫn được lấy.', vd: ['Thư mục không thuộc [Văn bản mới kết thúc]'] },
+  contains: { y_nghia: 'Có chứa đoạn chữ ở bất kỳ vị trí nào, không phân biệt hoa thường.', vd: ['Trích yếu chứa "quá hạn"'], luu_y: 'Có phân biệt dấu: "qua han" không khớp "quá hạn".' },
+  like: {
+    y_nghia: 'So theo mẫu như LIKE trong SQL, không phân biệt hoa thường. % là chuỗi bất kỳ (kể cả rỗng), _ là đúng một ký tự.',
+    vd: ['báo cáo% → bắt đầu bằng "báo cáo"', '%/BKAV2024 → kết thúc bằng "/BKAV2024"', '%theo dõi% → có chứa "theo dõi" (giống "chứa")', '%công%văn% → có "công", sau đó có "văn"', 'KQ__ → "KQ" và đúng 2 ký tự nữa'],
+    luu_y: 'Không có % thì phải khớp nguyên cả chuỗi. Có phân biệt dấu.',
+  },
+  not_like: { y_nghia: 'Ngược với "khớp mẫu": bỏ các bản ghi khớp mẫu. Bản ghi để trống vẫn được lấy.', vd: ['Trích yếu không khớp mẫu %test% → bỏ văn bản thử nghiệm'] },
+  gt: { y_nghia: 'Lớn hơn hẳn (số) hoặc sau ngày (ngày), không tính chính giá trị đó.', vd: ['Số ngày trễ lớn hơn 3'] },
+  gte: { y_nghia: 'Từ giá trị này trở lên (tính cả giá trị đó).', vd: ['Ngày nhận từ 01/09/2026'] },
+  lt: { y_nghia: 'Nhỏ hơn hẳn (số) hoặc trước ngày (ngày), không tính chính giá trị đó.' },
+  lte: { y_nghia: 'Đến giá trị này (tính cả giá trị đó).', vd: ['Ngày nhận đến 30/09/2026'] },
+  is_null: { y_nghia: 'Ô này để trống (nguồn không có dữ liệu).', vd: ['Số ký hiệu trống → văn bản chưa có số'] },
+  not_null: { y_nghia: 'Ô này có giá trị.' },
+  truoc_hom_nay: { y_nghia: 'Ngày trước hôm nay (giờ Việt Nam). Mốc tự đổi mỗi ngày.', vd: ['Hạn xử lý trước hôm nay → việc quá hạn'] },
+  hom_nay: { y_nghia: 'Đúng ngày hôm nay.' },
+  den_hom_nay: { y_nghia: 'Từ trước tới hết hôm nay (tính cả hôm nay).' },
+  tu_hom_nay: { y_nghia: 'Từ hôm nay trở đi (tính cả hôm nay).', vd: ['Hạn xử lý từ hôm nay trở đi → việc còn hạn'] },
+  thang_nay: { y_nghia: 'Trong tháng hiện tại.' },
+  trong_n_ngay_toi: { y_nghia: 'Từ hôm nay đến N ngày tới.', vd: ['Hạn xử lý trong 3 ngày tới → việc sắp đến hạn'] },
+  trong_n_ngay_qua: { y_nghia: 'Từ N ngày trước đến hôm nay.', vd: ['Ngày nhận trong 7 ngày qua'] },
+};
+
+function OpHelpBody({ op }: { op: Op }) {
+  const h = OP_HELP[op];
+  return (
+    <span className="grid gap-1.5">
+      <span>{h.y_nghia}</span>
+      {h.vd && <span className="grid gap-0.5">{h.vd.map((x) => <code key={x} className="block rounded bg-slate-100 px-1.5 py-0.5 text-xs dark:bg-slate-800">{x}</code>)}</span>}
+      {h.luu_y && <span className="text-xs text-amber-700 dark:text-amber-400">Lưu ý: {h.luu_y}</span>}
+    </span>
+  );
+}
+
+/** Hướng dẫn chung cho khối điều kiện: cách các điều kiện kết hợp + bảng tóm tắt phép so. */
+function FiltersHelp() {
+  return (
+    <HelpTip title="Cách đặt điều kiện">
+      <span className="grid gap-2">
+        <span>Mỗi dòng gồm <b>trường</b> · <b>phép so</b> · <b>giá trị</b>. Có nhiều dòng thì bản ghi phải thoả <b>TẤT CẢ</b> (AND).
+          Muốn "hoặc" trên cùng một trường thì dùng <b>là một trong</b>.</span>
+        <span className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
+          <b>bằng / khác</b><span>giống hệt / khác giá trị</span>
+          <b>là một trong / không thuộc</b><span>chọn nhiều giá trị (IN / NOT IN)</span>
+          <b>chứa</b><span>có đoạn chữ ở đâu cũng được</span>
+          <b>khớp mẫu</b><span>như LIKE: <code>%</code> chuỗi bất kỳ, <code>_</code> một ký tự</span>
+          <b>lớn hơn, từ, nhỏ hơn, đến</b><span>so số hoặc ngày (từ/đến có tính mốc)</span>
+          <b>trống / có giá trị</b><span>ô không có / có dữ liệu</span>
+          <b>…hôm nay, …số ngày</b><span>chỉ cho trường ngày, mốc tự đổi theo ngày</span>
+        </span>
+        <span className="text-xs text-slate-500 dark:text-slate-400">Bấm nút "?" cạnh mỗi điều kiện để xem giải thích và ví dụ của phép so đang chọn. Chữ thường/hoa không quan trọng với "chứa" và "khớp mẫu", nhưng dấu tiếng Việt thì có.</span>
+      </span>
+    </HelpTip>
+  );
+}
+
 const FNS: Array<[Measure['fn'], string]> = [['count', 'Đếm'], ['count_distinct', 'Đếm khác nhau'], ['sum', 'Tổng'], ['avg', 'Trung bình'],
   ['min', 'Nhỏ nhất'], ['max', 'Lớn nhất'], ['ty_le', 'Tỉ lệ % thoả điều kiện']];
 const PERIODS: Array<[string, string]> = [['thang_hien_tai', 'Tháng hiện tại'], ['thang_truoc', 'Tháng trước'], ['quy_hien_tai', 'Quý hiện tại'],
@@ -122,6 +188,10 @@ export function AdminReportsPage() {
 }
 
 // ---------------------------------------------------------------------------------------------
+/** Giá trị có thật của một trường (gợi ý cho "là một trong / không thuộc"). Builder nhận qua context, nạp lười theo trường. */
+interface FieldValue { value: Scalar; n: number }
+const ValuesCtx = createContext<(field: string) => Promise<FieldValue[]>>(async () => []);
+
 function ReportEditor({ report, tabs, onClose, onSaved }: { report: ReportRow | null; tabs: DashTab[]; onClose: () => void; onSaved: (m: string) => void }) {
   const isNew = !report;
   const configurable = true;   // mọi báo cáo là báo cáo cấu hình
@@ -157,6 +227,16 @@ function ReportEditor({ report, tabs, onClose, onSaved }: { report: ReportRow | 
   const fields = meta.data?.fields ?? [];
   const ofType = (...t: FieldType[]) => fields.filter((f) => t.includes(f.type));
   const up = (p: Partial<Definition>) => { setDef((d) => (d ? { ...d, ...p } : d)); setPreview(null); };
+  const valuesCache = useRef(new Map<string, Promise<FieldValue[]>>());
+  const loadValues = useCallback((field: string) => {
+    const k = `${source}|${def?.capability ?? ''}|${field}`;
+    let p = valuesCache.current.get(k);
+    if (!p) {
+      p = api.get<FieldValue[]>(`/admin/report-values?source=${encodeURIComponent(source)}&capability=${encodeURIComponent(def?.capability ?? '')}&field=${encodeURIComponent(field)}`).catch(() => []);
+      valuesCache.current.set(k, p);
+    }
+    return p;
+  }, [source, def?.capability]);
 
   const runPreview = async () => {
     if (!def) return;
@@ -245,7 +325,7 @@ function ReportEditor({ report, tabs, onClose, onSaved }: { report: ReportRow | 
             {configurable && meta.data && !meta.data.datasets.length && (
               <Banner tone="info">Hệ thống này chưa có dữ liệu để dựng báo cáo. Vào “Hệ thống nguồn → Cấu hình adapter”, khai một capability có <code>sink</code> để hệ thống lấy dữ liệu về kho.</Banner>
             )}
-            {configurable && def && fields.length > 0 && <Builder def={def} fields={fields} ofType={ofType} up={up} />}
+            {configurable && def && fields.length > 0 && <ValuesCtx.Provider value={loadValues}><Builder def={def} fields={fields} ofType={ofType} up={up} /></ValuesCtx.Provider>}
           </div>
 
           {/* Xem thử — dính bên phải trên màn hình rộng để vừa chỉnh vừa xem */}
@@ -369,7 +449,7 @@ function Builder({ def, fields, ofType, up }: {
         </div>
       </Section>
 
-      <Section title="Điều kiện cố định" hint="Chỉ lấy các bản ghi thoả mọi điều kiện dưới đây.">
+      <Section title="Điều kiện cố định" hint="Chỉ lấy các bản ghi thoả mọi điều kiện dưới đây." help={<FiltersHelp />}>
         <FilterList items={def.filters} fields={fields} onChange={(filters) => up({ filters })} />
       </Section>
 
@@ -382,10 +462,10 @@ function Builder({ def, fields, ofType, up }: {
   );
 }
 
-function Section({ title, hint, children }: { title: string; hint?: string; children: ReactNode }) {
+function Section({ title, hint, help, children }: { title: string; hint?: string; help?: ReactNode; children: ReactNode }) {
   return (
     <section>
-      <h3 className="font-semibold">{title}</h3>
+      <h3 className="flex items-center gap-2 font-semibold">{title}{help}</h3>
       {hint && <Muted className="text-xs">{hint}</Muted>}
       <div className="mt-2">{children}</div>
     </section>
@@ -394,29 +474,105 @@ function Section({ title, hint, children }: { title: string; hint?: string; chil
 
 function FilterRow({ f, fields, onChange, onRemove }: { f: Filter; fields: FieldInfo[]; onChange: (f: Filter) => void; onRemove: () => void }) {
   const type = fields.find((x) => x.name === f.field)?.type;
-  const ops = OPS.filter(([o]) => (DATE_OPS.includes(o) ? type === 'date' : o === 'contains' ? type === 'string' : true));
+  const ops = OPS.filter(([o]) => (DATE_OPS.includes(o) ? type === 'date' : TEXT_OPS.includes(o) ? type === 'string' : true));
   const days = DAYS_OPS.includes(f.op);
+  const multi = MULTI_OPS.includes(f.op);
   const needValue = OPS.find(([o]) => o === f.op)?.[2];
+  const first = Array.isArray(f.value) ? f.value[0] : f.value;
+  /** Đổi phép so: giữ giá trị nếu còn hợp (1 giá trị ⇄ danh sách), về mặc định khi sang/ra "số ngày". */
+  const changeOp = (op: Op) => {
+    const value = DAYS_OPS.includes(op) ? 7
+      : DAYS_OPS.includes(f.op) ? (MULTI_OPS.includes(op) ? [] : '')
+      : MULTI_OPS.includes(op) ? (Array.isArray(f.value) ? f.value : first === undefined || first === '' ? [] : [first])
+      : first ?? '';
+    onChange({ ...f, op, value });
+  };
   return (
     <div className="flex flex-wrap items-center gap-2">
       <Select aria-label="Trường" value={f.field} onChange={(e) => onChange({ ...f, field: e.target.value })}>
         {fields.map((x) => <option key={x.name} value={x.name}>{x.label}</option>)}
       </Select>
-      <Select aria-label="Phép so sánh" value={f.op} onChange={(e) => { const op = e.target.value as Op; onChange({ ...f, op, value: DAYS_OPS.includes(op) ? 7 : DAYS_OPS.includes(f.op) ? '' : f.value }); }}>
+      <Select aria-label="Phép so sánh" value={f.op} onChange={(e) => changeOp(e.target.value as Op)}>
         {ops.map(([o, t]) => <option key={o} value={o}>{t}</option>)}
       </Select>
+      <HelpTip title={`"${OPS.find(([o]) => o === f.op)?.[1] ?? f.op}" nghĩa là gì?`} label="Giải thích phép so">
+        <OpHelpBody op={f.op} />
+      </HelpTip>
       {needValue && (
-        days ? (
+        multi ? (
+          <MultiValue field={f.field} type={type} value={Array.isArray(f.value) ? f.value : first === undefined || first === '' ? [] : [first]}
+            onChange={(value) => onChange({ ...f, value })} />
+        ) : days ? (
           <span className="flex items-center gap-2 text-sm">
             <Input aria-label="Số ngày" className="w-20 !min-w-0 text-right" type="number" min={1} max={3650} value={String(f.value ?? '')}
               onChange={(e) => onChange({ ...f, value: Number(e.target.value) })} />ngày
           </span>
         ) : (
-          <div className="min-w-[7rem] flex-1"><Input aria-label="Giá trị" className="w-full !min-w-0" type={type === 'date' ? 'date' : type === 'int' ? 'number' : 'text'} value={String(f.value ?? '')}
+          <div className="min-w-[7rem] flex-1"><Input aria-label="Giá trị" className="w-full !min-w-0" type={type === 'date' ? 'date' : type === 'int' ? 'number' : 'text'} value={String(first ?? '')}
+            placeholder={f.op === 'like' || f.op === 'not_like' ? 'vd %theo dõi%' : undefined}
+            title={f.op === 'like' || f.op === 'not_like' ? 'Giống LIKE trong SQL, không phân biệt hoa thường: %abc% = có chứa abc, abc% = bắt đầu bằng abc, %abc = kết thúc bằng abc' : undefined}
             onChange={(e) => onChange({ ...f, value: type === 'int' ? Number(e.target.value) : e.target.value })} /></div>
         )
       )}
       <Button variant="danger" className="ml-auto shrink-0" onClick={onRemove} aria-label="Xoá điều kiện">✕</Button>
+    </div>
+  );
+}
+
+/**
+ * Ô chọn nhiều giá trị (cho "là một trong / không thuộc"): chọn từ giá trị có thật trong dữ liệu hoặc gõ rồi Enter
+ * (dán nhiều giá trị cách nhau bởi dấu phẩy cũng được). Tối đa 50 giá trị.
+ */
+function MultiValue({ field, type, value, onChange }: { field: string; type?: FieldType; value: Scalar[]; onChange: (v: Scalar[]) => void }) {
+  const load = useContext(ValuesCtx);
+  const listId = useId();
+  const [opts, setOpts] = useState<FieldValue[] | null>(null);
+  const [text, setText] = useState('');
+  useEffect(() => {
+    let on = true;
+    setOpts(null);
+    void load(field).then((v) => { if (on) setOpts(v); });
+    return () => { on = false; };
+  }, [field, load]);
+  const has = (v: Scalar) => value.some((x) => String(x) === String(v));
+  const add = (raw: string) => {
+    const parts = raw.split(/[,;\n]/).map((x) => x.trim()).filter(Boolean)
+      .map((x) => (type === 'int' ? Number(x) : x)).filter((x) => !(typeof x === 'number' && Number.isNaN(x)));
+    const next = [...value];
+    for (const p of parts) if (!next.some((x) => String(x) === String(p))) next.push(p);
+    onChange(next.slice(0, 50));
+    setText('');
+  };
+  const rest = (opts ?? []).filter((o) => !has(o.value));
+  return (
+    <div className="grid min-w-[12rem] flex-1 gap-1">
+      <div className="flex flex-wrap items-center gap-1 rounded-md border border-slate-300 bg-white px-2 py-1 focus-within:border-blue-600 focus-within:ring-2 focus-within:ring-blue-600/30 dark:border-slate-700 dark:bg-slate-900 dark:focus-within:border-blue-400">
+        {value.map((v) => (
+          <span key={String(v)} className="inline-flex items-center gap-1 rounded bg-blue-50 px-1.5 py-0.5 text-sm text-blue-800 dark:bg-blue-950 dark:text-blue-200">
+            {String(v)}
+            <button type="button" className="text-blue-500 hover:text-red-600" aria-label={`Bỏ ${String(v)}`} onClick={() => onChange(value.filter((x) => String(x) !== String(v)))}>×</button>
+          </span>
+        ))}
+        <input aria-label="Thêm giá trị" list={listId} className="min-w-[8rem] flex-1 bg-transparent py-0.5 text-sm text-slate-900 outline-none dark:text-slate-100"
+          value={text} placeholder={value.length ? 'Thêm…' : 'Chọn hoặc gõ giá trị rồi Enter'}
+          onChange={(e) => { const v = e.target.value; if (opts?.some((o) => String(o.value) === v)) add(v); else setText(v); }}
+          onKeyDown={(e) => {
+            if ((e.key === 'Enter' || e.key === ',') && text.trim()) { e.preventDefault(); add(text); }
+            else if (e.key === 'Backspace' && !text && value.length) onChange(value.slice(0, -1));
+          }}
+          onBlur={() => { if (text.trim()) add(text); }} />
+        <datalist id={listId}>{rest.map((o) => <option key={String(o.value)} value={String(o.value)}>{`${o.n} bản ghi`}</option>)}</datalist>
+      </div>
+      {rest.length > 0 && rest.length <= 12 && (
+        <div className="flex flex-wrap gap-1">
+          {rest.map((o) => (
+            <button key={String(o.value)} type="button" onClick={() => add(String(o.value))}
+              className="rounded border border-dashed border-slate-300 px-1.5 py-0.5 text-xs text-slate-600 hover:border-blue-500 hover:text-blue-700 dark:border-slate-700 dark:text-slate-300 dark:hover:text-blue-300">
+              + {String(o.value)} <span className="text-slate-400">({o.n})</span>
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

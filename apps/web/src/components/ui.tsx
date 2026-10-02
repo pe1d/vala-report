@@ -2,7 +2,8 @@
  * Bộ component cơ sở — Tailwind, luôn có biến thể dark:. Hệ thiết kế (mục 06):
  * một màu nhấn (blue) cho hành động chính; màu trạng thái tách riêng và luôn đi kèm chữ.
  */
-import { useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, SelectHTMLAttributes } from 'react';
 import { Link, type LinkProps } from 'react-router-dom';
 import { useTheme, type ThemeMode } from '../theme';
@@ -44,6 +45,57 @@ export function Menu({ items, label = 'Thêm thao tác', disabled }: { items: Me
         </>
       )}
     </div>
+  );
+}
+
+/**
+ * Nút "?" mở hộp hướng dẫn ngắn ngay cạnh ô cần giải thích. Bấm để mở/đóng, bấm ra ngoài hoặc Esc để đóng.
+ * Hộp vẽ nổi ra ngoài (portal, position fixed) để không bị khung cuộn của hộp thoại cắt; tự mở lên trên khi
+ * phía dưới không đủ chỗ, và luôn nằm trong màn hình.
+ */
+export function HelpTip({ title, children, label = 'Hướng dẫn' }: { title?: string; children: ReactNode; label?: string }) {
+  const [open, setOpen] = useState(false);
+  const btn = useRef<HTMLButtonElement>(null);
+  const box = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
+  const place = useCallback(() => {
+    const b = btn.current?.getBoundingClientRect();
+    const h = box.current?.offsetHeight ?? 0;
+    const w = box.current?.offsetWidth ?? 384;
+    if (!b) return;
+    const below = b.bottom + 6;
+    const top = below + h > window.innerHeight - 8 && b.top - 6 - h > 8 ? b.top - 6 - h : Math.min(below, Math.max(8, window.innerHeight - 8 - h));
+    setPos({ left: Math.max(8, Math.min(b.left, window.innerWidth - 8 - w)), top });
+  }, []);
+  useLayoutEffect(() => { if (open) place(); else setPos(null); }, [open, place]);
+  useEffect(() => {
+    if (!open) return;
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+    window.addEventListener('keydown', esc);
+    window.addEventListener('resize', place);
+    window.addEventListener('scroll', place, true);
+    return () => { window.removeEventListener('keydown', esc); window.removeEventListener('resize', place); window.removeEventListener('scroll', place, true); };
+  }, [open, place]);
+  return (
+    <span className="inline-flex align-middle">
+      <button ref={btn} type="button" aria-label={label} aria-expanded={open} title={label} onClick={() => setOpen((v) => !v)}
+        className={cx('inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full border text-xs font-bold leading-none transition-colors',
+          open ? 'border-blue-600 bg-blue-600 text-white dark:border-blue-400 dark:bg-blue-400 dark:text-slate-950'
+            : 'border-slate-400 text-slate-500 hover:border-blue-600 hover:text-blue-700 dark:border-slate-500 dark:text-slate-400 dark:hover:border-blue-400 dark:hover:text-blue-300')}>
+        ?
+      </button>
+      {open && createPortal(
+        <>
+          <div className="fixed inset-0 z-[90]" onClick={() => setOpen(false)} aria-hidden />
+          <div ref={box} role="dialog" aria-label={title ?? label} style={{ left: pos?.left ?? 0, top: pos?.top ?? 0, visibility: pos ? 'visible' : 'hidden' }}
+            className="fixed z-[91] max-h-[70vh] w-96 max-w-[calc(100vw-1rem)] overflow-y-auto rounded-md border border-slate-200 bg-white p-3 text-left text-sm font-normal text-slate-700 shadow-lg dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
+            {title && <div className="mb-1.5 font-semibold text-slate-900 dark:text-slate-100">{title}</div>}
+            {children}
+          </div>
+        </>,
+        document.body,
+      )}
+    </span>
   );
 }
 

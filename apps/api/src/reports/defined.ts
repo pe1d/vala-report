@@ -65,7 +65,8 @@ const FieldName = z.string().regex(/^[A-Za-z][A-Za-z0-9_]{0,60}$/);
 const Value = z.union([z.string().max(200), z.number(), z.boolean()]);
 const FilterSchema = z.object({
   field: FieldName,
-  op: z.enum(['eq', 'neq', 'in', 'contains', 'gt', 'gte', 'lt', 'lte', 'is_null', 'not_null',
+  // in / not_in: nhiều giá trị (mảng). like / not_like: mẫu kiểu SQL — % = chuỗi bất kỳ, _ = một ký tự (không phân biệt hoa thường).
+  op: z.enum(['eq', 'neq', 'in', 'not_in', 'contains', 'like', 'not_like', 'gt', 'gte', 'lt', 'lte', 'is_null', 'not_null',
     'truoc_hom_nay', 'tu_hom_nay', 'hom_nay', 'den_hom_nay', 'thang_nay', 'trong_n_ngay_toi', 'trong_n_ngay_qua']),
   value: z.union([Value, z.array(Value).max(50)]).optional(),
 });
@@ -133,6 +134,12 @@ export function checkDefinition(source: string, raw: unknown) {
     const fd = need(f.field, `${where}[${i}]`);
     if ([...TODAY_OPS, ...DAYS_OPS].includes(f.op) && fd.type !== 'date') throw new Problem('invalid_params', 'Định nghĩa báo cáo chưa hợp lệ', `${where}[${i}]: so với hôm nay chỉ dùng cho trường ngày`);
     if (!['is_null', 'not_null', ...TODAY_OPS].includes(f.op) && f.value === undefined) throw new Problem('invalid_params', 'Định nghĩa báo cáo chưa hợp lệ', `${where}[${i}]: cần giá trị`);
+    if (['in', 'not_in'].includes(f.op) && (Array.isArray(f.value) ? f.value : [f.value]).filter((v) => v !== '' && v !== undefined).length === 0) {
+      throw new Problem('invalid_params', 'Định nghĩa báo cáo chưa hợp lệ', `${where}[${i}]: chọn ít nhất một giá trị`);
+    }
+    if (['contains', 'like', 'not_like'].includes(f.op) && (Array.isArray(f.value) || String(f.value ?? '') === '')) {
+      throw new Problem('invalid_params', 'Định nghĩa báo cáo chưa hợp lệ', `${where}[${i}]: cần một chuỗi${f.op === 'contains' ? '' : ' mẫu (vd %theo dõi%)'}`);
+    }
     if (DAYS_OPS.includes(f.op) && !(Number.isInteger(Number(f.value)) && Number(f.value) >= 1 && Number(f.value) <= 3650)) {
       throw new Problem('invalid_params', 'Định nghĩa báo cáo chưa hợp lệ', `${where}[${i}]: số ngày phải từ 1 đến 3650`);
     }
@@ -216,7 +223,10 @@ function filterSql(q: Sql, f: Definition['filters'][number], fd: FieldDef): stri
     case 'trong_n_ngay_toi': return `${e} BETWEEN ${TODAY} AND ${TODAY} + (${q.param(Number(f.value), 'int')})::int`;
     case 'trong_n_ngay_qua': return `${e} BETWEEN ${TODAY} - (${q.param(Number(f.value), 'int')})::int AND ${TODAY}`;
     case 'contains': return `${e}::text ILIKE '%' || ${q.param(String(f.value), 'string')} || '%'`;
+    case 'like': return `${e}::text ILIKE ${q.param(String(f.value), 'string')}`;
+    case 'not_like': return `(${e} IS NULL OR ${e}::text NOT ILIKE ${q.param(String(f.value), 'string')})`;
     case 'in': return `${e} = ANY(${q.params(Array.isArray(f.value) ? f.value : [f.value], fd.type)})`;
+    case 'not_in': return `(${e} IS NULL OR ${e} <> ALL(${q.params(Array.isArray(f.value) ? f.value : [f.value], fd.type)}))`;
     default: {
       const op = { eq: '=', neq: 'IS DISTINCT FROM', gt: '>', gte: '>=', lt: '<', lte: '<=' }[f.op];
       return `${e} ${op} ${q.param(Array.isArray(f.value) ? f.value[0] : f.value, fd.type)}`;
@@ -421,4 +431,20 @@ export async function paramOptions(t: Tx, source: string, definition: unknown | 
     `SELECT DISTINCT ${v.expr} AS value, ${l.expr}::text AS label
        FROM ${dataset} t LEFT JOIN app_users u ON u.id = t.owner_user_id LEFT JOIN org_units o ON o.id = t.org_unit_id
       WHERE ${where.join(' AND ')} ORDER BY 2 LIMIT 300`, q.args);
+}
+
+/**
+ * Giá trị có thật của một trường trong tập dữ liệu (tối đa 300, kèm số bản ghi) — gợi ý cho ô "là một trong / không thuộc"
+ * khi dựng báo cáo. Chạy trong ngữ cảnh RLS của người gọi như mọi truy vấn báo cáo.
+ */
+export async function fieldValues(t: Tx, source: string, capability: string, field: string): Promise<Array<{ value: unknown; n: number }>> {
+  const f = datasetFields('records', source, capability).find((x) => x.name === field);
+  if (!f) throw new Problem('invalid_params', 'Không có trường này', field);
+  const q = new Sql();
+  return t.any(
+    `SELECT ${f.expr} AS value, count(*)::int AS n
+       FROM records t LEFT JOIN app_users u ON u.id = t.owner_user_id LEFT JOIN org_units o ON o.id = t.org_unit_id
+      WHERE t.valid_to IS NULL AND t.source_system = ${q.param(source, 'string')} AND t.capability = ${q.param(capability, 'string')}
+        AND ${f.expr} IS NOT NULL
+      GROUP BY 1 ORDER BY 2 DESC, 1 LIMIT 300`, q.args);
 }

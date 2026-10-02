@@ -7,7 +7,7 @@ import type { FastifyPluginAsync } from 'fastify';
 import { Problem, resolveUserContext, withTenant, withUserContext, type Scope } from '@vala/core';
 import { audit } from '../audit.js';
 import type { ApiDeps } from '../deps.js';
-import { checkDefinition, datasetFields, runDefinition, sourceDatasets, type Dataset } from '../reports/defined.js';
+import { checkDefinition, datasetFields, fieldValues, runDefinition, sourceDatasets, type Dataset } from '../reports/defined.js';
 
 interface ReportBody {
   code?: string;
@@ -82,6 +82,16 @@ export const adminReportRoutes = (deps: ApiDeps): FastifyPluginAsync => async (a
     const pick = req.query.dataset ? datasets.find((d) => d.dataset === req.query.dataset && (!req.query.capability || d.capability === req.query.capability)) : datasets[0];
     const fields = pick ? datasetFields(pick.dataset, req.query.source, pick.capability).map(({ name, label, type }) => ({ name, label, type })) : [];
     return { datasets, selected: pick ?? null, fields };
+  });
+
+  /** Giá trị có thật của một trường (dữ liệu quản trị được xem) — gợi ý cho điều kiện chọn nhiều giá trị. */
+  app.get<{ Querystring: { source: string; capability: string; field: string } }>('/admin/report-values', {
+    schema: { querystring: { type: 'object', required: ['source', 'capability', 'field'], properties: {
+      source: { type: 'string' }, capability: { type: 'string' }, field: { type: 'string' } } } },
+  }, async (req) => {
+    if (!deps.sources.get(req.query.source)) throw new Problem('not_found', 'Không có hệ thống nguồn này');
+    const ctx = await resolveUserContext(deps.reader, req.user.id, 'ca_nhan');
+    return withUserContext(deps.reader, ctx, (t) => fieldValues(t, req.query.source, req.query.capability, req.query.field));
   });
 
   /** Xem thử định nghĩa trên dữ liệu MÀ QUẢN TRỊ ĐƯỢC XEM (RLS như mọi người) — không lưu. */
