@@ -18,6 +18,8 @@ import { getSpider, type SpiderRow } from './ingest/spider.js';
 const REPORT_GRACE_MS = 3 * 60_000;
 /** Task còn "đang chạy" trên Crawlab quá lâu mà vẫn chưa gọi Vala ⇒ cũng ghi lỗi. */
 const STUCK_MS = 20 * 60_000;
+/** Lỗi do Crawlab chưa sẵn sàng (vừa khởi động: kho file nội bộ chưa lên ⇒ task không tải được main.py) — chạy lại được. */
+const NOT_READY = /can't open file|no such file|main\.py/i;
 
 type Trigger = 'schedule' | 'manual';
 
@@ -55,7 +57,7 @@ export async function recordSpiderFailure(
  * Bảo Crawlab chạy spider cho MỘT người. Trước khi chạy: kiểm tra mã spider trên Crawlab còn đủ file (thiếu thì đẩy lại
  * từ CSDL). Crawlab từ chối / không liên lạc được ⇒ ghi lượt lỗi rồi báo lỗi cho nơi gọi.
  */
-export async function launchSpider(db: Db, client: CrawlabClient, opts: { spiderCode: string; userId: number; trigger: Trigger }): Promise<string[]> {
+export async function launchSpider(db: Db, client: CrawlabClient, opts: { spiderCode: string; userId: number; trigger: Trigger; retryOf?: number }): Promise<string[]> {
   const row = await getSpider(db, opts.spiderCode);
   if (!row.crawlab_spider_id) {
     await recordSpiderFailure(db, row, opts.userId, opts.trigger, 'spider_not_synced', 'Spider chưa được đồng bộ lên Crawlab — quản trị bấm "Đồng bộ Crawlab"');
@@ -72,8 +74,8 @@ export async function launchSpider(db: Db, client: CrawlabClient, opts: { spider
   }
   await withTenant(db, async (t) => {
     for (const id of tasks.length ? tasks : [null]) {
-      await t.none(`INSERT INTO core.spider_launches (spider_code, app_user_id, crawlab_task_id, trigger_type) VALUES ($1, $2, $3, $4)`,
-        [row.code, opts.userId, id, opts.trigger]);
+      await t.none(`INSERT INTO core.spider_launches (spider_code, app_user_id, crawlab_task_id, trigger_type, retry_of) VALUES ($1, $2, $3, $4, $5)`,
+        [row.code, opts.userId, id, opts.trigger, opts.retryOf ?? null]);
     }
   });
   return tasks;
@@ -102,8 +104,8 @@ async function failureReason(client: CrawlabClient, taskId: string | null, statu
  * spider để lần sau chạy được. Worker gọi mỗi phút.
  */
 export async function checkSpiderLaunches(db: Db, client: CrawlabClient, now = new Date()): Promise<{ failed: number }> {
-  const rows = await withTenant(db, (t) => t.any<{ id: number; spider_code: string; app_user_id: number | null; crawlab_task_id: string | null; trigger_type: Trigger; launched_at: Date }>(
-    `SELECT id, spider_code, app_user_id, crawlab_task_id, trigger_type, launched_at FROM core.spider_launches
+  const rows = await withTenant(db, (t) => t.any<{ id: number; spider_code: string; app_user_id: number | null; crawlab_task_id: string | null; trigger_type: Trigger; launched_at: Date; retry_of: number | null }>(
+    `SELECT id, spider_code, app_user_id, crawlab_task_id, trigger_type, launched_at, retry_of FROM core.spider_launches
       WHERE status = 'launched' AND launched_at < $1::timestamptz - make_interval(secs => $2) ORDER BY id LIMIT 50`,
     [now, REPORT_GRACE_MS / 1000]));
   let failed = 0;
@@ -115,9 +117,17 @@ export async function checkSpiderLaunches(db: Db, client: CrawlabClient, now = n
     const row = await getSpider(db, l.spider_code).catch(() => null);
     if (!row) continue;
     const reason = await failureReason(client, l.crawlab_task_id, status, task?.error);
-    await recordSpiderFailure(db, row, l.app_user_id, l.trigger_type, 'spider_not_started', reason, l.crawlab_task_id);
+    // Lượt THEO LỊCH hỏng vì Crawlab chưa sẵn sàng (thường ngay sau khi khởi động lại) ⇒ chạy lại MỘT lần (giờ Crawlab
+    // đã lên), không để mất cả lượt tới giờ hẹn sau. Lượt chạy lại mà vẫn hỏng thì thôi (retry_of đã có).
+    const retry = NOT_READY.test(reason) && l.trigger_type === 'schedule' && !l.retry_of && l.app_user_id !== null;
+    await recordSpiderFailure(db, row, l.app_user_id, l.trigger_type, 'spider_not_started',
+      retry ? `${reason} — Crawlab vừa khởi động, đã tự chạy lại` : reason, l.crawlab_task_id);
     await withTenant(db, (t) => t.none(`UPDATE core.spider_launches SET status = 'failed', checked_at = now(), error = $2 WHERE id = $1`, [l.id, reason.slice(0, 500)]));
-    if (/no such file|main\.py/i.test(reason)) await ensureSpiderFiles(client, row).catch(() => []);
+    if (NOT_READY.test(reason)) await ensureSpiderFiles(client, row).catch(() => []);
+    if (retry) {
+      await launchSpider(db, client, { spiderCode: row.code, userId: l.app_user_id!, trigger: 'schedule', retryOf: l.id })
+        .catch(() => undefined);                    // lỗi khi chạy lại đã được launchSpider ghi vào Nhật ký chạy
+    }
     failed++;
   }
   return { failed };
