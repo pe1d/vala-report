@@ -13,6 +13,7 @@ import { audit } from '../audit.js';
 import type { AuthUser } from '../auth.js';
 import type { ApiDeps } from '../deps.js';
 import { checkPortalPassword, loginBodySchema } from './auth.js';
+import { autoRefresh } from './dataSchedules.js';
 
 declare module 'fastify' {
   interface FastifyRequest {
@@ -72,6 +73,15 @@ export const extensionRoutes = (deps: ApiDeps): FastifyPluginAsync => async (app
   app.addHook('onRequest', authenticateDevice(deps));
 
   app.get('/ext/me', async (req) => ({ ho_ten: req.user.ho_ten, email: req.user.email }));
+
+  /**
+   * Người dùng vừa làm việc trên một hệ thống nguồn (vd xử lý văn bản trên eGov) rồi rời tab ⇒ tiện ích báo về để lấy
+   * lại dữ liệu ngay, lúc quay sang cổng Vala số liệu đã mới. Cùng luật với tự cập nhật khi mở báo cáo (ngưỡng ngắn hơn).
+   */
+  app.post<{ Params: { source: string } }>('/ext/sources/:source/refresh', async (req) => {
+    if (!deps.sources.get(req.params.source)) throw new Problem('not_found', 'Không có hệ thống nguồn này');
+    return { sources: await autoRefresh(deps, req, req.user.id, { source_system: req.params.source }, 'extension') };
+  });
 
   /** Hệ thống nguồn tiện ích cần theo dõi: origin để đọc cookie, đúng tên cookie phiên, trạng thái kết nối. */
   app.get('/ext/sources', async (req) => {

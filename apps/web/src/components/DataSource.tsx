@@ -24,8 +24,8 @@ export async function runNow(d: DataSource): Promise<string> {
 }
 
 /** Trang báo cáo: báo cáo lấy dữ liệu từ đâu, lịch tự cập nhật, lần cập nhật gần nhất + nút sửa lịch / cập nhật ngay. */
-export function DataSourceBar({ reportCode }: { reportCode: string }) {
-  const src = useAsync(() => api.get<DataSource[]>(`/data-sources?report=${encodeURIComponent(reportCode)}`), [reportCode]);
+export function DataSourceBar({ reportCode, version = 0 }: { reportCode: string; /** Đổi ⇒ tải lại (vd vừa tự cập nhật xong). */ version?: number }) {
+  const src = useAsync(() => api.get<DataSource[]>(`/data-sources?report=${encodeURIComponent(reportCode)}`), [reportCode, version]);
   const [editing, setEditing] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const [err, setErr] = useState<unknown>(null);

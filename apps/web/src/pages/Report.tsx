@@ -9,6 +9,7 @@ import { StatTiles } from '../components/StatTiles';
 import { DataTable } from '../components/DataTable';
 import { FreshnessBar } from '../components/Freshness';
 import { ParamForm } from '../components/ParamForm';
+import { AutoRefreshBar, useAutoRefresh } from '../components/AutoRefresh';
 import { DataSourceBar } from '../components/DataSource';
 import { Empty, ErrorBox, Loading } from '../components/States';
 import { Pager, SearchBox } from '../components/TableTools';
@@ -28,6 +29,7 @@ export function ReportPage() {
   const [pageSize, setPageSize] = useState(50);
   const [q, setQ] = useState('');
   const [result, setResult] = useState<{ data?: ReportResult; error?: unknown; loading: boolean }>({ loading: false });
+  const [srcVer, setSrcVer] = useState(0);
 
   useEffect(() => {
     if (def && params === null) { setParams({ ...def.default_params }); setScope(unitOnly ? 'don_vi' : 'ca_nhan'); }
@@ -42,6 +44,8 @@ export function ReportPage() {
   };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { if (params) run(1); }, [params === null, scope]);
+  // Mở báo cáo ⇒ dữ liệu cũ hơn 15 phút thì tự lấy lại; xong thì chạy lại báo cáo (giữ trang, bộ lọc đang xem).
+  const auto = useAutoRefresh(def ? [code] : undefined, () => { run(); setSrcVer((v) => v + 1); });
 
   const exportXlsx = async () => {
     const res = await fetch(`${BASE}/api/v1/reports/${code}/export`, {
@@ -84,7 +88,8 @@ export function ReportPage() {
         </div>
         {d?.applied?.tu_ngay ? <Muted className="mt-3">Khoảng dữ liệu: {fmtDate(d.applied.tu_ngay)} – {fmtDate(d.applied.den_ngay)}</Muted> : null}
         {d?.applied?.ngay ? <Muted className="mt-3">Ngày: {fmtDate(d.applied.ngay)}</Muted> : null}
-        <DataSourceBar reportCode={code} />
+        <DataSourceBar reportCode={code} version={srcVer} />
+        <AutoRefreshBar st={auto} className="mt-2" />
       </Card>
 
 

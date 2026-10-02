@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { api, fmtDateTime, fmtInt, type DataSource } from '../api';
+import { api, fmtDateTime, fmtInt, targetOf, type DataSource } from '../api';
 import { useAsync } from '../hooks';
 import { GRANT_STATE, RUN_STATUS, runNow } from '../components/DataSource';
 import { ScheduleDialog } from '../components/ScheduleForm';
@@ -40,6 +40,7 @@ export function DataSchedulesPage() {
                 onEdit={() => { setEditing(d); setNote(null); }}
                 onRunNow={() => void act(d.key, () => runNow(d))}
                 onToggle={() => void act(d.key, async () => { await api.patch(`/data-schedules/${d.schedule!.id}`, { is_enabled: !d.schedule!.is_enabled }); })}
+                onAuto={(on) => void act(d.key, async () => { await api.put('/data-sources/prefs', { ...targetOf(d), auto_refresh: on }); })}
                 onDelete={() => confirm(`Xoá lịch tự cập nhật ${d.ten}? Số liệu đã có vẫn giữ; ${d.reports.length} báo cáo dùng nguồn này sẽ không tự cập nhật nữa.`)
                   && void act(d.key, async () => { await api.del(`/data-schedules/${d.schedule!.id}`); return `Đã xoá lịch ${d.ten}.`; })} />
             ))}
@@ -56,8 +57,8 @@ export function DataSchedulesPage() {
 
 const SHOW_REPORTS = 4;
 
-function SourceCard({ d, busy, onEdit, onRunNow, onToggle, onDelete }: {
-  d: DataSource; busy: boolean; onEdit: () => void; onRunNow: () => void; onToggle: () => void; onDelete: () => void;
+function SourceCard({ d, busy, onEdit, onRunNow, onToggle, onDelete, onAuto }: {
+  d: DataSource; busy: boolean; onEdit: () => void; onRunNow: () => void; onToggle: () => void; onDelete: () => void; onAuto: (on: boolean) => void;
 }) {
   const [all, setAll] = useState(false);
   const sc = d.schedule;
@@ -104,6 +105,14 @@ function SourceCard({ d, busy, onEdit, onRunNow, onToggle, onDelete }: {
           )}
         </> : <span className="text-amber-700 dark:text-amber-400">Không còn báo cáo nào dùng nguồn này — có thể xoá lịch.</span>}
       </div>
+
+      <label className="mt-3 flex cursor-pointer items-start gap-2 text-sm">
+        <input type="checkbox" className="mt-0.5" checked={d.auto_refresh} disabled={busy} onChange={(e) => onAuto(e.target.checked)} />
+        <span>
+          Tự cập nhật khi tôi đang dùng
+          <Muted className="text-xs">Mở Tổng quan / báo cáo mà dữ liệu đã cũ hơn 15 phút, hoặc vừa làm việc trên {d.source_ten} rồi rời trang (cần tiện ích Vala) ⇒ tự lấy lại, không chờ lịch.</Muted>
+        </span>
+      </label>
 
       <div className="mt-4 flex flex-wrap gap-1.5">
         <Button variant={sc ? 'default' : 'primary'} onClick={onEdit}>{sc ? 'Sửa lịch' : 'Đặt lịch'}</Button>

@@ -8,6 +8,7 @@ import { ErrorBox, Loading } from '../components/States';
 import { Badge, Banner, Button, Card, Muted, PageTitle, ResultDialog, Tabs, type TabItem, type Tone } from '../components/ui';
 import { useValaExtension, type ExtensionEvent } from '../extension';
 import { useAsync } from '../hooks';
+import { AutoRefreshBar, useAutoRefresh } from '../components/AutoRefresh';
 
 const STATUS: Record<WidgetStatus, [Tone, string]> = {
   ok: ['ok', 'Có số liệu'], trong: ['neutral', 'Không có bản ghi khớp'], chua_co_du_lieu: ['neutral', 'Chưa có dữ liệu'], can_ket_noi: ['warn', 'Cần kết nối'],
@@ -76,6 +77,8 @@ export function DashboardPage() {
   const connect = (w: DashboardWidget) => connectSource(w.source_system);
 
   const widgets = dash.data?.widgets ?? [];
+  // Mở Tổng quan ⇒ nguồn dữ liệu nào cũ hơn 15 phút thì tự lấy lại; xong thì tải lại các khối.
+  const auto = useAutoRefresh(dash.data ? widgets.map((w) => w.code) : undefined, dash.reload);
   const tabCfg = dash.data?.tabs ?? [];
   const needConnect = [...new Map(widgets.filter((w) => w.status === 'can_ket_noi' || w.status === 'het_han')
     .map((w) => [w.source_system, w])).values()];
@@ -156,6 +159,7 @@ export function DashboardPage() {
       <PageTitle title="Tổng quan"
         subtitle={widgets.length ? `${withData}/${widgets.length} báo cáo có số liệu${needConnect.length ? ` · ${needConnect.length} hệ thống cần kết nối` : ''}` : 'Toàn bộ báo cáo của bạn trên một trang.'} />
       {note && <Banner tone={note.tone} role="status">{note.text}</Banner>}
+      <AutoRefreshBar st={auto} className="mb-3" />
       {dash.error ? <ErrorBox error={dash.error} onRetry={dash.reload} /> : null}
       {dash.loading && !dash.data && !dash.error ? <Loading /> : dash.data && (
         <>

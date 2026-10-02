@@ -114,6 +114,9 @@ export interface DataSource {
   grant_state: string; can_run: boolean;
   schedule: null | { id: number; schedule: Schedule; schedule_label: string; is_enabled: boolean; next_run_at: string | null; last_run_at: string | null };
   last_run: null | { status: string; started_at: string; finished_at: string | null; records_seen: number | null; error: string | null };
+  last_success_at: string | null;
+  /** Tự lấy lại khi mở báo cáo / vừa làm việc trên hệ thống nguồn (tiện ích). Mặc định bật. */
+  auto_refresh: boolean;
 }
 export const targetOf = (d: DataSource) => ({ source_system: d.source_system, spider_code: d.spider_code, capability: d.capability });
 export type WidgetStatus = 'ok' | 'trong' | 'chua_co_du_lieu' | 'can_ket_noi' | 'het_han' | 'loi';
