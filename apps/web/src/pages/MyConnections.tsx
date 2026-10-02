@@ -10,6 +10,7 @@ import { useValaExtension, type ExtensionEvent } from '../extension';
 import { useMe } from '../App';
 import { METHOD_LABEL, STATE } from './AdminConnections';
 import { useBranding } from '../branding';
+import { ConsentBox } from '../components/Consent';
 
 const grantErrors = (sso: string): Record<string, string> => ({
   sai_tai_khoan: `Bạn đã đăng nhập ${sso} bằng một tài khoản khác với tài khoản đang dùng cổng báo cáo.`,
@@ -60,7 +61,7 @@ export function MyConnectionsPage() {
   useEffect(() => {
     if (!want || handled.current || !conns.data) return;
     const c = conns.data.find((x) => x.source_system === want);
-    if (!c) return;
+    if (!c || !c.consented_at) return;
     const viaExt = extReady && !extOtherUser && (c.connection_methods ?? ['extension']).includes('extension');
     if (!viaExt && !waited) return;
     handled.current = true;
@@ -138,11 +139,14 @@ export function MyConnectionsPage() {
               ) : (
                 <Muted className="mt-3">Chưa cấp tài khoản. Báo cáo dùng dữ liệu {c.source_ten} sẽ chưa có số liệu.</Muted>
               )}
+              {!c.consented_at && <ConsentBox source={c.source_system} sourceTen={c.source_ten} connected={configured} onDone={conns.reload} />}
               {c.last_error && <p className="mt-2 text-sm text-red-700 dark:text-red-400">{c.last_error}</p>}
               {c.state === 'failed' && <Muted className="mt-1">Hệ thống đã dừng tự đăng nhập để tránh khoá tài khoản của bạn. Hãy cập nhật mật khẩu.</Muted>}
               {c.state === 'expired' && c.auth_method === 'cookie' && <Muted className="mt-1">Cookie đã hết hạn — dán cookie mới.</Muted>}
               {c.state === 'expired' && c.auth_method === 'extension' && <Muted className="mt-1">Phiên đã hết hạn — đăng nhập {c.source_ten} trên trình duyệt có tiện ích Vala, tiện ích tự gửi phiên mới.</Muted>}
               {(() => {
+                // Kết nối MỚI cần xác nhận đồng ý trước; kết nối đang có vẫn chạy bình thường (chỉ nhắc xác nhận).
+                const agreed = !!c.consented_at;
                 const canExt = extReady && !extOtherUser && (c.connection_methods ?? ['extension']).includes('extension');
                 const extActive = canExt && configured && c.state === 'active';   // gửi lại phiên: ít dùng (tiện ích tự lo) → menu
                 const extReconnect = canExt && (!configured || c.state === 'expired');   // cần kết nối lại → nút nổi bật
@@ -150,17 +154,19 @@ export function MyConnectionsPage() {
                 const more: MenuItem[] = [
                   ...(extActive ? [{ label: 'Gửi lại phiên qua tiện ích', onClick: () => { setNote(null); ext.connect(c.source_system); }, disabled: busy !== null }] : []),
                   ...(configured ? [{ label: 'Thử kết nối', onClick: () => void test(c), disabled: busy !== null }] : []),
-                  ...(ssoOn && !configured ? [{ label: `Uỷ quyền qua ${ssoName}`, onClick: () => void startGrant(c.source_system), disabled: busy !== null }] : []),
+                  ...(ssoOn && !configured ? [{ label: `Uỷ quyền qua ${ssoName}`, onClick: () => void startGrant(c.source_system), disabled: busy !== null || !agreed }] : []),
                   ...(configured ? [{ label: 'Gỡ tài khoản', onClick: () => void remove(c), danger: true, disabled: busy !== null }] : []),
                 ];
                 return (
                   <div className="mt-4 flex flex-wrap items-center gap-2">
-                    <Button variant={configured ? 'default' : 'primary'} disabled={busy !== null} onClick={() => { setEditing(c); setNote(null); }}>
+                    <Button variant={configured ? 'default' : 'primary'} disabled={busy !== null || (!configured && !agreed)}
+                      title={!configured && !agreed ? 'Xác nhận đồng ý ở trên trước' : undefined} onClick={() => { setEditing(c); setNote(null); }}>
                       {configured ? 'Cập nhật' : 'Cấp tài khoản'}
                     </Button>
                     {configured && c.state === 'active' && <Button variant="primary" disabled={busy !== null} onClick={() => void syncNow(c)}>{busy === c.source_system ? 'Đang lấy…' : 'Đồng bộ ngay'}</Button>}
                     {extReconnect && (
-                      <Button variant="primary" disabled={busy !== null} onClick={() => { setNote(null); ext.connect(c.source_system); }}>
+                      <Button variant="primary" disabled={busy !== null || !agreed} title={agreed ? undefined : 'Xác nhận đồng ý ở trên trước'}
+                        onClick={() => { setNote(null); ext.connect(c.source_system); }}>
                         Đăng nhập qua tiện ích
                       </Button>
                     )}

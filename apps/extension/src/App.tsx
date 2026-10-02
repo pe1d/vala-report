@@ -16,6 +16,7 @@ function sourceState(src: Source, st: SyncStatus | undefined): [Tone, string] {
   if (src.managed) return ['ok', 'Hệ thống tự đăng nhập'];
   switch (st?.result) {
     case 'no_permission': return ['warn', 'Chưa cho phép'];
+    case 'need_consent': return ['warn', 'Chờ xác nhận'];
     case 'not_logged_in': return ['warn', 'Chưa đăng nhập'];
     case 'rejected': return ['err', 'Phiên hết hạn'];
     case 'error': return ['err', 'Lỗi gửi'];
@@ -154,7 +155,8 @@ function SourceRow({ src, st, granted, onGrant, canDiagnose, highlight }: { src:
         <Badge tone={tone}>{label}</Badge>
       </div>
       <Muted className="mt-0.5 text-xs">{new URL(src.origin).host}{src.last_push_at && src.state === 'active' ? ` · gửi lần cuối ${fmt(src.last_push_at)}` : ''}</Muted>
-      {st && st.result !== 'sent' && st.result !== 'unchanged' && st.result !== 'managed' && <p className="mt-1 text-xs">{st.message}</p>}
+      {st && st.result !== 'sent' && st.result !== 'unchanged' && st.result !== 'managed' && st.result !== 'need_consent' && <p className="mt-1 text-xs">{st.message}</p>}
+      {src.consented === false && !src.managed && <ConsentConfirm src={src} />}
       {(needLogin || (!granted && onGrant) || (canDiagnose && granted)) && (
         <div className="mt-2 flex flex-wrap gap-2">
           {!granted && onGrant && <Button variant="primary" onClick={onGrant}>Cho phép</Button>}
@@ -164,6 +166,37 @@ function SourceRow({ src, st, granted, onGrant, canDiagnose, highlight }: { src:
       )}
       {diag && <Diagnosis src={src} items={diag} />}
     </li>
+  );
+}
+
+/**
+ * Xác nhận đồng ý (mô hình dữ liệu cá nhân): Vala dùng tài khoản của chính người dùng để lấy dữ liệu theo lịch; nhật ký
+ * hệ thống nguồn ghi nhận các lần truy cập đó. Nội dung khớp apps/web/src/components/Consent.tsx + CONSENT_VERSION ở máy chủ.
+ */
+function ConsentConfirm({ src }: { src: Source }) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const agree = async () => {
+    setBusy(true); setErr(null);
+    try {
+      await api('POST', `/ext/sources/${src.code}/consent`);
+      await send({ type: 'refresh-sources' });
+      await send({ type: 'sync' });
+    } catch (e) { setErr((e as Error).message); setBusy(false); }
+  };
+  return (
+    <div className="mt-2 rounded border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
+      <p>
+        Vala sẽ dùng tài khoản {src.ten} của bạn để tự lấy dữ liệu công việc của chính bạn theo lịch bạn đặt (và khi bạn đang dùng
+        cổng). Nhật ký của {src.ten} sẽ ghi nhận các lần truy cập này dưới tên tài khoản của bạn. Chỉ bạn xem được dữ liệu lấy về;
+        bạn có thể gỡ kết nối bất cứ lúc nào.
+      </p>
+      <label className="mt-1.5 flex cursor-pointer items-center gap-1.5 font-medium">
+        <input type="checkbox" disabled={busy} onChange={(e) => e.target.checked && void agree()} />
+        Tôi đã hiểu và đồng ý
+      </label>
+      {err && <p className="mt-1 text-red-700 dark:text-red-400">{err}</p>}
+    </div>
   );
 }
 
@@ -301,7 +334,7 @@ export function Options() {
       {!settings.token ? (
         <form onSubmit={(e) => void login(e)} className="grid gap-3 rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
           <h2 className="text-base font-semibold">Đăng nhập tài khoản Vala</h2>
-          <Field label="Máy chủ Vala" hint="Địa chỉ cổng báo cáo của đơn vị, ví dụ https://vala.bkav.com">
+          <Field label="Máy chủ Vala" hint="Địa chỉ cổng báo cáo của đơn vị, ví dụ https://bao-cao.ten-don-vi.vn">
             <Input value={server} onChange={(e) => setServer(e.target.value)} placeholder="https://…" required />
           </Field>
           <Field label="Tên đăng nhập"><Input autoComplete="username" value={username} onChange={(e) => setUsername(e.target.value)} required /></Field>

@@ -37,12 +37,14 @@ export interface Source {
   last_error: string | null;
   /** Kết nối đang dùng mật khẩu/SSO còn tốt: hệ thống tự lo, tiện ích không gửi. */
   managed: boolean;
+  /** Người dùng đã đồng ý cho Vala dùng tài khoản này (máy chủ cũ không trả trường này ⇒ coi như đã đồng ý). */
+  consented?: boolean;
 }
 
 /** Kết quả lần đồng bộ gần nhất của một nguồn — hiện trong popup. */
 export interface SyncStatus {
   at: string;
-  result: 'sent' | 'unchanged' | 'not_logged_in' | 'no_permission' | 'managed' | 'rejected' | 'error';
+  result: 'sent' | 'unchanged' | 'not_logged_in' | 'no_permission' | 'need_consent' | 'managed' | 'rejected' | 'error';
   message: string;
 }
 

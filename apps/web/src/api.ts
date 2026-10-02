@@ -59,6 +59,8 @@ export interface Connection {
   connection_methods?: AuthMethod[];
   state: 'active' | 'pending' | 'expired' | 'failed' | 'revoked' | 'chua_cau_hinh';
   last_error: string | null; last_refresh_at: string | null; session_expires_at: string | null; last_success_at: string | null;
+  /** Thời điểm người dùng đồng ý cho Vala dùng tài khoản này (null = chưa xác nhận nội dung hiện tại). */
+  consented_at?: string | null;
 }
 export interface Grant {
   source_system: string; ten: string; session_state: 'pending' | 'active' | 'expired' | 'revoked' | 'failed';

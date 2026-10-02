@@ -7,6 +7,7 @@ import { AUTH_METHODS, Problem, canAutoRenew, isPermanentLoginError, vaultRef, w
 import { loadAllSpecs } from '@vala/core/adapter';
 import { audit } from './audit.js';
 import type { ApiDeps } from './deps.js';
+import { CONSENT_VERSION } from './consent.js';
 
 export interface ConnectionBody {
   auth_method: AuthMethod;
@@ -33,12 +34,13 @@ export function listConnections(deps: ApiDeps, userId?: number) {
             g.auth_method, g.source_username, ss.connection_methods,
             coalesce(CASE WHEN g.revoked_at IS NOT NULL THEN 'revoked' ELSE g.session_state END, 'chua_cau_hinh') AS state,
             g.last_error, g.last_refresh_at, g.session_expires_at, g.configured_by = u.id AS self_configured,
-            (SELECT max(r.finished_at) FROM crawl_runs r WHERE r.app_user_id = u.id AND r.source_system = ss.code AND r.status = 'ok') AS last_success_at
+            (SELECT max(r.finished_at) FROM crawl_runs r WHERE r.app_user_id = u.id AND r.source_system = ss.code AND r.status = 'ok') AS last_success_at,
+            (SELECT c.consented_at FROM source_consents c WHERE c.app_user_id = u.id AND c.source_system = ss.code AND c.version = $2) AS consented_at
        FROM app_users u
        CROSS JOIN core.source_systems ss
        LEFT JOIN source_grants g ON g.app_user_id = u.id AND g.source_system = ss.code
       WHERE u.is_active AND ss.enabled AND ($1::bigint IS NULL OR u.id = $1)
-      ORDER BY u.ho_ten, ss.code`, [userId ?? null]));
+      ORDER BY u.ho_ten, ss.code`, [userId ?? null, CONSENT_VERSION]));
 }
 
 export async function configureConnection(

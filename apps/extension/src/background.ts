@@ -104,6 +104,10 @@ async function syncSource(src: Source, force = false): Promise<SyncStatus['resul
 
 async function pushSource(src: Source, force: boolean): Promise<SyncStatus['result']> {
   if (src.managed) return setStatus(src.code, { result: 'managed', message: 'Hệ thống tự đăng nhập bằng tài khoản đã cấp, không cần tiện ích' });
+  // Kết nối LẦN ĐẦU cần người dùng xác nhận đồng ý (trên cổng hoặc trong tiện ích). Kết nối đang có vẫn gửi bình thường.
+  if (src.consented === false && (src.state === 'chua_cau_hinh' || src.state === 'revoked')) {
+    return setStatus(src.code, { result: 'need_consent', message: `Chưa xác nhận đồng ý cho Vala dùng tài khoản ${src.ten} — mở tiện ích hoặc trang Tài khoản nguồn để xác nhận` });
+  }
   const cookies = await readCookies(src);
   if (!cookies) return setStatus(src.code, { result: 'no_permission', message: `Chưa cho phép đọc phiên ${src.cookie_domain ?? new URL(src.origin).host}` });
   // Thiếu cookie định danh (chỉ đọc được khi đang mở trang nguồn) thì vẫn gửi — máy chủ dùng lại giá trị lần trước.
@@ -278,7 +282,7 @@ async function updateBadge() {
     return;
   }
   const st = await getStatuses();
-  const needs = Object.values(st).some((x) => x.result === 'not_logged_in' || x.result === 'rejected' || x.result === 'no_permission' || x.result === 'error');
+  const needs = Object.values(st).some((x) => ['not_logged_in', 'rejected', 'no_permission', 'need_consent', 'error'].includes(x.result));
   await chrome.action.setBadgeText({ text: needs ? '!' : '' });
   await chrome.action.setBadgeBackgroundColor({ color: '#b45309' });
 }

@@ -14,6 +14,7 @@ import type { AuthUser } from '../auth.js';
 import type { ApiDeps } from '../deps.js';
 import { checkPortalPassword, loginBodySchema } from './auth.js';
 import { autoRefresh } from './dataSchedules.js';
+import { consentsFor, giveConsent } from '../consent.js';
 
 declare module 'fastify' {
   interface FastifyRequest {
@@ -83,6 +84,9 @@ export const extensionRoutes = (deps: ApiDeps): FastifyPluginAsync => async (app
     return { sources: await autoRefresh(deps, req, req.user.id, { source_system: req.params.source }, 'extension') };
   });
 
+  /** Người dùng xác nhận đồng ý ngay trong tiện ích (trước lần kết nối đầu tiên). */
+  app.post<{ Params: { source: string } }>('/ext/sources/:source/consent', async (req) => giveConsent(deps, req, req.user.id, req.params.source, 'extension'));
+
   /** Hệ thống nguồn tiện ích cần theo dõi: origin để đọc cookie, đúng tên cookie phiên, trạng thái kết nối. */
   app.get('/ext/sources', async (req) => {
     const rows = await withTenant(deps.writer, (t) => t.any<GrantRow & { code: string; ten: string; last_push_at: Date | null; last_error: string | null }>(
@@ -91,6 +95,7 @@ export const extensionRoutes = (deps: ApiDeps): FastifyPluginAsync => async (app
          FROM core.source_systems ss
          LEFT JOIN source_grants g ON g.app_user_id = $1 AND g.source_system = ss.code
         WHERE ss.enabled AND 'extension' = ANY(ss.connection_methods) ORDER BY ss.code`, [req.user.id]));
+    const consents = await consentsFor(deps, req.user.id);
     const out = [];
     for (const r of rows) {
       let cookieNames: string[];
@@ -105,6 +110,7 @@ export const extensionRoutes = (deps: ApiDeps): FastifyPluginAsync => async (app
         cookie_domain: deps.connections.cookieDomain(r.code, baseUrl),
         state: r.session_state, auth_method: r.auth_method ?? null, last_push_at: r.last_push_at, last_error: r.last_error,
         managed: managed(r.auth_method ? r : null),
+        consented: consents.has(r.code),
       });
     }
     return out;

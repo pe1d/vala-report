@@ -6,9 +6,13 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { configureConnection, connectionBodySchema, deleteConnection, listConnections, testConnection, type ConnectionBody } from '../connections.js';
 import type { ApiDeps } from '../deps.js';
+import { giveConsent } from '../consent.js';
 
 export const myConnectionRoutes = (deps: ApiDeps): FastifyPluginAsync => async (app) => {
   app.get('/me/connections', async (req) => listConnections(deps, req.user.id));
+
+  /** Người dùng xác nhận đồng ý cho Vala dùng tài khoản của họ trên hệ thống nguồn (xem consent.ts). */
+  app.post<{ Params: { source: string } }>('/me/consents/:source', async (req) => giveConsent(deps, req, req.user.id, req.params.source, 'portal'));
 
   app.put<{ Params: { source: string }; Body: ConnectionBody }>('/me/connections/:source', {
     schema: { body: connectionBodySchema },
