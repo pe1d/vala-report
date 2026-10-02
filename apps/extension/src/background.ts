@@ -329,6 +329,101 @@ chrome.runtime.onMessage.addListener((msg: Message, sender, reply) => {
 
 chrome.permissions.onAdded.addListener(() => { void registerBridge(); void syncAll(); });
 
+// ---------------------------------------------------------------------------------------------
+// Vừa làm việc trên hệ thống nguồn rồi rời trang ⇒ báo Vala lấy lại dữ liệu ngay (không chờ lịch), để lúc người dùng
+// quay sang cổng Vala số liệu đã mới (vd vừa xử lý xong văn bản trên eGov). Tính là "làm việc" khi tab nguồn được xem
+// (đang chọn, cửa sổ đang mở) ít nhất MIN_STAY_MS; "rời" = chuyển tab, sang cửa sổ/ứng dụng khác, đi sang trang khác,
+// đóng tab. Máy chủ còn tự giới hạn theo người × nguồn và tôn trọng tuỳ chọn tắt "tự cập nhật" của người dùng.
+// Trạng thái để trong storage.session (service worker có thể bị tắt bất cứ lúc nào; mất khi đóng trình duyệt).
+// ---------------------------------------------------------------------------------------------
+const MIN_STAY_MS = 15_000;
+const NUDGE_GAP_MS = 2 * 60_000;
+interface Visit { code: string; since: number }
+interface VisitState { visits: Record<string, Visit>; active: Record<string, number>; focused: number | null; nudged: Record<string, number> }
+
+async function visitState(): Promise<VisitState> {
+  const v = (await chrome.storage.session.get('visit')).visit as VisitState | undefined;
+  return v ?? { visits: {}, active: {}, focused: null, nudged: {} };
+}
+const saveVisitState = (v: VisitState) => chrome.storage.session.set({ visit: v });
+/** Các sự kiện tab/cửa sổ đến gần như cùng lúc ⇒ xử lý lần lượt, không ghi đè trạng thái của nhau. */
+let visitChain: Promise<void> = Promise.resolve();
+const serial = (fn: (v: VisitState) => Promise<void>) => {
+  visitChain = visitChain.then(async () => { const v = await visitState(); await fn(v); await saveVisitState(v); }).catch((e) => console.warn('[vala] theo dõi tab', e));
+};
+
+/** Trang thuộc hệ thống nguồn nào (đúng host của origin nguồn). Không có quyền đọc URL ⇒ không phải trang nguồn. */
+async function sourceOfUrl(url?: string): Promise<Source | null> {
+  if (!url || !/^https?:/.test(url)) return null;
+  const host = new URL(url).hostname;
+  return (await getCachedSources()).find((s) => new URL(s.origin).hostname === host) ?? null;
+}
+
+/** Báo máy chủ lấy lại dữ liệu nguồn này (gửi phiên mới nhất trước, nếu đổi). */
+async function nudge(code: string, v: VisitState) {
+  const s = await getSettings();
+  if (!s.token || Date.now() - (v.nudged[code] ?? 0) < NUDGE_GAP_MS) return;
+  v.nudged[code] = Date.now();
+  const src = (await getCachedSources()).find((x) => x.code === code);
+  if (!src) return;
+  try {
+    await syncSource(src);
+    const r = await api<{ sources: Array<{ key: string; state: string }> }>('POST', `/ext/sources/${code}/refresh`);
+    console.log(`[vala] ${code}: rời trang nguồn ⇒ tự cập nhật`, r.sources.map((x) => `${x.key}=${x.state}`).join(', '));
+  } catch (e) {
+    console.warn(`[vala] ${code}: không báo được tự cập nhật`, (e as Error).message);
+  }
+}
+
+/** Kết thúc một lượt xem tab nguồn: đủ lâu ⇒ báo cập nhật. */
+async function leave(tabId: number, v: VisitState) {
+  const visit = v.visits[tabId];
+  if (!visit) return;
+  delete v.visits[tabId];
+  if (Date.now() - visit.since >= MIN_STAY_MS) await nudge(visit.code, v);
+}
+
+/** Bắt đầu tính lượt xem nếu tab đang xem là trang nguồn. */
+async function enter(tab: chrome.tabs.Tab | undefined, v: VisitState) {
+  if (tab?.id === undefined) return;
+  const src = await sourceOfUrl(tab.url);
+  if (src && v.visits[tab.id]?.code !== src.code) v.visits[tab.id] = { code: src.code, since: Date.now() };
+}
+
+chrome.tabs.onActivated.addListener(({ tabId, windowId }) => serial(async (v) => {
+  const prev = v.active[windowId];
+  if (prev !== undefined && prev !== tabId) await leave(prev, v);
+  v.active[windowId] = tabId;
+  if (v.focused === null || v.focused === windowId) await enter(await chrome.tabs.get(tabId).catch(() => undefined), v);
+}));
+
+chrome.tabs.onUpdated.addListener((tabId, info, tab) => {
+  if (!info.url && info.status !== 'complete') return;
+  serial(async (v) => {
+    const src = await sourceOfUrl(tab.url);
+    if (v.visits[tabId] && v.visits[tabId]!.code !== src?.code) await leave(tabId, v);     // đi sang trang khác
+    if (tab.active && (v.focused === null || v.focused === tab.windowId)) await enter(tab, v);
+  });
+});
+
+chrome.tabs.onRemoved.addListener((tabId, { windowId }) => serial(async (v) => {
+  await leave(tabId, v);
+  if (v.active[windowId] === tabId) delete v.active[windowId];
+}));
+
+// Sang cửa sổ / ứng dụng khác ⇒ rời trang nguồn đang xem; quay lại ⇒ tính lượt xem mới.
+chrome.windows.onFocusChanged.addListener((windowId) => serial(async (v) => {
+  if (v.focused !== null && v.focused !== windowId) {
+    const prevTab = v.active[v.focused];
+    if (prevTab !== undefined) await leave(prevTab, v);
+  }
+  v.focused = windowId === chrome.windows.WINDOW_ID_NONE ? null : windowId;
+  if (v.focused !== null) {
+    const [tab] = await chrome.tabs.query({ active: true, windowId: v.focused });
+    if (tab?.id !== undefined) { v.active[v.focused] = tab.id; await enter(tab, v); }
+  }
+}));
+
 // Bấm thông báo "phiên hết hạn" ⇒ mở trang đăng nhập nguồn (trình duyệt tự điền nếu đã lưu mật khẩu).
 chrome.notifications.onClicked.addListener((id) => {
   const m = /^relogin:(.+)$/.exec(id);
