@@ -280,7 +280,7 @@ function Widget({ w, busy, onConnect, onRunNow }: { w: DashboardWidget; busy: bo
       <div className="flex flex-wrap items-start gap-2">
         <div className="min-w-0 flex-1">
           <Link to={`/bao-cao/${w.code}`} className="font-semibold text-slate-900 no-underline hover:underline dark:text-slate-100">{w.ten}</Link>
-          <Muted className="text-xs">{w.source_ten}{w.scope === 'don_vi' ? ' · cấp đơn vị' : ''}
+          <Muted className="text-xs">{w.source_ten}
             {w.freshness?.last_success_at ? ` · cập nhật ${fmtDateTime(w.freshness.last_success_at)}` : ''}</Muted>
         </div>
         <Badge tone={tone}>{label}</Badge>

@@ -42,7 +42,6 @@ export function CatalogPage() {
                   className="block rounded-lg border border-slate-200 bg-white p-4 text-inherit no-underline transition-colors hover:border-blue-400 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-blue-500">
                   <div className="flex items-start gap-3">
                     <strong className="flex-1">{r.ten}</strong>
-                    {r.required_scope !== 'ca_nhan' && <Badge tone="neutral">Cấp đơn vị</Badge>}
                   </div>
                   {r.mo_ta && <p className="mt-2 text-slate-500 dark:text-slate-400">{r.mo_ta}</p>}
                 </Link>

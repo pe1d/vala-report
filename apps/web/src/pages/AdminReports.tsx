@@ -199,7 +199,8 @@ function ReportEditor({ report, tabs, onClose, onSaved }: { report: ReportRow | 
   const [ten, setTen] = useState(report?.ten ?? '');
   const [moTa, setMoTa] = useState(report?.mo_ta ?? '');
   const [source, setSource] = useState(report?.source_system ?? '');
-  const [scope, setScope] = useState<'ca_nhan' | 'don_vi'>(report?.required_scope ?? 'ca_nhan');
+  // Báo cáo luôn là dữ liệu cá nhân của người xem (bỏ phạm vi đơn vị). Báo cáo cũ đặt "đơn vị" lưu lại sẽ về cá nhân.
+  const scope = 'ca_nhan' as const;
   const [onDash, setOnDash] = useState(report?.show_on_dashboard ?? true);
   const [order, setOrder] = useState(report?.dashboard_order ?? 100);
   const [tab, setTab] = useState<number | null>(report?.dashboard_tab ?? null);
@@ -292,12 +293,6 @@ function ReportEditor({ report, tabs, onClose, onSaved }: { report: ReportRow | 
                   </Select>
                 </Field>
               )}
-              <Field label="Phạm vi xem">
-                <Select value={scope} onChange={(e) => setScope(e.target.value as 'ca_nhan' | 'don_vi')}>
-                  <option value="ca_nhan">Cá nhân — dữ liệu của chính người xem</option>
-                  <option value="don_vi">Đơn vị — trưởng đơn vị xem cả đơn vị</option>
-                </Select>
-              </Field>
               <label className="flex items-center gap-2 self-end pb-2 text-sm">
                 <input type="checkbox" checked={onDash} onChange={(e) => setOnDash(e.target.checked)} />
                 Hiện trên Tổng quan của người dùng có dữ liệu
@@ -740,8 +735,8 @@ function ReportGroup({ rows, tabName, onEdit, patch, remove }: {
   return (
     <>
       <Table fixed>
-        <colgroup><col /><col className="w-28" /><col className="w-72" /><col className="w-32" /><col className="w-52" /></colgroup>
-        <thead><tr><Th>Báo cáo</Th><Th>Phạm vi</Th><Th>Tổng quan</Th><Th num><span title="Số người có lịch tự cập nhật đang bật cho nguồn dữ liệu của báo cáo (dùng chung với báo cáo cùng nguồn)">Người có lịch</span></Th><Th /></tr></thead>
+        <colgroup><col /><col className="w-72" /><col className="w-32" /><col className="w-52" /></colgroup>
+        <thead><tr><Th>Báo cáo</Th><Th>Tổng quan</Th><Th num><span title="Số người có lịch tự cập nhật đang bật cho nguồn dữ liệu của báo cáo (dùng chung với báo cáo cùng nguồn)">Người có lịch</span></Th><Th /></tr></thead>
         <tbody>
           {pg.rows.map((r) => (
             <tr key={r.code} className={r.is_active ? '' : '[&>td:not(:last-child)]:opacity-60'}>
@@ -751,7 +746,6 @@ function ReportGroup({ rows, tabName, onEdit, patch, remove }: {
                   {!r.is_active && <Badge tone="neutral">Đang tắt</Badge>}</div>
                 <Muted className="font-mono text-xs">{r.code}</Muted>
               </Td>
-              <Td>{r.required_scope === 'ca_nhan' ? 'Cá nhân' : 'Đơn vị'}</Td>
               <Td>
                 <label className="flex items-center gap-2 text-sm">
                   <input type="checkbox" checked={r.show_on_dashboard}

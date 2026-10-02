@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { api, auth, fmtDate, fmtDateTime, ApiProblem, type ReportDef, type ReportResult, type Scope } from '../api';
-import { useMe } from '../App';
 import { BASE } from '../base';
 import { useAsync } from '../hooks';
 import { ChartView } from '../components/Charts';
@@ -13,13 +12,12 @@ import { AutoRefreshBar, useAutoRefresh } from '../components/AutoRefresh';
 import { DataSourceBar } from '../components/DataSource';
 import { Empty, ErrorBox, Loading } from '../components/States';
 import { Pager, SearchBox } from '../components/TableTools';
-import { Button, Card, Field, Muted, PageTitle, Select, TextLink } from '../components/ui';
+import { Button, Card, Muted, PageTitle, TextLink } from '../components/ui';
 
 
 /** Màn hình 4 — Xem báo cáo: tham số, phạm vi, bảng, biểu đồ, độ tươi, xuất file, đặt lịch. */
 export function ReportPage() {
   const { code = '' } = useParams();
-  const me = useMe();
   const catalog = useAsync(() => api.get<ReportDef[]>('/reports'), []);
   const def = catalog.data?.find((r) => r.code === code);
   const unitOnly = def ? def.required_scope !== 'ca_nhan' : false;
@@ -74,14 +72,6 @@ export function ReportPage() {
       <Card>
         <div className="flex flex-wrap items-end gap-3">
           {params && <ParamForm code={def.code} props={def.param_schema.properties} value={params} onChange={setParams} />}
-          {me.scopes.includes('don_vi') && !unitOnly && (
-            <Field label="Phạm vi">
-              <Select value={scope} onChange={(e) => setScope(e.target.value as Scope)}>
-                <option value="ca_nhan">Của tôi</option>
-                <option value="don_vi">Đơn vị tôi phụ trách và cấp dưới</option>
-              </Select>
-            </Field>
-          )}
           <Button variant="primary" onClick={() => go(1)}>Xem báo cáo</Button>
           <span className="flex-1" />
           <Button disabled={!d} onClick={() => void exportXlsx()}>Xuất Excel</Button>

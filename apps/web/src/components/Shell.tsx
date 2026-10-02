@@ -38,7 +38,6 @@ const GROUPS: NavGroup[] = [
 ];
 
 const initials = (name: string) => name.split(/\s+/).filter(Boolean).slice(-2).map((w) => w[0]!.toUpperCase()).join('') || '?';
-const orgText = (me: Me) => me.org_units.map((o) => o.ten + (o.vai_tro === 'truong_don_vi' ? ' (trưởng)' : '')).join(', ');
 
 const COLLAPSE_KEY = 'vala.sidebar.thu-gon';
 
@@ -125,7 +124,6 @@ function UserMenu({ me, onLogout }: { me: Me; onLogout: () => void }) {
     document.addEventListener('keydown', close);
     return () => { document.removeEventListener('mousedown', close); document.removeEventListener('keydown', close); };
   }, [open]);
-  const org = orgText(me);
   return (
     <div ref={ref} className="relative">
       <button type="button" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(!open)}
@@ -133,7 +131,6 @@ function UserMenu({ me, onLogout }: { me: Me; onLogout: () => void }) {
         <span aria-hidden className="grid h-8 w-8 place-items-center rounded-full bg-slate-200 text-xs font-semibold text-slate-700 dark:bg-slate-700 dark:text-slate-100">{initials(me.ho_ten)}</span>
         <span className="hidden leading-tight sm:block">
           <span className="block max-w-[180px] truncate text-sm font-medium text-slate-900 dark:text-slate-100">{me.ho_ten}</span>
-          {org && <span className="block max-w-[180px] truncate text-[11px] text-slate-500 dark:text-slate-400">{org}</span>}
         </span>
         <svg aria-hidden width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="text-slate-400"><path d="m6 9 6 6 6-6" /></svg>
       </button>
@@ -141,7 +138,6 @@ function UserMenu({ me, onLogout }: { me: Me; onLogout: () => void }) {
         <div role="menu" className="absolute right-0 z-50 mt-1 w-64 overflow-hidden rounded-lg border border-slate-200 bg-white py-1 shadow-lg dark:border-slate-700 dark:bg-slate-900">
           <div className="border-b border-slate-100 px-3 py-2.5 dark:border-slate-800">
             <div className="font-semibold text-slate-900 dark:text-slate-100">{me.ho_ten}</div>
-            {org && <div className="text-xs text-slate-500 dark:text-slate-400">{org}</div>}
             {me.is_ops_admin && <div className="mt-1 text-xs font-medium text-blue-700 dark:text-blue-300">Quản trị hệ thống</div>}
           </div>
           <div className="flex items-center justify-between gap-2 border-b border-slate-100 px-3 py-2 text-sm text-slate-600 sm:hidden dark:border-slate-800 dark:text-slate-300">
