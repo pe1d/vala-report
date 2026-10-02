@@ -48,7 +48,7 @@ k create configmap vala-vault --from-file="$ROOT/infra/vault" --dry-run=client -
 CONFIG_HASH="$(cat "$ENV_TMP" "$CERT" "$KEY" "$ROOT"/infra/vault/* | sha256sum | cut -c1-16)"
 
 echo "==> Image phiên bản $VER"
-if [ "${SKIP_BUILD:-}" != 1 ] && { [[ "$VER" == *-dirty ]] || ! has_image vala-report-node "$VER" || ! has_image vala-report-web "$VER"; }; then
+if [ "${SKIP_BUILD:-}" != 1 ] && { [ "${FORCE_BUILD:-}" = 1 ] || [[ "$VER" == *-dirty ]] || ! has_image vala-report-node "$VER" || ! has_image vala-report-web "$VER"; }; then
   "$K8S/build-images.sh" "$VER"
 fi
 has_image vala-report-node "$VER" && has_image vala-report-web "$VER" || { echo "Chưa có image $VER trong k3s"; exit 1; }

@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { api, auth, fmtDate, ApiProblem, type ReportDef, type ReportResult, type Scope } from '../api';
-import { BASE } from '../base';
 import { useMe } from '../App';
+import { BASE } from '../base';
 import { useAsync } from '../hooks';
 import { ChartView } from '../components/Charts';
 import { StatTiles } from '../components/StatTiles';

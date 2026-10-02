@@ -1,12 +1,13 @@
 {
   "name": "@vala/extension",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "vite build --watch --mode development",
     "build": "tsc -p . && vite build",
     "build:dev": "tsc -p . && vite build --mode development",
+    "package": "sh scripts/package.sh",
     "typecheck": "tsc -p .",
     "test": "echo 'extension: thử bằng tools/… (Chrome thật), xem README'"
   },

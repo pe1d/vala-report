@@ -1,6 +1,6 @@
-/** Client API. Lỗi RFC 7807 thành ApiProblem để màn hình rẽ nhánh theo `type`. */
 import { BASE } from './base';
 
+/** Client API. Lỗi RFC 7807 thành ApiProblem để màn hình rẽ nhánh theo `type`. */
 export class ApiProblem extends Error {
   constructor(readonly type: string, readonly status: number, readonly title: string, readonly detail?: string, readonly body?: Record<string, unknown>) {
     super(title);

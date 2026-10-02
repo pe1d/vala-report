@@ -38,9 +38,8 @@ export const ssoRoutes = (deps: ApiDeps): FastifyPluginAsync => async (app) => {
 };
 
 function toWeb(reply: FastifyReply, deps: ApiDeps, path: string, q: Record<string, string>, hash?: Record<string, string>) {
-  // Giữ đường dẫn con của cổng (PUBLIC_WEB_URL=https://host/vala-report ⇒ /vala-report/dang-nhap), không về gốc tên miền.
-  const web = new URL(deps.config.publicWebUrl);
-  const u = new URL(web.pathname.replace(/\/+$/, '') + path, web);
+  // PUBLIC_WEB_URL có thể kèm đường dẫn con (…/vala-report) — nối chuỗi, không dùng new URL(path, base) (bỏ mất đường dẫn con).
+  const u = new URL(`${deps.config.publicWebUrl.replace(/\/+$/, '')}${path.startsWith('/') ? path : `/${path}`}`);
   for (const [k, v] of Object.entries(q)) u.searchParams.set(k, v);
   if (hash) u.hash = new URLSearchParams(hash).toString();
   return reply.redirect(u.toString());

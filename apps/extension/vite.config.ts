@@ -8,7 +8,15 @@ import pkg from './package.json';
  * Quyền đọc cookie KHÔNG cấp sẵn cho tên miền nào: mỗi hệ thống nguồn (và máy chủ Vala) được xin
  * riêng qua hộp thoại của Chrome, người dùng thấy rõ tên miền trước khi đồng ý.
  * Bản dev (--mode development) cấp sẵn localhost để chạy với eGov/eTask giả lập.
+ *
+ * Hai bản, cài song song được (tên khác nhau):
+ *   pnpm build       → dist/      "Vala Reporting"        máy chủ mặc định PROD_SERVER
+ *   pnpm build:dev   → dist-dev/  "Vala Reporting (dev)"  máy chủ mặc định http://localhost:5173
+ *   pnpm package     → cả hai + vala-extension-<phiên bản>.zip và vala-extension-<phiên bản>-dev.zip
+ * Đổi máy chủ mặc định lúc build: VITE_VALA_URL=https://… pnpm build. Người dùng vẫn đổi được trong Tùy chọn.
  */
+const PROD_SERVER = 'https://qtttboard-demo.demozone.vn:5443/vala-report';
+const DEV_SERVER = 'http://localhost:5173';
 function manifest(dev: boolean): Plugin {
   const icons = { 16: 'icons/vala-16.png', 32: 'icons/vala-32.png', 48: 'icons/vala-48.png', 128: 'icons/vala-128.png' };
   const m = {
@@ -16,6 +24,7 @@ function manifest(dev: boolean): Plugin {
     name: dev ? 'Vala Reporting (dev)' : 'Vala Reporting',
     short_name: 'Vala',
     version: pkg.version,
+    ...(dev ? { version_name: `${pkg.version}-dev` } : {}),
     description: 'Gửi phiên đăng nhập eGov, eTask… về Vala Reporting để hệ thống lấy dữ liệu thay bạn theo lịch. Không lưu mật khẩu.',
     permissions: ['cookies', 'storage', 'alarms', 'notifications', 'scripting'],
     host_permissions: dev ? ['http://localhost/*', 'http://127.0.0.1/*'] : [],
@@ -35,6 +44,9 @@ function manifest(dev: boolean): Plugin {
 
 export default defineConfig(({ mode }) => ({
   plugins: [react(), manifest(mode === 'development')],
+  define: {
+    'import.meta.env.VITE_VALA_URL': JSON.stringify(process.env.VITE_VALA_URL ?? (mode === 'development' ? DEV_SERVER : PROD_SERVER)),
+  },
   build: {
     outDir: mode === 'development' ? 'dist-dev' : 'dist',
     emptyOutDir: true,

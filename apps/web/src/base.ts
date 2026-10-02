@@ -1,9 +1,8 @@
 /**
- * Đường dẫn gốc của cổng: '' khi chạy ở gốc tên miền, '/vala-report' khi chạy dưới đường dẫn con
- * (build với WEB_BASE_PATH=/vala-report — xem vite.config.ts). Mọi URL tuyệt đối tới /api hay trang của cổng đi qua đây.
+ * Đường dẫn con khi cổng chạy dưới một thư mục (vd https://qtttboard-demo.demozone.vn:5443/vala-report). Lấy từ `base`
+ * lúc build (VITE_BASE_PATH) — rỗng khi chạy ở gốc. Mọi URL tuyệt đối tới API / trang của cổng đi qua đây.
  */
 export const BASE = import.meta.env.BASE_URL.replace(/\/$/, '');
-
-/** Đường dẫn trình duyệt (có BASE) → đường dẫn trong router (không có BASE). */
-export const stripBase = (path: string): string =>
-  BASE && (path === BASE || path.startsWith(`${BASE}/`)) ? path.slice(BASE.length) || '/' : path;
+/** Đường dẫn trong ứng dụng (bỏ phần đường dẫn con), vd /vala-report/uy-quyen → /uy-quyen. */
+export const appPath = (pathname = window.location.pathname) =>
+  BASE && (pathname === BASE || pathname.startsWith(`${BASE}/`)) ? pathname.slice(BASE.length) || '/' : pathname;

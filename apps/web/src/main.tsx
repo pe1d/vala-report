@@ -6,5 +6,5 @@ import { BASE } from './base';
 import './index.css';
 
 createRoot(document.getElementById('root')!).render(
-  <StrictMode><BrowserRouter basename={BASE || '/'}><App /></BrowserRouter></StrictMode>,
+  <StrictMode><BrowserRouter basename={BASE || undefined}><App /></BrowserRouter></StrictMode>,
 );
