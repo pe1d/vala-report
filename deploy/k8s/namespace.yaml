@@ -32,7 +32,7 @@ spec:
       defaultRequest: { cpu: 50m, memory: 64Mi }
       default: { cpu: "1", memory: 512Mi }
 ---
-# Chặn mọi kết nối VÀO pod của Vala, trừ: pod trong cùng namespace, và cổng web (443) từ bên ngoài.
+# Chặn mọi kết nối VÀO pod của Vala, trừ: pod trong cùng namespace, cổng web (443) từ bên ngoài, Crawlab từ LAN.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -64,3 +64,18 @@ spec:
     - ports:
         - { port: 443, protocol: TCP }
         - { port: 80, protocol: TCP }
+---
+# Giao diện Crawlab (hostPort 10.2.65.146:8080, xem crawlab.yaml): chỉ máy trong mạng nội bộ 10.x của công ty.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-crawlab-lan
+spec:
+  podSelector:
+    matchLabels: { app: crawlab }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - ipBlock: { cidr: 10.0.0.0/8 }
+      ports:
+        - { port: 8080, protocol: TCP }

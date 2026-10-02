@@ -1,5 +1,5 @@
-# Crawlab (chạy spider Python) + MongoDB của nó. Giao diện Crawlab KHÔNG mở ra ngoài — xem bằng
-#   kubectl -n vala-report port-forward svc/crawlab 8080:8080   (trên máy chủ, rồi SSH tunnel nếu cần)
+# Crawlab (chạy spider Python) + MongoDB của nó. Giao diện Crawlab chỉ mở trong mạng nội bộ: hostPort gắn vào IP LAN
+# của máy chủ (http://10.2.65.146:8080) — Internet chỉ vào được cổng 5443 qua Istio nên không tới được cổng này.
 apiVersion: v1
 kind: Service
 metadata:
@@ -79,7 +79,7 @@ spec:
             - { name: https_proxy, value: $(SOURCE_HTTP_PROXY) }
             - { name: NO_PROXY, value: "api,crawlab,crawlab-mongo,localhost,127.0.0.1,.svc,.cluster.local" }
             - { name: no_proxy, value: "api,crawlab,crawlab-mongo,localhost,127.0.0.1,.svc,.cluster.local" }
-          ports: [{ containerPort: 8080 }]
+          ports: [{ containerPort: 8080, hostPort: 8080, hostIP: 10.2.65.146 }]
           resources:
             requests: { cpu: 200m, memory: 512Mi }
             limits: { cpu: "2", memory: 2Gi }

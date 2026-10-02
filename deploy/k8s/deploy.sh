@@ -3,6 +3,11 @@
 #   cd /opt/vala-report && git pull && deploy/k8s/deploy.sh
 # Các bước: Secret từ .env.prod + chứng chỉ → build image (nếu chưa có) → CSDL/Redis/Vault/Crawlab → migration → api,
 # worker, web → kiểm tra https://127.0.0.1:<WEB_PORT>/healthz. Dữ liệu nằm trên ổ local-path — cập nhật không mất dữ liệu.
+# Hai cách mở web ra ngoài (WEB_EXPOSE trong .env.prod):
+#   hostport (mặc định) — pod web giữ cổng 5443 của máy chủ, tự lo HTTPS bằng deploy/certs (web-hostport.yaml).
+#   istio — web sau Istio ingress gateway có sẵn, gateway lo HTTPS (web-istio.yaml); PUBLIC_WEB_URL có đường dẫn con
+#           (vd https://qtttboard-demo.demozone.vn:5443/vala-report) thì web build cho đường dẫn đó. Gắn đường dẫn vào
+#           VirtualService một lần bằng deploy/k8s/istio-route.sh.
 # Chỉ tạo/sửa tài nguyên trong namespace vala-report; không đụng cấu hình k3s hay namespace khác.
 source "$(dirname "$0")/lib.sh"
 cd "$ROOT"
@@ -11,7 +16,13 @@ CERT="$ROOT/deploy/certs/fullchain.pem"; KEY="$ROOT/deploy/certs/privkey.pem"
 WEB_PORT=5443        # trùng hostPort trong app.yaml
 [ -f "$ENV_FILE" ] || { echo "Chưa có .env.prod — chạy: deploy/gen-env.sh https://vala-report.demozone.vn:$WEB_PORT"; exit 1; }
 PUBLIC_WEB_URL="$(grep -E '^PUBLIC_WEB_URL=' "$ENV_FILE" | cut -d= -f2-)"
-if [ ! -s "$CERT" ] || [ ! -s "$KEY" ]; then
+WEB_EXPOSE="$(grep -E '^WEB_EXPOSE=' "$ENV_FILE" | cut -d= -f2- || true)"; WEB_EXPOSE="${WEB_EXPOSE:-hostport}"
+[ -f "$K8S/web-$WEB_EXPOSE.yaml" ] || { echo "WEB_EXPOSE=$WEB_EXPOSE không hợp lệ (hostport | istio)"; exit 1; }
+# Đường dẫn con của PUBLIC_WEB_URL (https://host:port/vala-report ⇒ /vala-report; không có ⇒ /) — web build theo nó.
+export WEB_BASE_PATH="$(echo "$PUBLIC_WEB_URL" | sed -E 's#^[a-z]+://[^/]+##; s#/+$##')"; WEB_BASE_PATH="${WEB_BASE_PATH:-/}"
+if [ "$WEB_EXPOSE" = istio ]; then
+  CERT=/dev/null; KEY=/dev/null       # HTTPS do Istio gateway lo — không cần chứng chỉ riêng
+elif [ ! -s "$CERT" ] || [ ! -s "$KEY" ]; then
   echo "Chưa có chứng chỉ trong deploy/certs/ (fullchain.pem + privkey.pem) — xem deploy/certs/README.txt."
   echo "Tạm dùng chứng chỉ TỰ KÝ? (trình duyệt sẽ cảnh báo, tiện ích có thể không gọi được máy chủ)"
   read -r -p "Gõ 'tu ky' để tạo chứng chỉ tự ký: " ok
@@ -22,9 +33,8 @@ if [ ! -s "$CERT" ] || [ ! -s "$KEY" ]; then
   echo "Đã tạo chứng chỉ tự ký cho $HOST (1 năm)."
 fi
 VER="$(version)"
-# Đường dẫn con của cổng (vd PUBLIC_WEB_URL=https://host:5443/vala-report ⇒ /vala-report/) — build web theo đó.
-WEB_BASE_PATH="$(echo "$PUBLIC_WEB_URL" | sed -E 's#^https?://[^/]+##; s#/+$##')/"
-export WEB_BASE_PATH
+# Image web khác nhau theo đường dẫn con ⇒ thêm vào tên phiên bản (f6b6abc-vala-report), không lẫn với bản ở gốc.
+[ "$WEB_BASE_PATH" = / ] || VER="$VER-$(echo "${WEB_BASE_PATH#/}" | tr -c 'A-Za-z0-9_.\n' '-')"
 
 echo "==> Namespace $NS + cấu hình (Secret vala-env, vala-tls; ConfigMap vala-vault)"
 $KUBECTL apply -f "$K8S/namespace.yaml" -n "$NS" >/dev/null
@@ -33,7 +43,7 @@ ENV_TMP="$(mktemp)"; trap 'rm -f "$ENV_TMP"' EXIT
 grep -E '^[A-Za-z_][A-Za-z0-9_]*=' "$ENV_FILE" > "$ENV_TMP"
 grep -q '^SOURCE_HTTP_PROXY=' "$ENV_TMP" || echo 'SOURCE_HTTP_PROXY=' >> "$ENV_TMP"
 k create secret generic vala-env --from-env-file="$ENV_TMP" --dry-run=client -o yaml | k apply -f - >/dev/null
-k create secret tls vala-tls --cert="$CERT" --key="$KEY" --dry-run=client -o yaml | k apply -f - >/dev/null
+[ "$WEB_EXPOSE" = istio ] || k create secret tls vala-tls --cert="$CERT" --key="$KEY" --dry-run=client -o yaml | k apply -f - >/dev/null
 k create configmap vala-vault --from-file="$ROOT/infra/vault" --dry-run=client -o yaml | k apply -f - >/dev/null
 CONFIG_HASH="$(cat "$ENV_TMP" "$CERT" "$KEY" "$ROOT"/infra/vault/* | sha256sum | cut -c1-16)"
 
@@ -64,18 +74,23 @@ if ! k wait --for=condition=complete job/vala-migrate --timeout=300s >/dev/null 
 fi
 k logs job/vala-migrate --tail=3
 
-echo "==> api, worker, web"
-render "$K8S/app.yaml" | k apply -f - >/dev/null
+echo "==> api, worker, web ($WEB_EXPOSE)"
+render "$K8S/app.yaml" "$K8S/web-$WEB_EXPOSE.yaml" | k apply -f - >/dev/null
 for d in api worker web; do k rollout status "deployment/$d" --timeout=300s >/dev/null; done
 
 echo "==> Kiểm tra"
+if [ "$WEB_EXPOSE" = istio ]; then
+  health() { k exec deploy/web -- wget -q -O /dev/null http://127.0.0.1/healthz; }
+else
+  health() { curl -fsSk "https://127.0.0.1:$WEB_PORT/healthz"; }
+fi
 for _ in $(seq 1 30); do
-  if curl -fsSk "https://127.0.0.1:$WEB_PORT/healthz" >/dev/null 2>&1; then
+  if health >/dev/null 2>&1; then
     echo "OK — phiên bản $VER đang chạy ở $PUBLIC_WEB_URL"
     k get pods -o wide
     exit 0
   fi
   sleep 2
 done
-echo "Không gọi được https://127.0.0.1:$WEB_PORT/healthz — xem: $KUBECTL -n $NS logs deploy/web; $KUBECTL -n $NS logs deploy/api"
+echo "Không gọi được /healthz qua web — xem: $KUBECTL -n $NS logs deploy/web; $KUBECTL -n $NS logs deploy/api"
 exit 1
