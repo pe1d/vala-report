@@ -2,7 +2,7 @@
  * Bộ component cơ sở — Tailwind, luôn có biến thể dark:. Hệ thiết kế (mục 06):
  * một màu nhấn (blue) cho hành động chính; màu trạng thái tách riêng và luôn đi kèm chữ.
  */
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { forwardRef, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, SelectHTMLAttributes } from 'react';
 import { Link, type LinkProps } from 'react-router-dom';
@@ -22,17 +22,42 @@ const BTN: Record<Variant, string> = {
 };
 
 export interface MenuItem { label: string; onClick: () => void; danger?: boolean; disabled?: boolean }
-/** Menu "…" gộp các hành động ít dùng. Bấm ra ngoài để đóng. */
+/**
+ * Menu "…" gộp các hành động ít dùng. Hộp chọn vẽ nổi ra ngoài (portal, position fixed) ⇒ không bị khung cuộn của bảng
+ * cắt mất, không mờ theo dòng đang tắt; mở lên trên khi phía dưới không đủ chỗ. Bấm ra ngoài / Esc / cuộn trang để đóng.
+ */
 export function Menu({ items, label = 'Thêm thao tác', disabled }: { items: MenuItem[]; label?: string; disabled?: boolean }) {
   const [open, setOpen] = useState(false);
+  const btn = useRef<HTMLButtonElement>(null);
+  const box = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
+  useLayoutEffect(() => {
+    if (!open) { setPos(null); return; }
+    const b = btn.current?.getBoundingClientRect();
+    const h = box.current?.offsetHeight ?? 0;
+    const w = box.current?.offsetWidth ?? 160;
+    if (!b) return;
+    const top = b.bottom + 4 + h > window.innerHeight - 8 && b.top - 4 - h > 8 ? b.top - 4 - h : b.bottom + 4;
+    setPos({ left: Math.max(8, Math.min(b.right - w, window.innerWidth - 8 - w)), top });
+  }, [open]);
+  useEffect(() => {
+    if (!open) return;
+    const close = () => setOpen(false);
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') close(); };
+    window.addEventListener('keydown', esc);
+    window.addEventListener('resize', close);
+    window.addEventListener('scroll', close, true);
+    return () => { window.removeEventListener('keydown', esc); window.removeEventListener('resize', close); window.removeEventListener('scroll', close, true); };
+  }, [open]);
   if (!items.length) return null;
   return (
-    <div className="relative">
-      <Button aria-label={label} aria-haspopup="menu" aria-expanded={open} disabled={disabled} onClick={() => setOpen((v) => !v)}>…</Button>
-      {open && (
+    <>
+      <Button ref={btn} aria-label={label} aria-haspopup="menu" aria-expanded={open} disabled={disabled} onClick={() => setOpen((v) => !v)}>…</Button>
+      {open && createPortal(
         <>
-          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} aria-hidden />
-          <div role="menu" className="absolute right-0 z-20 mt-1 min-w-40 overflow-hidden rounded-md border border-slate-200 bg-white py-1 shadow-lg dark:border-slate-700 dark:bg-slate-900">
+          <div className="fixed inset-0 z-[80]" onClick={() => setOpen(false)} aria-hidden />
+          <div ref={box} role="menu" style={{ left: pos?.left ?? 0, top: pos?.top ?? 0, visibility: pos ? 'visible' : 'hidden' }}
+            className="fixed z-[81] min-w-40 overflow-hidden rounded-md border border-slate-200 bg-white py-1 shadow-lg dark:border-slate-700 dark:bg-slate-900">
             {items.map((it) => (
               <button key={it.label} role="menuitem" type="button" disabled={it.disabled}
                 className={cx('block w-full px-3 py-1.5 text-left text-sm transition-colors hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-slate-800',
@@ -42,9 +67,10 @@ export function Menu({ items, label = 'Thêm thao tác', disabled }: { items: Me
               </button>
             ))}
           </div>
-        </>
+        </>,
+        document.body,
       )}
-    </div>
+    </>
   );
 }
 
@@ -99,9 +125,10 @@ export function HelpTip({ title, children, label = 'Hướng dẫn' }: { title?:
   );
 }
 
-export function Button({ variant = 'default', className, ...p }: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: Variant }) {
-  return <button type="button" {...p} className={cx(BTN_BASE, BTN[variant], className)} />;
-}
+export const Button = forwardRef<HTMLButtonElement, ButtonHTMLAttributes<HTMLButtonElement> & { variant?: Variant }>(
+  function Button({ variant = 'default', className, ...p }, ref) {
+    return <button ref={ref} type="button" {...p} className={cx(BTN_BASE, BTN[variant], className)} />;
+  });
 
 export function LinkButton({ variant = 'default', className, ...p }: LinkProps & { variant?: Variant }) {
   return <Link {...p} className={cx(BTN_BASE, BTN[variant], 'no-underline', className)} />;

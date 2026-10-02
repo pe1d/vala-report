@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useId, useRef, useState, type ReactNode } from 'react';
-import { ApiProblem, api, fmtDateTime, type AdminSource, type ReportResult, type StatTile } from '../api';
+import { ApiProblem, PERIOD_LABELS, api, fmtDateTime, type AdminSource, type ReportResult, type StatTile } from '../api';
 import { ChartView } from '../components/Charts';
 import { DataTable } from '../components/DataTable';
 import { StatTiles } from '../components/StatTiles';
@@ -112,9 +112,8 @@ function FiltersHelp() {
 
 const FNS: Array<[Measure['fn'], string]> = [['count', 'Đếm'], ['count_distinct', 'Đếm khác nhau'], ['sum', 'Tổng'], ['avg', 'Trung bình'],
   ['min', 'Nhỏ nhất'], ['max', 'Lớn nhất'], ['ty_le', 'Tỉ lệ % thoả điều kiện']];
-const PERIODS: Array<[string, string]> = [['thang_hien_tai', 'Tháng hiện tại'], ['thang_truoc', 'Tháng trước'], ['quy_hien_tai', 'Quý hiện tại'],
-  ['30_ngay_qua', '30 ngày qua'], ['6_thang_qua', '6 tháng qua'], ['12_thang_qua', '12 tháng qua'],
-  ['7_ngay_toi', '7 ngày tới'], ['14_ngay_toi', '14 ngày tới'], ['30_ngay_toi', '30 ngày tới'], ['tat_ca', 'Toàn bộ thời gian']];
+/** Khoảng mặc định của báo cáo (không có "Tuỳ chọn…" — người xem tự chọn ngày khi xem). */
+const PERIODS = PERIOD_LABELS.filter(([c]) => c !== 'tuy_chon');
 const CHARTS: Array<[ChartKind, string]> = [['bar', 'Cột ngang — so sánh hạng mục'], ['column', 'Cột đứng — theo ngày/tháng'],
   ['line', 'Đường — xu hướng theo thời gian'], ['donut', 'Vành khuyên — phần của tổng (ít nhóm)'], ['heatmap', 'Lịch nhiệt — mật độ theo ngày']];
 const WIDTHS: Array<[1 | 2 | 3, string]> = [[3, 'Cả hàng'], [2, '2/3 hàng'], [1, '1/3 hàng']];
@@ -710,7 +709,7 @@ function TabManager({ tabs, onNote, onChanged }: {
           <thead><tr><Th>Tab</Th><Th>Hệ thống nguồn</Th><Th num>Thứ tự</Th><Th num>Số khối</Th><Th /></tr></thead>
           <tbody>
             {tv.rows.map((t) => (
-              <tr key={t.id} className={t.is_active ? '' : 'opacity-60'}>
+              <tr key={t.id} className={t.is_active ? '' : '[&>td:not(:last-child)]:opacity-60'}>
                 <Td><span className="font-medium">{t.ten}</span>{!t.is_active && <Badge tone="neutral">Đang tắt</Badge>}</Td>
                 <Td>{t.source_ten ?? <Muted>—</Muted>}</Td>
                 <Td num>{t.thu_tu}</Td>
@@ -745,7 +744,7 @@ function ReportGroup({ rows, tabName, onEdit, patch, remove }: {
         <thead><tr><Th>Báo cáo</Th><Th>Phạm vi</Th><Th>Tổng quan</Th><Th num><span title="Số người có lịch tự cập nhật đang bật cho nguồn dữ liệu của báo cáo (dùng chung với báo cáo cùng nguồn)">Người có lịch</span></Th><Th /></tr></thead>
         <tbody>
           {pg.rows.map((r) => (
-            <tr key={r.code} className={r.is_active ? '' : 'opacity-60'}>
+            <tr key={r.code} className={r.is_active ? '' : '[&>td:not(:last-child)]:opacity-60'}>
               <Td>
                 <div className="flex flex-wrap items-center gap-2"><span className="font-medium">{r.ten}</span>
                   {r.kind === 'missing' && <Badge tone="warn">Chưa có định nghĩa</Badge>}

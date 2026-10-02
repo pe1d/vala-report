@@ -1,11 +1,7 @@
-import { api, type JsonProp } from '../api';
+import { api, periodLabel, type JsonProp } from '../api';
 import { useAsync } from '../hooks';
 import { Field, Input, Select } from './ui';
 
-const PERIODS: Record<string, string> = {
-  thang_hien_tai: 'Tháng hiện tại', thang_truoc: 'Tháng trước', quy_hien_tai: 'Quý hiện tại',
-  '30_ngay_qua': '30 ngày qua', '12_thang_qua': '12 tháng qua', tat_ca: 'Toàn bộ thời gian', tuy_chon: 'Tuỳ chọn…',
-};
 /** Form sinh từ param_schema của báo cáo. Chỉ hỗ trợ các kiểu mà danh mục bản 1 dùng. */
 export function ParamForm({ code, props, value, onChange }: {
   code: string; props: Record<string, JsonProp>; value: Record<string, unknown>; onChange: (v: Record<string, unknown>) => void;
@@ -21,7 +17,7 @@ export function ParamForm({ code, props, value, onChange }: {
           return (
             <Field key={k} label={label}>
               <Select value={String(value[k] ?? 'thang_hien_tai')} onChange={(e) => set(k, e.target.value)}>
-                {p.enum?.map((o) => <option key={o} value={o}>{PERIODS[o] ?? o}</option>)}
+                {p.enum?.map((o) => <option key={o} value={o}>{periodLabel(o)}</option>)}
               </Select>
             </Field>
           );

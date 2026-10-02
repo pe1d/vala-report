@@ -68,7 +68,7 @@ export function AdminUsersPage() {
             {tv.rows.map((u) => {
               const self = u.id === me.id;
               return (
-                <tr key={u.id} className={u.is_active ? '' : 'opacity-60'}>
+                <tr key={u.id} className={u.is_active ? '' : '[&>td:not(:last-child)]:opacity-60'}>
                   <Td>
                     <div className="font-medium">{u.ho_ten}{self && <span className="ml-1.5 text-xs font-normal text-slate-500 dark:text-slate-400">(bạn)</span>}</div>
                     <Muted className="text-xs">{u.username ? `@${u.username} · ` : ''}{u.email}</Muted>

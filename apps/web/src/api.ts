@@ -119,6 +119,18 @@ export interface DataSource {
   auto_refresh: boolean;
 }
 export const targetOf = (d: DataSource) => ({ source_system: d.source_system, spider_code: d.spider_code, capability: d.capability });
+/**
+ * Tên hiển thị của khoảng thời gian báo cáo — MỘT nơi duy nhất (khớp PERIODS trong apps/api/src/reports/defined.ts).
+ * Thứ tự = thứ tự hiện trong ô chọn.
+ */
+export const PERIOD_LABELS: Array<[string, string]> = [
+  ['thang_hien_tai', 'Tháng hiện tại'], ['thang_truoc', 'Tháng trước'], ['quy_hien_tai', 'Quý hiện tại'],
+  ['30_ngay_qua', '30 ngày qua'], ['6_thang_qua', '6 tháng qua'], ['12_thang_qua', '12 tháng qua'],
+  ['7_ngay_toi', '7 ngày tới'], ['14_ngay_toi', '14 ngày tới'], ['30_ngay_toi', '30 ngày tới'],
+  ['tat_ca', 'Toàn bộ thời gian'], ['tuy_chon', 'Tuỳ chọn…'],
+];
+export const periodLabel = (code: string) => PERIOD_LABELS.find(([c]) => c === code)?.[1] ?? code;
+
 export type WidgetStatus = 'ok' | 'trong' | 'chua_co_du_lieu' | 'can_ket_noi' | 'het_han' | 'loi';
 /** Một ô trên Tổng quan: báo cáo + tình trạng nguồn dữ liệu + số liệu tóm tắt. */
 export interface DashboardWidget {
