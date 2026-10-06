@@ -42,6 +42,24 @@ describe('SsoClient.userinfo', () => {
   it('userinfo JWT cấp cho client khác, không có id_token ⇒ từ chối', async () => {
     await expect(client(200, jwt({ sub: 'u1', aud: 'client-khac' }), 'application/jwt').userinfo('at')).rejects.toThrow();
   });
+  it('id_token ghi iss có :443 (WSO2) ⇒ vẫn lấy được email', async () => {
+    const id443 = jwt({ sub: 'u1', iss: 'https://iam.bkav.com:443/oauth2/token', aud: CID, exp, email: 'dieptx@bkav.com' });
+    expect((await client(200, jwt({ sub: 'u1' }), 'application/jwt').userinfo('at', id443)).email).toBe('dieptx@bkav.com');
+  });
+  it('email chỉ có trong access token (JWT của WSO2) ⇒ vẫn lấy được', async () => {
+    const at = jwt({ sub: 'u1', iss: ISS, aud: CID, exp, email: 'tu-access-token@bkav.com' });
+    expect((await client(200, jwt({ sub: 'u1' }), 'application/jwt').userinfo(at)).email).toBe('tu-access-token@bkav.com');
+  });
+  it('access token của người khác ⇒ từ chối', async () => {
+    const at = jwt({ sub: 'u9', iss: ISS, aud: CID, exp, email: 'x@bkav.com' });
+    await expect(client(200, jwt({ sub: 'u1' }), 'application/jwt').userinfo(at)).rejects.toThrow();
+  });
+  it('báo nguồn nào dùng được / bị loại vì sao (không kèm giá trị)', async () => {
+    let diag: Record<string, string> = {};
+    const badId = jwt({ sub: 'u1', iss: ISS, aud: 'khac', exp, email: 'x@bkav.com' });
+    await client(200, jwt({ sub: 'u1', email: 'a@bkav.com' }), 'application/jwt').userinfo('khong-phai-jwt', badId, (d) => { diag = d; });
+    expect(diag).toMatchObject({ id_token: 'loại: aud', userinfo: 'jwt', access_token: 'không phải JWT' });
+  });
   it('id_token cấp cho client khác ⇒ không dùng', async () => {
     const bad = jwt({ sub: 'u1', iss: ISS, aud: 'client-khac', exp });
     await expect(client(401, '', 'text/plain').userinfo('at', bad)).rejects.toThrow();

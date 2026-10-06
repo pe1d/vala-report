@@ -71,7 +71,8 @@ async function handleLogin(deps: ApiDeps, req: Parameters<typeof audit>[1], repl
   let who: SsoUser;
   try {
     const tokens = await deps.sso.exchangeCode(code, callbackUrl(deps), verifier);
-    who = await deps.sso.userinfo(tokens.access_token, tokens.id_token);
+    // Tình trạng từng nguồn (access token / id_token / userinfo): dùng được, có những TRƯỜNG nào, hay bị loại vì sao.
+    who = await deps.sso.userinfo(tokens.access_token, tokens.id_token, (d) => req.log?.info({ nguon: d }, 'SSO: nguồn thông tin người dùng'));
     // Chỉ ghi TÊN các claim (không giá trị) — để biết SSO có trả email / tên đăng nhập không khi ghép tài khoản lỗi.
     req.log?.info({ claims: Object.keys(who).sort() }, 'SSO trả thông tin người dùng');
   } catch (e) {

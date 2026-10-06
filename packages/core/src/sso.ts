@@ -15,7 +15,7 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { envBool } from './env.js';
 import { Problem, L } from './errors.js';
-import { checkedClaims, decodeJwtPayload, looksLikeJwt, type Claims } from './jwt-claims.js';
+import { claimsCheck, decodeJwtPayload, looksLikeJwt, type Claims } from './jwt-claims.js';
 import type { FetchLike } from './adapter/http.js';
 
 export interface SsoConfig {
@@ -202,17 +202,27 @@ export class SsoClient {
   }
 
   /**
-   * Thông tin người dùng = claim của id_token (nếu có, đã kiểm iss/aud/hạn) gộp với userinfo (đè lên). userinfo có thể là
-   * JSON hoặc JWT (Bkav SSO/WSO2 trả JWT) — JWT thì đọc phần nội dung (jwt-claims.ts). userinfo lỗi mà id_token đủ ⇒ vẫn
-   * dùng id_token. Hai nguồn khác sub (khác người) ⇒ từ chối.
+   * Thông tin người dùng gộp từ ba nguồn SSO trả, ưu tiên tăng dần: access token (nếu là JWT — WSO2) < id_token < userinfo
+   * (JSON hoặc JWT — Bkav SSO trả JWT). Mỗi JWT được kiểm iss/aud/hạn (jwt-claims.ts). Các nguồn phải cùng sub (cùng người),
+   * khác ⇒ từ chối. `diag` nhận tình trạng từng nguồn (dùng/loại vì sao — KHÔNG kèm giá trị) để ghi log chẩn đoán.
    */
-  async userinfo(accessToken: string, idToken?: string): Promise<SsoUser> {
+  async userinfo(accessToken: string, idToken?: string, diag?: (d: Record<string, string>) => void): Promise<SsoUser> {
     await this.discover();
     const check = { issuer: this.cfg.issuer, clientId: this.cfg.clientId };
-    const fromId = idToken ? (() => { const c = decodeJwtPayload(idToken); return c && checkedClaims(c, { ...check, requireAud: true }); })() : null;
+    const d: Record<string, string> = {};
+    const fromJwt = (name: string, token: string | undefined, requireAud: boolean): Claims | null => {
+      if (!token) { d[name] = 'không có'; return null; }
+      const c = decodeJwtPayload(token);
+      if (!c) { d[name] = 'không phải JWT'; return null; }
+      const r = claimsCheck(c, { ...check, requireAud });
+      if ('reason' in r) { d[name] = `loại: ${r.reason}`; return null; }
+      d[name] = `dùng (${Object.keys(r.ok).filter((k) => !['iss', 'aud', 'exp', 'iat', 'nbf', 'jti', 'azp', 'at_hash', 'c_hash', 'nonce', 'auth_time', 'amr', 'acr', 'sid', 'client_id', 'scope', 'token_type', 'aut', 'binding_type', 'binding_ref', 'isk'].includes(k)).sort().join(',')})`;
+      return r.ok;
+    };
+    const fromAccess = fromJwt('access_token', accessToken, false);
+    const fromId = fromJwt('id_token', idToken, true);
 
     let fromInfo: Claims | null = null;
-    let infoError = '';
     try {
       const res = await this.fetchImpl(this.cfg.userinfoUrl, {
         method: 'GET',
@@ -220,26 +230,27 @@ export class SsoClient {
         signal: AbortSignal.timeout(15_000),
       });
       const text = await res.text();
-      if (!res.ok) infoError = `HTTP ${res.status}`;
+      if (!res.ok) d.userinfo = `HTTP ${res.status}`;
       else if (/jwt/i.test(res.headers.get('content-type') ?? '') || looksLikeJwt(text)) {
         const c = decodeJwtPayload(text);
-        fromInfo = c && checkedClaims(c, { ...check, requireAud: false });
-        if (!fromInfo) infoError = 'userinfo JWT không đọc được / không dành cho client này';
+        const r = c ? claimsCheck(c, { ...check, requireAud: false }) : null;
+        if (r && 'ok' in r) { fromInfo = r.ok; d.userinfo = 'jwt'; } else d.userinfo = r ? `jwt loại: ${r.reason}` : 'jwt không đọc được';
       } else {
-        try { fromInfo = JSON.parse(text) as Claims; } catch { infoError = 'userinfo không phải JSON/JWT'; }
+        try { fromInfo = JSON.parse(text) as Claims; d.userinfo = 'json'; } catch { d.userinfo = 'không phải JSON/JWT'; }
       }
     } catch (e) {
-      infoError = (e as Error).name;
+      d.userinfo = `lỗi ${(e as Error).name}`;
     }
+    diag?.(d);
 
-    if (fromId && fromInfo && fromInfo.sub && fromInfo.sub !== fromId.sub) {
+    const subs = [fromAccess, fromId, fromInfo].map((c) => c?.sub).filter((x): x is string => typeof x === 'string' && !!x);
+    if (new Set(subs).size > 1) {
       throw new Problem('unauthenticated', L('SSO trả thông tin của hai người khác nhau', 'SSO returned information for two different users'));
     }
-    const u = { ...(fromId ?? {}), ...(fromInfo ?? {}) } as SsoUser;
+    const u = { ...(fromAccess ?? {}), ...(fromId ?? {}), ...(fromInfo ?? {}) } as SsoUser;
     if (!u.sub || typeof u.sub !== 'string') {
-      throw new Problem('unauthenticated', L('SSO không xác nhận được người dùng', 'SSO could not verify the user'),
-        L(`userinfo: ${infoError || 'thiếu sub'}; id_token: ${idToken ? (fromId ? 'thiếu sub' : 'không hợp lệ') : 'không có'}`,
-          `userinfo: ${infoError || 'missing sub'}; id_token: ${idToken ? (fromId ? 'missing sub' : 'invalid') : 'none'}`));
+      const s = Object.entries(d).map(([k, v]) => `${k}: ${v}`).join('; ');
+      throw new Problem('unauthenticated', L('SSO không xác nhận được người dùng', 'SSO could not verify the user'), L(s, s));
     }
     return u;
   }

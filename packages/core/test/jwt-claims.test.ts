@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { checkedClaims, decodeJwtPayload, looksLikeJwt } from '../src/jwt-claims';
+import { checkedClaims, claimsCheck, decodeJwtPayload, looksLikeJwt } from '../src/jwt-claims';
 
 const b64 = (o: unknown) => Buffer.from(JSON.stringify(o)).toString('base64url');
 const jwt = (payload: unknown) => `${b64({ alg: 'RS256', typ: 'JWT' })}.${b64(payload)}.chu-ky`;
@@ -32,6 +32,14 @@ describe('checkedClaims (id_token / userinfo dạng JWT)', () => {
   });
   it('cấp cho client khác ⇒ từ chối', () => {
     expect(checkedClaims({ ...ok, aud: 'client-khac' }, { issuer: ISS, clientId: CID, now: NOW })).toBeNull();
+  });
+  it('iss khác cách viết cổng mặc định (:443) hoặc dấu / cuối ⇒ vẫn là cùng SSO', () => {
+    expect(checkedClaims({ ...ok, iss: 'https://iam.bkav.com:443/oauth2/token' }, { issuer: ISS, clientId: CID, now: NOW })).not.toBeNull();
+    expect(checkedClaims({ ...ok, iss: 'https://iam.bkav.com/oauth2/token/' }, { issuer: ISS, clientId: CID, now: NOW })).not.toBeNull();
+  });
+  it('lý do từ chối (để ghi log)', () => {
+    expect(claimsCheck({ ...ok, aud: 'khac' }, { issuer: ISS, clientId: CID, now: NOW })).toEqual({ reason: 'aud' });
+    expect(claimsCheck({ ...ok, iss: 'https://x.example' }, { issuer: ISS, clientId: CID, now: NOW })).toEqual({ reason: 'iss' });
   });
   it('SSO khác phát ⇒ từ chối', () => {
     expect(checkedClaims({ ...ok, iss: 'https://sso-gia.example' }, { issuer: ISS, clientId: CID, now: NOW })).toBeNull();

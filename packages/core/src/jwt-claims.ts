@@ -27,19 +27,35 @@ export function decodeJwtPayload(jwt: string): Claims | null {
   }
 }
 
+/** So nơi phát token không phân biệt cổng mặc định (:443/:80) và dấu / cuối — WSO2 hay ghi https://host:443/oauth2/token. */
+function sameIssuer(a: string, b: string): boolean {
+  const norm = (x: string) => { try { const u = new URL(x); return `${u.origin}${u.pathname.replace(/\/+$/, '')}`; } catch { return x.replace(/\/+$/, ''); } };
+  return norm(a) === norm(b);
+}
+
+export type ClaimsCheck = { ok: Claims } | { reason: 'sub' | 'iss' | 'aud' | 'exp' };
+
 /**
- * Claim dùng được, hoặc null nếu: thiếu sub; iss khác SSO đã cấu hình; aud không gồm client này (bắt buộc có aud khi
+ * Claim dùng được, hoặc lý do loại: thiếu sub; iss khác SSO đã cấu hình; aud không gồm client này (bắt buộc có aud khi
  * requireAud — id_token); đã hết hạn (quá SKEW_SECONDS).
  */
-export function checkedClaims(
+export function claimsCheck(
   c: Claims,
   o: { issuer?: string; clientId: string; now?: number; requireAud?: boolean },
-): Claims | null {
-  if (typeof c.sub !== 'string' || !c.sub) return null;
+): ClaimsCheck {
+  if (typeof c.sub !== 'string' || !c.sub) return { reason: 'sub' };
   const now = o.now ?? Math.floor(Date.now() / 1000);
-  if (o.issuer && typeof c.iss === 'string' && c.iss.replace(/\/$/, '') !== o.issuer.replace(/\/$/, '')) return null;
+  if (o.issuer && typeof c.iss === 'string' && !sameIssuer(c.iss, o.issuer)) return { reason: 'iss' };
   const aud = typeof c.aud === 'string' ? [c.aud] : Array.isArray(c.aud) ? c.aud.filter((a): a is string => typeof a === 'string') : null;
-  if (aud ? !aud.includes(o.clientId) : o.requireAud) return null;
-  if (typeof c.exp === 'number' && c.exp + SKEW_SECONDS < now) return null;
-  return c;
+  // azp (authorized party) = client này cũng chấp nhận — access token JWT của WSO2 đôi khi để aud là tài nguyên.
+  const forUs = (aud?.includes(o.clientId) ?? false) || c.azp === o.clientId;
+  if (aud || c.azp ? !forUs : o.requireAud) return { reason: 'aud' };
+  if (typeof c.exp === 'number' && c.exp + SKEW_SECONDS < now) return { reason: 'exp' };
+  return { ok: c };
+}
+
+/** Như claimsCheck nhưng chỉ trả claim hoặc null. */
+export function checkedClaims(c: Claims, o: Parameters<typeof claimsCheck>[1]): Claims | null {
+  const r = claimsCheck(c, o);
+  return 'ok' in r ? r.ok : null;
 }
