@@ -51,7 +51,7 @@ let portalWindow: BrowserWindow | null = null;
 
 function appWindow(url: string, onClosed: () => void): BrowserWindow {
   const win = new BrowserWindow({
-    width: 1280, height: 860, icon: ICON, autoHideMenuBar: true, show: false,
+    width: 1280, height: 860, icon: ICON, show: false,
     webPreferences: { preload: PORTAL_PRELOAD },
   });
   win.once('ready-to-show', () => win.show());
@@ -113,7 +113,7 @@ async function nudge(src: SourceFull) {
 export function openSourceWindow(src: SourceFull): BrowserWindow {
   const open = sourceWindows.get(src.code);
   if (open && !open.isDestroyed()) { reveal(open); return open; }
-  const win = new BrowserWindow({ width: 1280, height: 860, title: src.ten, icon: ICON, autoHideMenuBar: true });
+  const win = new BrowserWindow({ width: 1280, height: 860, title: src.ten, icon: ICON });
   sourceWindows.set(src.code, win);
   let since: number | null = null;
   const leave = () => { if (since !== null && Date.now() - since >= MIN_STAY_MS) void nudge(src); since = null; };
@@ -125,7 +125,7 @@ export function openSourceWindow(src: SourceFull): BrowserWindow {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Luồng kết nối (bấm từ cổng, tray hoặc thông báo hết phiên)
+// Luồng kết nối (bấm từ cổng, menu hoặc thông báo hết phiên)
 // ---------------------------------------------------------------------------------------------
 type ConnectEvent =
   | { type: 'connected'; code: string; ten: string }

@@ -74,6 +74,7 @@ export function openSettingsWindow(hooks: SettingsHooks): void {
     webPreferences: { preload: join(__dirname, 'settings-preload.js') },
   });
   win = w;
+  w.setMenu(null);   // hộp thoại: không cần thanh menu của ứng dụng
   const own = (e: IpcMainInvokeEvent) => { if (e.sender !== w.webContents) throw new Error('forbidden'); };
 
   ipcMain.handle('vala:settings-state', (e) => { own(e); return state(); });

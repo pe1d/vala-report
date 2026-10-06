@@ -7,7 +7,7 @@ import { app } from 'electron';
 import { closeSettingsWindow, openSettingsWindow } from './settings-window';
 import { getSettings } from './settings';
 import { syncAll } from './sync';
-import { createTray, refreshTray } from './tray';
+import { createMenus, refreshMenus } from './menu';
 import { registerBridge, showMain, showPortal, watchCookies } from './windows';
 
 const SYNC_INTERVAL_MS = 15 * 60_000;
@@ -17,16 +17,17 @@ const HIDDEN = process.argv.includes('--hidden');
 let syncTimer: ReturnType<typeof setInterval> | null = null;
 
 function startSync() {
-  void syncAll().then(refreshTray, refreshTray);
+  void syncAll().then(refreshMenus, refreshMenus);
   if (!syncTimer) syncTimer = setInterval(() => void syncAll(), SYNC_INTERVAL_MS);
 }
 
 function openSettings() {
   openSettingsWindow({
-    onLogin: () => { refreshTray(); startSync(); closeSettingsWindow(); showMain(); },
-    onLogout: refreshTray,
+    // Đăng nhập xong ⇒ mở luôn cổng báo cáo (mục đích của việc đăng nhập), trang chính vẫn mở phía sau.
+    onLogin: () => { refreshMenus(); startSync(); closeSettingsWindow(); showMain(); showPortal(); },
+    onLogout: refreshMenus,
     onHomeChanged: showMain,
-    onLangChanged: refreshTray,
+    onLangChanged: refreshMenus,
     openPortal: showPortal,
   });
 }
@@ -47,7 +48,7 @@ if (!app.requestSingleInstanceLock()) {
     if (app.isPackaged) app.setLoginItemSettings({ openAtLogin: true, args: ['--hidden'] });
     registerBridge();
     watchCookies();
-    createTray({ showMain, showPortal, openSettings });
+    createMenus({ showMain, showPortal, openSettings });
 
     if (getSettings().deviceToken) {
       startSync();
