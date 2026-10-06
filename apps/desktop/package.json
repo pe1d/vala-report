@@ -1,0 +1,22 @@
+{
+  "name": "@vala/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Vala Desktop — giữ phiên các hệ thống nguồn và mở cổng Vala như một ứng dụng",
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "tsc -p . && tailwindcss -i resources/login.src.css -o dist/renderer/login.css --minify",
+    "dev": "pnpm build && electron .",
+    "package": "pnpm build && electron-builder --win",
+    "typecheck": "tsc -p . --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "electron": "^32.3.3",
+    "electron-builder": "^25.1.8",
+    "tailwindcss": "~3.4.19",
+    "typescript": "~5.9.3",
+    "vitest": "^2.1.9"
+  }
+}
