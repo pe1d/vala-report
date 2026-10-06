@@ -8,6 +8,7 @@
  */
 import { app, Notification } from 'electron';
 import { autoUpdater } from 'electron-updater';
+import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { messages } from './i18n';
 import { getSettings, updateFeedUrl } from './settings';
@@ -17,11 +18,13 @@ const M = messages({
   readyBody: 'Bấm "Cập nhật" trên thanh tab để cài ngay, hoặc bản mới tự cài khi bạn thoát ứng dụng.',
   latest: (v: string) => `Bạn đang dùng bản mới nhất (${v}).`,
   checkFailed: 'Không kiểm tra được bản cập nhật',
+  notInstalled: 'Bản này không tự cập nhật được — cài Vala Desktop bằng bộ cài để nhận cập nhật tự động.',
 }, {
   readyTitle: (v: string) => `Vala Desktop ${v} is available`,
   readyBody: 'Click "Update" on the tab bar to install now, or it installs automatically when you quit.',
   latest: (v: string) => `You are on the latest version (${v}).`,
   checkFailed: 'Could not check for updates',
+  notInstalled: 'This copy cannot update itself — install Vala Desktop with the installer to get automatic updates.',
 });
 
 const CHECK_EVERY_MS = 4 * 3600_000;
@@ -34,8 +37,12 @@ let manual = false;
 /** Bản mới đã tải xong, chờ cài (null nếu chưa có). */
 export const pendingUpdate = (): { version: string } | null => ready;
 
-/** Có tự cập nhật được không (bản cài đặt; VALA_UPDATE_DEV=1 để thử ở bản chạy từ mã nguồn). */
-export const canUpdate = (): boolean => app.isPackaged || !!process.env.VALA_UPDATE_DEV;
+/**
+ * Có tự cập nhật được không: bản CÀI ĐẶT (có resources/app-update.yml do electron-builder sinh cho NSIS — bản zip không có),
+ * hoặc VALA_UPDATE_DEV=1 để thử ở bản chạy từ mã nguồn.
+ */
+export const canUpdate = (): boolean =>
+  app.isPackaged ? existsSync(join(process.resourcesPath, 'app-update.yml')) : !!process.env.VALA_UPDATE_DEV;
 
 function notify(title: string, body = '') {
   if (Notification.isSupported()) new Notification({ title, body, icon: ICON }).show();
@@ -76,7 +83,7 @@ export function initUpdater(onReady: () => void): void {
 
 /** Menu "Kiểm tra cập nhật". */
 export function checkNow(): void {
-  if (!canUpdate()) { notify(M[getSettings().lang].latest(app.getVersion())); return; }
+  if (!canUpdate()) { notify(M[getSettings().lang].notInstalled); return; }
   manual = true;
   check();
 }
