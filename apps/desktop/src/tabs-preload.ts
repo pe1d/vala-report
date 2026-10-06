@@ -7,5 +7,6 @@ contextBridge.exposeInMainWorld('valaTabs', {
   close: (key: string) => ipcRenderer.invoke('tabs:close', key),
   menu: (x: number, y: number) => ipcRenderer.invoke('tabs:menu', { x, y }),
   setLang: (lang: string) => ipcRenderer.invoke('tabs:lang', lang),
+  resized: () => ipcRenderer.send('tabs:resized'),
   onState: (cb: (state: unknown) => void) => { ipcRenderer.on('tabs:state', (_e, s) => cb(s)); },
 });

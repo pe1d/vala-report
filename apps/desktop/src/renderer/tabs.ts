@@ -26,6 +26,7 @@ interface ValaTabsApi {
   close(key: string): Promise<void>;
   menu(x: number, y: number): Promise<void>;
   setLang(lang: string): Promise<void>;
+  resized(): void;
   onState(cb: (s: TabsState) => void): void;
 }
 
@@ -171,6 +172,8 @@ interface ValaTabsApi {
   }
 
   api.onState(render);
+  // Trang thanh tab phủ cả cửa sổ: khung nhìn đổi cỡ = cửa sổ đổi cỡ ⇒ báo tiến trình chính canh lại nội dung tab.
+  window.addEventListener('resize', () => api.resized());
   applyTheme();
   void api.ready();
 })();

@@ -111,7 +111,10 @@ function ensureWindow(): BrowserWindow {
   // Đóng cửa sổ chỉ ẩn xuống khay hệ thống (các tab, phiên vẫn giữ); "Thoát" mới đóng thật.
   w.on('close', (e) => { if (!quitting) { e.preventDefault(); w.hide(); } });
   w.on('closed', () => { win = null; tabs.clear(); order = []; active = null; });
-  for (const ev of ['resize', 'maximize', 'unmaximize', 'enter-full-screen', 'leave-full-screen'] as const) w.on(ev as 'resize', layout);
+  // Trên Linux, sự kiện phóng to/đổi cỡ đến TRƯỚC khi cửa sổ đổi kích thước thật ⇒ canh ngay và canh lại sau một nhịp.
+  // Tín hiệu chính xác nhất là trang thanh tab báo khung nhìn đổi cỡ ('tabs:resized').
+  const relayout = () => { layout(); setTimeout(layout, 100); };
+  for (const ev of ['resize', 'maximize', 'unmaximize', 'restore', 'enter-full-screen', 'leave-full-screen'] as const) w.on(ev as 'resize', relayout);
   w.webContents.on('before-input-event', (e, input) => { if (shortcut(input)) e.preventDefault(); });
   void w.loadFile(join(__dirname, '../resources/tabs.html'));
   syncPinned();
@@ -314,6 +317,7 @@ function registerIpc(): void {
     own(e);
     hooks.menu().popup({ window: win!, x: Math.round(Number(pos?.x) || 0), y: Math.round(Number(pos?.y) || 0) });
   });
+  ipcMain.on('tabs:resized', (e) => { if (win && e.sender === win.webContents) layout(); });
   ipcMain.handle('tabs:lang', (e, l: unknown) => { own(e); setSettings({ lang: normLang(l) }); hooks.onLangChanged(); });
 }
 
