@@ -9,14 +9,34 @@ import { app } from 'electron';
 import { normLang, type Lang } from './i18n';
 
 export interface Settings {
+  /** Trang hiển thị trong cửa sổ chính — mỗi đơn vị một trang riêng (vd https://vala.bkav.com/). */
+  homeUrl: string;
+  /** Máy chủ Vala Reporting: đăng nhập thiết bị, gửi phiên các hệ thống nguồn (/api/v1/ext/*). */
   serverUrl: string;
   deviceToken: string | null;
   user: { ho_ten: string; email: string } | null;
   lang: Lang;
 }
 
-/** Máy chủ gợi ý lần đầu (đặt lúc build: VALA_URL=… pnpm build). Người dùng sửa được ở màn hình đăng nhập. */
-export const DEFAULT_SERVER = process.env.VALA_URL ?? 'https://qtttboard-demo.demozone.vn:5443/vala-report';
+/**
+ * Giá trị mặc định theo nơi triển khai, đặt lúc build (VALA_HOME_URL=… VALA_URL=… pnpm build, xem scripts/write-defaults.cjs).
+ * Người dùng sửa được trong cửa sổ Cài đặt.
+ */
+const BUILT: { homeUrl?: string; serverUrl?: string } = (() => { try { return require('./defaults.json'); } catch { return {}; } })();
+export const DEFAULT_HOME = BUILT.homeUrl || 'https://vala.bkav.com/';
+export const DEFAULT_SERVER = BUILT.serverUrl || 'https://qtttboard-demo.demozone.vn:5443/vala-report';
+
+/** Chuẩn hoá trang chính: chỉ https (trừ localhost cho dev), giữ nguyên đường dẫn/query. Trả null nếu không hợp lệ. */
+export function normalizeHome(raw: string): string | null {
+  try {
+    const u = new URL(raw.trim());
+    const local = u.hostname === 'localhost' || u.hostname === '127.0.0.1';
+    if (u.protocol !== 'https:' && !(local && u.protocol === 'http:')) return null;
+    return u.toString();
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Chuẩn hoá địa chỉ máy chủ — cùng quy tắc với tiện ích (apps/extension/src/shared.ts normalizeServer): chỉ https,
@@ -34,7 +54,7 @@ export function normalizeServer(raw: string): string | null {
 }
 
 const file = () => join(app.getPath('userData'), 'settings.json');
-const DEFAULTS: Settings = { serverUrl: '', deviceToken: null, user: null, lang: 'vi' };
+const DEFAULTS: Settings = { homeUrl: DEFAULT_HOME, serverUrl: '', deviceToken: null, user: null, lang: 'vi' };
 
 export function getSettings(): Settings {
   try {

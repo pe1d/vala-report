@@ -1,5 +1,18 @@
 import { describe, expect, it } from 'vitest';
-import { normalizeServer } from '../src/settings';
+import { normalizeHome, normalizeServer } from '../src/settings';
+
+describe('normalizeHome', () => {
+  it('giữ nguyên đường dẫn và query của trang chính', () => {
+    expect(normalizeHome(' https://vala.bkav.com/ ')).toBe('https://vala.bkav.com/');
+    expect(normalizeHome('https://vala.donvi.gov.vn/home?tab=1')).toBe('https://vala.donvi.gov.vn/home?tab=1');
+  });
+  it('chỉ nhận https (trừ localhost)', () => {
+    expect(normalizeHome('http://vala.bkav.com/')).toBeNull();
+    expect(normalizeHome('http://localhost:8080/')).toBe('http://localhost:8080/');
+    expect(normalizeHome('file:///etc/passwd')).toBeNull();
+    expect(normalizeHome('vala.bkav.com')).toBeNull();
+  });
+});
 
 describe('normalizeServer', () => {
   it('giữ đường dẫn con, bỏ dấu / cuối', () => {
