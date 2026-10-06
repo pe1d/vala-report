@@ -5,6 +5,7 @@ import { startLogin } from '../reauth';
 import { ErrorBox, Loading } from '../components/States';
 import { Banner, Button, Field, Input, LangToggle, ThemeToggle } from '../components/ui';
 import { BrandMark, useBranding } from '../branding';
+import { BASE } from '../base';
 import { messages, useT } from '../i18n';
 
 /**
@@ -25,6 +26,7 @@ const M = messages({
   ssoFailed: (sso: string) => `Đăng nhập ${sso} không thành công.`,
   defaultTagline: 'Cổng báo cáo theo lịch từ các hệ thống nguồn của đơn vị.',
   badCredentials: 'Sai tài khoản hoặc mật khẩu.',
+  downloadDesktop: 'Tải ứng dụng Vala Desktop',
   account: 'Tài khoản', usernamePh: 'Tên đăng nhập', password: 'Mật khẩu',
   signingIn: 'Đang đăng nhập…', signIn: 'Đăng nhập',
   orSso: (sso: string) => `Hoặc đăng nhập bằng ${sso}`,
@@ -41,6 +43,7 @@ const M = messages({
   ssoFailed: (sso: string) => `${sso} sign-in failed.`,
   defaultTagline: "Scheduled reports from your organization's source systems.",
   badCredentials: 'Incorrect username or password.',
+  downloadDesktop: 'Download the Vala Desktop app',
   account: 'Username', usernamePh: 'Username', password: 'Password',
   signingIn: 'Signing in…', signIn: 'Sign in',
   orSso: (sso: string) => `Or sign in with ${sso}`,
@@ -113,6 +116,10 @@ export function LoginPage({ onLogin }: { onLogin: (token: string) => void }) {
           </button>
         </div>
       )}
+
+      <div className="mt-6 text-center">
+        <a href={`${BASE}/desktop`} className="text-sm text-slate-600 underline-offset-2 hover:underline dark:text-slate-300">{t.downloadDesktop}</a>
+      </div>
     </div>
   );
 }

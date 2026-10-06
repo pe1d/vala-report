@@ -4,7 +4,7 @@
  */
 import { forwardRef, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, SelectHTMLAttributes } from 'react';
+import type { AnchorHTMLAttributes, ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, SelectHTMLAttributes } from 'react';
 import { Link, type LinkProps } from 'react-router-dom';
 import { useTheme, type ThemeMode } from '../theme';
 import { LANGS, messages, setLang, useLang, useT } from '../i18n';
@@ -147,6 +147,11 @@ export const Button = forwardRef<HTMLButtonElement, ButtonHTMLAttributes<HTMLBut
 
 export function LinkButton({ variant = 'default', className, ...p }: LinkProps & { variant?: Variant }) {
   return <Link {...p} className={cx(BTN_BASE, BTN[variant], 'no-underline', className)} />;
+}
+
+/** Nút dạng thẻ <a> thường (tải file, liên kết ra ngoài ứng dụng) — cùng kiểu với Button. */
+export function AnchorButton({ variant = 'default', className, ...p }: AnchorHTMLAttributes<HTMLAnchorElement> & { variant?: Variant }) {
+  return <a {...p} className={cx(BTN_BASE, BTN[variant], 'no-underline', className)} />;
 }
 
 export function TextLink({ className, ...p }: LinkProps) {

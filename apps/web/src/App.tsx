@@ -20,6 +20,7 @@ import { AdminReportsPage } from './pages/AdminReports';
 import { AdminUsersPage } from './pages/AdminUsers';
 import { AdminSettingsPage } from './pages/AdminSettings';
 import { DashboardPage } from './pages/Dashboard';
+import { DesktopDownloadPage } from './pages/DesktopDownload';
 
 const MeContext = createContext<Me | null>(null);
 export const useMe = () => useContext(MeContext)!;
@@ -33,6 +34,8 @@ export function App() {
     window.addEventListener('vala:unauthorized', onUnauthorized);
     return () => window.removeEventListener('vala:unauthorized', onUnauthorized);
   }, []);
+  // Trang tải Vala Desktop: công khai, không cần đăng nhập (người cài lần đầu chưa có tài khoản trên máy).
+  if (location.pathname === '/desktop' || location.pathname === '/desktop/') return <DesktopDownloadPage />;
   if (location.pathname === '/dang-nhap/xong') return <LoginDone onLogin={(t) => { auth.set(t); setToken(t); }} />;
   if (!token) return <LoginPage onLogin={(t) => { auth.set(t); setToken(t); }} />;
   return <Authed onLogout={() => { auth.set(null); setToken(null); }} />;

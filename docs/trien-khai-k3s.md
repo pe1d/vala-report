@@ -143,6 +143,9 @@ NSIS, Ubuntu .deb), bản zip thì không.
 | Build (trên máy dev Linux) | `apps/desktop/scripts/package-win.sh` (Docker có wine) | `pnpm --filter @vala/desktop package:linux` |
 | File trong `apps/desktop/release/` | `vala-desktop-<v>-win-x64.exe`, `.exe.blockmap`, `latest.yml` | `vala-desktop-<v>-linux-amd64.deb`, `latest-linux.yml` |
 | Liên kết tải lần đầu | `{PUBLIC_WEB_URL}/desktop/vala-desktop-setup.exe` | `{PUBLIC_WEB_URL}/desktop/vala-desktop.deb` |
+
+Gửi người dùng **trang tải `{PUBLIC_WEB_URL}/desktop`** (không cần đăng nhập; có cả liên kết ở trang đăng nhập cổng): trang tự
+nhận ra Windows / Ubuntu, hiện phiên bản mới nhất (đọc latest*.yml) và hướng dẫn cài.
 | Cài | chạy file, cảnh báo "Windows protected your PC" ⇒ More info → Run anyway (chưa ký số) | `sudo apt install ./vala-desktop.deb` (cần quyền quản trị) |
 
 Gói .deb kèm hồ sơ AppArmor `/etc/apparmor.d/vala-desktop` (như Ubuntu cấp cho chrome / code): Ubuntu 24.04 chặn user
