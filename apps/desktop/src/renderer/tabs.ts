@@ -58,6 +58,10 @@ interface ValaTabsApi {
   const separator = document.createElement('span');
   separator.className = 'mx-1 mb-2 h-4 w-px shrink-0 bg-slate-400 dark:bg-slate-700';
 
+  const setIf = (el: HTMLElement, attr: string, v: string) => { if (el.getAttribute(attr) !== v) el.setAttribute(attr, v); };
+  /** Ẩn/hiện bằng style — thuộc tính `hidden` thua class Tailwind có display (vd `flex`) nên không ẩn được. */
+  const display = (el: HTMLElement, on: boolean) => { const v = on ? '' : 'none'; if (el.style.display !== v) el.style.display = v; };
+
   function createNode(tab: TabView): TabNode {
     const el = document.createElement('div');
     el.setAttribute('role', 'tab');
@@ -72,8 +76,8 @@ interface ValaTabsApi {
     const icon = document.createElement('img');
     icon.alt = '';
     icon.className = 'h-4 w-4';
-    icon.hidden = true;
-    const showIcon = (ok: boolean) => { icon.hidden = !ok; letter.hidden = ok; };
+    display(icon, false);
+    const showIcon = (ok: boolean) => { display(icon, ok); display(letter, !ok); };
     icon.addEventListener('error', () => showIcon(false));
     // Ảnh 1×1 (favicon rỗng/trong suốt) coi như không có.
     icon.addEventListener('load', () => showIcon(icon.naturalWidth > 1 && icon.naturalHeight > 1));
@@ -81,7 +85,7 @@ interface ValaTabsApi {
     const label = document.createElement('span');
     label.className = 'min-w-0 flex-1 truncate';
     const dot = document.createElement('span');
-    dot.hidden = true;
+    display(dot, false);
     el.append(box, label, dot);
     let close: HTMLButtonElement | null = null;
     if (!tab.pinned) {
@@ -96,7 +100,6 @@ interface ValaTabsApi {
     return { el, icon, letter, label, dot, close };
   }
 
-  const setIf = (el: HTMLElement, attr: string, v: string) => { if (el.getAttribute(attr) !== v) el.setAttribute(attr, v); };
 
   function updateNode(n: TabNode, tab: TabView, isActive: boolean, s: TabsState) {
     setIf(n.el, 'aria-selected', String(isActive));
@@ -112,14 +115,14 @@ interface ValaTabsApi {
     const fav = tab.favicon ?? '';
     if ((n.icon.dataset.src ?? '') !== fav) {
       n.icon.dataset.src = fav;
-      n.icon.hidden = true;
-      n.letter.hidden = false;
+      display(n.icon, false);
+      display(n.letter, true);
       if (fav) n.icon.src = fav; else n.icon.removeAttribute('src');
     }
     const initial = (tab.label.trim()[0] ?? '•').toUpperCase();
     if (n.letter.textContent !== initial) n.letter.textContent = initial;
     if (n.label.textContent !== tab.label) n.label.textContent = tab.label;
-    n.dot.hidden = !tab.status;
+    display(n.dot, !!tab.status);
     if (tab.status) {
       setIf(n.dot, 'class', `h-2 w-2 shrink-0 rounded-full ${DOT[tab.status]}`);
       setIf(n.dot, 'aria-label', s.t.status[tab.status]);
