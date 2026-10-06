@@ -71,9 +71,11 @@ async function handleLogin(deps: ApiDeps, req: Parameters<typeof audit>[1], repl
   let who: SsoUser;
   try {
     const tokens = await deps.sso.exchangeCode(code, callbackUrl(deps), verifier);
-    who = await deps.sso.userinfo(tokens.access_token);
+    who = await deps.sso.userinfo(tokens.access_token, tokens.id_token);
+    // Chỉ ghi TÊN các claim (không giá trị) — để biết SSO có trả email / tên đăng nhập không khi ghép tài khoản lỗi.
+    req.log?.info({ claims: Object.keys(who).sort() }, 'SSO trả thông tin người dùng');
   } catch (e) {
-    req.log?.warn({ err: (e as Error).message }, 'đăng nhập SSO thất bại');
+    req.log?.warn({ err: (e as Error).message, detail: e instanceof Problem ? e.detail : undefined }, 'đăng nhập SSO thất bại');
     return toWeb(reply, deps, '/dang-nhap', { loi: 'sso_loi' });
   }
   const found = await findOrLinkUser(deps, who);
@@ -92,7 +94,7 @@ async function handleGrant(deps: ApiDeps, req: Parameters<typeof audit>[1], repl
   let expiresAt: string | undefined;
   try {
     const tokens = await deps.sso.exchangeCode(code, callbackUrl(deps));
-    const who = await deps.sso.userinfo(tokens.access_token);
+    const who = await deps.sso.userinfo(tokens.access_token, tokens.id_token);
     // Người đăng nhập SSO lúc uỷ quyền phải CHÍNH LÀ người dùng cổng đã bấm uỷ quyền. Không thì dữ liệu
     // của tài khoản B sẽ bị gán cho người dùng A.
     const expected = await withTenant(deps.reader, (t) => t.one(

@@ -15,6 +15,7 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { envBool } from './env.js';
 import { Problem, L } from './errors.js';
+import { checkedClaims, decodeJwtPayload, looksLikeJwt, type Claims } from './jwt-claims.js';
 import type { FetchLike } from './adapter/http.js';
 
 export interface SsoConfig {
@@ -95,6 +96,8 @@ export function ssoConfigFromEnv(): SsoConfig {
 
 export interface SsoTokens {
   access_token: string;
+  /** OIDC: JWT chứa claim người dùng (scope openid) — dùng khi userinfo trả JWT / lỗi / thiếu trường. */
+  id_token?: string;
   refresh_token?: string;
   expires_in: number;
   refresh_expires_in?: number;
@@ -198,16 +201,46 @@ export class SsoClient {
     return this.tokenRequest({ grant_type: 'refresh_token', refresh_token: refreshToken });
   }
 
-  async userinfo(accessToken: string): Promise<SsoUser> {
+  /**
+   * Thông tin người dùng = claim của id_token (nếu có, đã kiểm iss/aud/hạn) gộp với userinfo (đè lên). userinfo có thể là
+   * JSON hoặc JWT (Bkav SSO/WSO2 trả JWT) — JWT thì đọc phần nội dung (jwt-claims.ts). userinfo lỗi mà id_token đủ ⇒ vẫn
+   * dùng id_token. Hai nguồn khác sub (khác người) ⇒ từ chối.
+   */
+  async userinfo(accessToken: string, idToken?: string): Promise<SsoUser> {
     await this.discover();
-    const res = await this.fetchImpl(this.cfg.userinfoUrl, {
-      method: 'GET',
-      headers: { Authorization: `Bearer ${accessToken}` },
-      signal: AbortSignal.timeout(15_000),
-    });
-    if (!res.ok) throw new Problem('unauthenticated', L('SSO không xác nhận được người dùng', 'SSO could not verify the user'));
-    const u = (await res.json()) as SsoUser;
-    if (!u.sub) throw new Problem('unauthenticated', L('SSO không trả định danh người dùng', 'SSO did not return a user identifier'));
+    const check = { issuer: this.cfg.issuer, clientId: this.cfg.clientId };
+    const fromId = idToken ? (() => { const c = decodeJwtPayload(idToken); return c && checkedClaims(c, { ...check, requireAud: true }); })() : null;
+
+    let fromInfo: Claims | null = null;
+    let infoError = '';
+    try {
+      const res = await this.fetchImpl(this.cfg.userinfoUrl, {
+        method: 'GET',
+        headers: { Authorization: `Bearer ${accessToken}`, Accept: 'application/json, application/jwt' },
+        signal: AbortSignal.timeout(15_000),
+      });
+      const text = await res.text();
+      if (!res.ok) infoError = `HTTP ${res.status}`;
+      else if (/jwt/i.test(res.headers.get('content-type') ?? '') || looksLikeJwt(text)) {
+        const c = decodeJwtPayload(text);
+        fromInfo = c && checkedClaims(c, { ...check, requireAud: false });
+        if (!fromInfo) infoError = 'userinfo JWT không đọc được / không dành cho client này';
+      } else {
+        try { fromInfo = JSON.parse(text) as Claims; } catch { infoError = 'userinfo không phải JSON/JWT'; }
+      }
+    } catch (e) {
+      infoError = (e as Error).name;
+    }
+
+    if (fromId && fromInfo && fromInfo.sub && fromInfo.sub !== fromId.sub) {
+      throw new Problem('unauthenticated', L('SSO trả thông tin của hai người khác nhau', 'SSO returned information for two different users'));
+    }
+    const u = { ...(fromId ?? {}), ...(fromInfo ?? {}) } as SsoUser;
+    if (!u.sub || typeof u.sub !== 'string') {
+      throw new Problem('unauthenticated', L('SSO không xác nhận được người dùng', 'SSO could not verify the user'),
+        L(`userinfo: ${infoError || 'thiếu sub'}; id_token: ${idToken ? (fromId ? 'thiếu sub' : 'không hợp lệ') : 'không có'}`,
+          `userinfo: ${infoError || 'missing sub'}; id_token: ${idToken ? (fromId ? 'missing sub' : 'invalid') : 'none'}`));
+    }
     return u;
   }
 
