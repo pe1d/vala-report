@@ -40,3 +40,9 @@ spec:
           resources:
             requests: { cpu: 50m, memory: 32Mi }
             limits: { cpu: "1", memory: 256Mi }
+          volumeMounts:
+            - { name: desktop, mountPath: /usr/share/nginx/desktop, readOnly: true }
+      volumes:
+        # Bản cập nhật Vala Desktop: chép latest.yml + file cài vào thư mục này trên máy chủ (docs/trien-khai-k3s.md).
+        - name: desktop
+          hostPath: { path: /var/lib/vala-report/desktop, type: DirectoryOrCreate }

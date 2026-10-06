@@ -99,7 +99,8 @@ services:
       - "${HTTPS_PORT:-443}:443"
     environment:
       PUBLIC_WEB_URL: ${PUBLIC_WEB_URL:-}      # HTTP → HTTPS giữ đúng cổng công khai
-    volumes: ["./deploy/certs:/etc/nginx/certs:ro"]
+    # deploy/desktop: bản cập nhật Vala Desktop, phục vụ ở /desktop/ (xem docs/trien-khai-may-chu.md).
+    volumes: ["./deploy/certs:/etc/nginx/certs:ro", "./deploy/desktop:/usr/share/nginx/desktop:ro"]
     depends_on: [api]
 
   crawlab-mongo:

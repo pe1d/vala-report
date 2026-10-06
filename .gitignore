@@ -15,3 +15,5 @@ deploy/backup/
 deploy/certs/*
 !deploy/certs/README.txt
 apps/desktop/release/
+deploy/desktop/*
+!deploy/desktop/README.txt

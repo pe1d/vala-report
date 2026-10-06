@@ -131,6 +131,29 @@ cd /opt/vala-report && git pull && deploy/k8s/deploy.sh
 Script build image mới (tag là mã commit), chạy migration trước rồi mới thay api/worker/web. Image của 3 bản build gần
 nhất được giữ lại để quay lại khi cần. Đổi `.env.prod` hoặc chứng chỉ rồi chạy lại `deploy.sh` thì pod tự khởi động lại.
 
+## 4b. Phát hành bản Vala Desktop mới (tự cập nhật)
+
+Vala Desktop hỏi `{PUBLIC_WEB_URL}/desktop/latest.yml` lúc mở và 4 giờ một lần. Có bản mới thì tự tải, kiểm mã băm sha512,
+rồi hiện nút **"Đã có bản … — Cập nhật"** trên thanh tab (không bấm thì tự cài khi thoát). Chỉ bản **cài đặt** (NSIS)
+tự cập nhật được, bản zip thì không.
+
+1. Tăng `version` trong `apps/desktop/package.json`, rồi build bản cài **trên máy Windows** (Linux cần `wine`):
+   `pnpm install && pnpm --filter @vala/desktop package` → `apps/desktop/release/` có
+   `vala-desktop-<phiên bản>-win-x64.exe`, `….exe.blockmap`, `latest.yml`.
+2. Chép lên máy chủ, **file cài trước, `latest.yml` sau cùng** (chép `latest.yml` trước thì ứng dụng có thể thấy bản mới
+   khi file cài chưa chép xong):
+
+```bash
+sudo mkdir -p /var/lib/vala-report/desktop
+sudo cp vala-desktop-<phiên bản>-win-x64.exe vala-desktop-<phiên bản>-win-x64.exe.blockmap /var/lib/vala-report/desktop/
+sudo cp latest.yml /var/lib/vala-report/desktop/
+curl -sk {PUBLIC_WEB_URL}/desktop/latest.yml        # phải thấy đúng phiên bản mới
+```
+
+Thư mục này gắn chỉ-đọc vào pod web (web-*.yaml). **Lần đầu** phải `git pull && deploy/k8s/deploy.sh` để pod web có ổ
+gắn này; các lần phát hành sau chỉ cần chép file, không chạy lại `deploy.sh`. Giữ lại vài file cài cũ để quay lại khi
+cần: chép lại `latest.yml` của bản cũ. Lưu ý quay lại không tự hạ cấp máy đã lên bản mới — electron-updater chỉ cài bản cao hơn.
+
 ## 5. Sao lưu
 
 ```bash

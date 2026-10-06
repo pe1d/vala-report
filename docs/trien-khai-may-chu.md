@@ -97,6 +97,12 @@ cd /opt/vala-reporting && git pull && deploy/deploy.sh
 Migration CSDL chạy tự động. Mã spider mới (SDK, `main.py`) được worker tự đẩy lên Crawlab. Nếu có bản tiện ích mới, gửi
 file zip cho người dùng cài đè như trước.
 
+### Phát hành bản Vala Desktop mới
+
+Giống [trien-khai-k3s.md](trien-khai-k3s.md#4b-phát-hành-bản-vala-desktop-mới-tự-cập-nhật), chỉ khác thư mục: chép vào
+`deploy/desktop/` trong thư mục cài (docker-compose.prod.yml gắn nó vào web ở `/desktop/`) — file cài trước, `latest.yml`
+sau cùng. Lần đầu sau khi thêm thư mục này cần chạy lại `deploy/deploy.sh` để web nhận ổ gắn mới.
+
 ## 6. Sao lưu
 
 ```bash
