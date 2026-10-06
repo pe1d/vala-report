@@ -40,7 +40,8 @@ for (const [k, v] of Object.entries(process.env)) {
 const resolveBaseUrl = (source: string) => withTenant(writer, (t) => t.one(
   'SELECT base_url FROM core.source_systems WHERE code = $1', [source], (r: { base_url: string }) => r.base_url));
 // Dev: EGOV_BASE_URL và SSO_ORIGIN trỏ vào mock ⇒ ghi đè để không bao giờ chạm hệ thống thật.
-const devLoginHost = process.env.SSO_ORIGIN ? new URL(process.env.SSO_ORIGIN).host : undefined;
+// Đọc an toàn: giá trị rỗng / chỉ có dấu cách / sai định dạng trong .env.prod không được làm dừng worker.
+const devLoginHost = (() => { const o = (process.env.SSO_ORIGIN ?? '').trim(); try { return o ? new URL(o).host : undefined; } catch { return undefined; } })();
 const sourceInfo = (source: string) => withTenant(writer, (t) => t.one(
   'SELECT base_url, login_hosts FROM core.source_systems WHERE code = $1', [source],
   (r: { base_url: string; login_hosts: string[] }) => ({
