@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ApiProblem, api } from '../api';
 import { useAsync } from '../hooks';
 import { startLogin } from '../reauth';
+import { useValaExtension } from '../extension';
 import { ErrorBox, Loading } from '../components/States';
 import { Banner, Button, Field, Input, LangToggle, ThemeToggle } from '../components/ui';
 import { BrandMark, useBranding } from '../branding';
@@ -27,6 +28,7 @@ const M = messages({
   defaultTagline: 'Cổng báo cáo theo lịch từ các hệ thống nguồn của đơn vị.',
   badCredentials: 'Sai tài khoản hoặc mật khẩu.',
   downloadDesktop: 'Tải ứng dụng Vala Desktop',
+  toSso: (sso: string) => `Đang chuyển sang ${sso}…`,
   account: 'Tài khoản', usernamePh: 'Tên đăng nhập', password: 'Mật khẩu',
   signingIn: 'Đang đăng nhập…', signIn: 'Đăng nhập',
   orSso: (sso: string) => `Hoặc đăng nhập bằng ${sso}`,
@@ -44,6 +46,7 @@ const M = messages({
   defaultTagline: "Scheduled reports from your organization's source systems.",
   badCredentials: 'Incorrect username or password.',
   downloadDesktop: 'Download the Vala Desktop app',
+  toSso: (sso: string) => `Redirecting to ${sso}…`,
   account: 'Username', usernamePh: 'Username', password: 'Password',
   signingIn: 'Signing in…', signIn: 'Sign in',
   orSso: (sso: string) => `Or sign in with ${sso}`,
@@ -58,6 +61,23 @@ export function LoginPage({ onLogin }: { onLogin: (token: string) => void }) {
   const [password, setPassword] = useState('');
   const [err, setErr] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
+
+  // Trong Vala Desktop + máy chủ bật SSO ⇒ không hiện form mật khẩu, chuyển thẳng sang SSO (đã đăng nhập SSO ở tab Vala thì
+  // vào luôn). Không tự chuyển khi: SSO vừa báo lỗi (?loi=…), hoặc ứng dụng vừa đăng xuất (đánh dấu vala.noAutoSso — không
+  // thì phiên SSO còn sống sẽ đăng nhập lại ngay và người dùng không đăng xuất được).
+  const ext = useValaExtension(() => {});
+  const [autoSso, setAutoSso] = useState(false);
+  const autoTried = useRef(false);
+  useEffect(() => {
+    if (autoTried.current || ssoErr || !ext.info?.desktop || !cfg.data?.login_methods.includes('sso')) return;
+    autoTried.current = true;
+    let justLoggedOut = false;
+    try { justLoggedOut = sessionStorage.getItem('vala.noAutoSso') === '1'; sessionStorage.removeItem('vala.noAutoSso'); } catch { /* bỏ qua */ }
+    if (justLoggedOut) return;
+    setAutoSso(true);
+    startLogin('/');
+  }, [ext.info, cfg.data, ssoErr]);
+  if (autoSso) return <div className="flex min-h-screen items-center justify-center text-slate-500 dark:text-slate-400">{t.toSso(brand.ten_sso)}</div>;
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();

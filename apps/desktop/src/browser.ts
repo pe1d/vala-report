@@ -372,7 +372,8 @@ export async function forgetPortalLogin(): Promise<void> {
   if (!s.serverUrl) return;
   const wc = tabs.get('portal')?.view?.webContents;
   if (wc && !wc.isDestroyed()) {
-    try { await wc.executeJavaScript("localStorage.removeItem('vala.token'); 1", true); } catch { /* trang đang tải */ }
+    // vala.noAutoSso: trang đăng nhập cổng không tự chuyển sang SSO ngay lần này (phiên SSO còn sống sẽ đăng nhập lại luôn).
+    try { await wc.executeJavaScript("localStorage.removeItem('vala.token'); sessionStorage.setItem('vala.noAutoSso', '1'); 1", true); } catch { /* trang đang tải */ }
     void wc.loadURL(s.serverUrl);
   } else {
     await session.defaultSession.clearStorageData({ origin: new URL(s.serverUrl).origin, storages: ['localstorage'] });
