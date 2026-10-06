@@ -137,18 +137,20 @@ Vala Desktop hỏi `{PUBLIC_WEB_URL}/desktop/latest.yml` lúc mở và 4 giờ m
 rồi hiện nút **"Đã có bản … — Cập nhật"** trên thanh tab (không bấm thì tự cài khi thoát). Chỉ bản **cài đặt** (NSIS)
 tự cập nhật được, bản zip thì không.
 
-1. Tăng `version` trong `apps/desktop/package.json`, rồi build bản cài **trên máy Windows** (Linux cần `wine`):
-   `pnpm install && pnpm --filter @vala/desktop package` → `apps/desktop/release/` có
+1. Tăng `version` trong `apps/desktop/package.json` (ứng dụng chỉ cập nhật lên bản cao hơn), rồi build bộ cài trên máy
+   dev: `apps/desktop/scripts/package-win.sh` (chạy trong container `electronuserland/builder:wine`, không cần cài wine;
+   máy Windows thì `pnpm --filter @vala/desktop package`). Kết quả trong `apps/desktop/release/`:
    `vala-desktop-<phiên bản>-win-x64.exe`, `….exe.blockmap`, `latest.yml`.
-2. Chép lên máy chủ, **file cài trước, `latest.yml` sau cùng** (chép `latest.yml` trước thì ứng dụng có thể thấy bản mới
-   khi file cài chưa chép xong):
+2. Chép 3 file đó lên máy chủ (vd `scp apps/desktop/release/{latest.yml,*.exe,*.blockmap} <user>@10.2.65.146:/tmp/vala-desktop/`)
+   rồi trên máy chủ:
 
 ```bash
-sudo mkdir -p /var/lib/vala-report/desktop
-sudo cp vala-desktop-<phiên bản>-win-x64.exe vala-desktop-<phiên bản>-win-x64.exe.blockmap /var/lib/vala-report/desktop/
-sudo cp latest.yml /var/lib/vala-report/desktop/
-curl -sk {PUBLIC_WEB_URL}/desktop/latest.yml        # phải thấy đúng phiên bản mới
+cd /opt/vala-report && deploy/publish-desktop.sh /tmp/vala-desktop      # file cài trước, latest.yml sau cùng
+curl -sk {PUBLIC_WEB_URL}/desktop/latest.yml                            # phải thấy đúng phiên bản mới
 ```
+
+Người cài lần đầu tải ở liên kết cố định **`{PUBLIC_WEB_URL}/desktop/vala-desktop-setup.exe`** (script luôn trỏ nó về bản
+mới nhất). Bộ cài chưa ký số: Windows cảnh báo "Windows protected your PC" ⇒ More info → Run anyway.
 
 Thư mục này gắn chỉ-đọc vào pod web (web-*.yaml). **Lần đầu** phải `git pull && deploy/k8s/deploy.sh` để pod web có ổ
 gắn này; các lần phát hành sau chỉ cần chép file, không chạy lại `deploy.sh`. Giữ lại vài file cài cũ để quay lại khi
