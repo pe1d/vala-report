@@ -28,6 +28,9 @@ const M = messages({
   colorHint: 'Dùng cho nút chính, đường dẫn, mục đang chọn. Đang xem trước trên chính trang này — chưa lưu thì không ai khác thấy.',
   ssoName: 'Tên hiển thị của SSO',
   ssoHint: 'Hiện trên nút "Đăng nhập bằng …" và các thông báo uỷ quyền, vd "SSO tỉnh", "Bkav SSO". Việc bật SSO và địa chỉ SSO vẫn cấu hình ở máy chủ (.env.prod).',
+  desktopHome: 'Trang chính của Vala Desktop',
+  desktopHomeHint: 'Trang mở ở tab "Vala" của ứng dụng Vala Desktop cho mọi người trong đơn vị (vd https://vala.bkav.com/). Để trống ⇒ dùng trang mặc định của bản cài. Người dùng không tự đổi được.',
+  badDesktopHome: 'Địa chỉ cần bắt đầu bằng https://',
   lastEdited: (d: string) => `Sửa lần cuối ${d}`, discard: 'Huỷ thay đổi', saving: 'Đang lưu…', save: 'Lưu cấu hình',
   preview: 'Xem trước', defaultTagline: 'Báo cáo tự động từ các hệ thống nguồn',
   signIn: 'Đăng nhập', orSso: (sso: string) => `Hoặc đăng nhập bằng ${sso}`,
@@ -46,6 +49,9 @@ const M = messages({
   colorHint: 'Used for primary buttons, links and selected items. Previewing on this page only — nobody else sees it until you save.',
   ssoName: 'SSO display name',
   ssoHint: 'Shown on the "Sign in with …" button and in authorization messages, e.g. "Provincial SSO", "Bkav SSO". Enabling SSO and its address are still configured on the server (.env.prod).',
+  desktopHome: 'Vala Desktop home page',
+  desktopHomeHint: 'The page opened in the "Vala" tab of the Vala Desktop app for everyone in the organization (e.g. https://vala.bkav.com/). Leave empty to use the installer\'s default page. Users cannot change it.',
+  badDesktopHome: 'The address must start with https://',
   lastEdited: (d: string) => `Last edited ${d}`, discard: 'Discard changes', saving: 'Saving…', save: 'Save settings',
   preview: 'Preview', defaultTagline: 'Automated reports from source systems',
   signIn: 'Sign in', orSso: (sso: string) => `Or sign in with ${sso}`,
@@ -53,7 +59,7 @@ const M = messages({
 
 /**
  * Quản trị → Cấu hình chung: nhận diện của đơn vị triển khai (tên ứng dụng, tên đơn vị, dòng mô tả, logo, màu chủ đạo,
- * tên hiển thị của SSO). Không gắn cứng với Bkav — mỗi nơi triển khai tự đặt. Xem trước ngay trên trang, lưu xong áp
+ * tên hiển thị của SSO) và trang chính của Vala Desktop. Không gắn cứng với Bkav — mỗi nơi triển khai tự đặt. Xem trước ngay trên trang, lưu xong áp
  * cho mọi người (kể cả trang đăng nhập).
  */
 export function AdminSettingsPage() {
@@ -77,6 +83,7 @@ export function AdminSettingsPage() {
   if (!f) return null;
   const up = (p: Partial<Branding>) => { const n = { ...f, ...p }; setF(n); setNote(null); if (p.mau_chu_dao) applyBranding(n); };
   const dirty = FIELDS.some((k) => (f[k] ?? null) !== (live[k] ?? null));
+  const badHome = !!f.desktop_home_url?.trim() && !/^https:\/\/\S+$/.test(f.desktop_home_url.trim());
 
   const onLogo = (file: File | undefined) => {
     setErr(null);
@@ -92,6 +99,7 @@ export function AdminSettingsPage() {
     try {
       const n = await api.put<Branding>('/admin/settings', {
         ten_ung_dung: f.ten_ung_dung, ten_don_vi: f.ten_don_vi, mo_ta: f.mo_ta, logo: f.logo, mau_chu_dao: f.mau_chu_dao, ten_sso: f.ten_sso,
+        desktop_home_url: f.desktop_home_url?.trim() || null,
       });
       setBranding(n); setF(n); setNote(t.saved);
     } catch (e) { setErr(e); } finally { setSaving(false); }
@@ -148,11 +156,17 @@ export function AdminSettingsPage() {
               <Input value={f.ten_sso} maxLength={40} onChange={(e) => up({ ten_sso: e.target.value })} placeholder="SSO" />
             </Field>
             <Muted className="-mt-2 text-xs">{t.ssoHint}</Muted>
+
+            <Field label={t.desktopHome}>
+              <Input type="url" value={f.desktop_home_url ?? ''} maxLength={500} spellCheck={false} placeholder="https://vala.bkav.com/"
+                onChange={(e) => up({ desktop_home_url: e.target.value || null })} />
+            </Field>
+            {badHome ? <p className="-mt-2 text-xs text-red-700 dark:text-red-400">{t.badDesktopHome}</p> : <Muted className="-mt-2 text-xs">{t.desktopHomeHint}</Muted>}
           </div>
           <div className="mt-5 flex flex-wrap items-center justify-end gap-2">
             {cur.data?.updated_at && <Muted className="mr-auto text-xs">{t.lastEdited(fmtDateTime(cur.data.updated_at))}</Muted>}
             <Button disabled={saving || !dirty} onClick={() => { setF(live); applyBranding(live); setErr(null); }}>{t.discard}</Button>
-            <Button variant="primary" disabled={saving || !dirty || !f.ten_ung_dung.trim() || !f.ten_sso.trim() || !/^#[0-9a-f]{6}$/i.test(f.mau_chu_dao)} onClick={() => void save()}>
+            <Button variant="primary" disabled={saving || !dirty || badHome || !f.ten_ung_dung.trim() || !f.ten_sso.trim() || !/^#[0-9a-f]{6}$/i.test(f.mau_chu_dao)} onClick={() => void save()}>
               {saving ? t.saving : t.save}
             </Button>
           </div>
@@ -196,4 +210,4 @@ function Preview({ b }: { b: Branding }) {
 }
 
 /** Các trường của form — dùng để biết đã sửa chưa. */
-const FIELDS = ['ten_ung_dung', 'ten_don_vi', 'mo_ta', 'logo', 'mau_chu_dao', 'ten_sso'] as const;
+const FIELDS = ['ten_ung_dung', 'ten_don_vi', 'mo_ta', 'logo', 'mau_chu_dao', 'ten_sso', 'desktop_home_url'] as const;

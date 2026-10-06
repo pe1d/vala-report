@@ -1,6 +1,6 @@
 /**
  * Cấu hình chung của đơn vị triển khai — tên ứng dụng, tên đơn vị, dòng mô tả, logo, màu chủ đạo, tên hiển thị của
- * SSO. Không gắn cứng với Bkav: mỗi nơi triển khai tự đặt trên cổng (Quản trị → Cấu hình chung).
+ * SSO, trang chính của Vala Desktop. Không gắn cứng với Bkav: mỗi nơi triển khai tự đặt trên cổng (Quản trị → Cấu hình chung).
  *   GET  /branding          công khai (trang đăng nhập cần trước khi đăng nhập) — không chứa bí mật
  *   GET  /admin/settings    quản trị
  *   PUT  /admin/settings    quản trị (có audit)
@@ -12,9 +12,12 @@ import type { ApiDeps } from '../deps.js';
 
 export interface Branding {
   ten_ung_dung: string; ten_don_vi: string | null; mo_ta: string | null; logo: string | null; mau_chu_dao: string; ten_sso: string;
+  /** Trang mở ở tab Vala của Vala Desktop (null = mặc định của bản build). */
+  desktop_home_url: string | null;
   updated_at: string;
 }
-const COLS = 'ten_ung_dung, ten_don_vi, mo_ta, logo, mau_chu_dao, ten_sso, updated_at';
+const COLS = 'ten_ung_dung, ten_don_vi, mo_ta, logo, mau_chu_dao, ten_sso, desktop_home_url, updated_at';
+const HTTPS_URL = /^https:\/\/[^\s]+$/;
 const LOGO = /^data:image\/(png|jpeg|svg\+xml|webp);base64,[A-Za-z0-9+/=]+$/;
 /** Giới hạn ~300 KB ảnh gốc (data URL base64 dài hơn ~4/3). */
 const LOGO_MAX = 400_000;
@@ -41,9 +44,15 @@ export const adminSettingsRoutes = (deps: ApiDeps): FastifyPluginAsync => async 
       ten_ung_dung: { type: 'string', minLength: 1, maxLength: 60 }, ten_don_vi: text(120), mo_ta: text(160),
       logo: { type: ['string', 'null'], maxLength: LOGO_MAX }, mau_chu_dao: { type: 'string', pattern: '^#[0-9a-fA-F]{6}$' },
       ten_sso: { type: 'string', minLength: 1, maxLength: 40 },
+      desktop_home_url: text(500),
     } } },
   }, async (req) => {
     const b = req.body;
+    if (b.desktop_home_url?.trim()) {
+      let ok = HTTPS_URL.test(b.desktop_home_url.trim());
+      try { new URL(b.desktop_home_url.trim()); } catch { ok = false; }
+      if (!ok) throw new Problem('invalid_params', L('Địa chỉ trang chính Vala Desktop không hợp lệ', 'Invalid Vala Desktop home page address'), L('Cần địa chỉ đầy đủ bắt đầu bằng https://', 'A full address starting with https:// is required'));
+    }
     if (b.logo && !LOGO.test(b.logo)) throw new Problem('invalid_params', L('Logo không hợp lệ', 'Invalid logo'), L('Chỉ nhận ảnh PNG, JPEG, SVG hoặc WebP', 'Only PNG, JPEG, SVG or WebP images are accepted'));
     const trim = (v: string | null | undefined) => (v === undefined ? undefined : v === null ? null : v.trim() || null);
     const sets: string[] = [];
@@ -55,6 +64,7 @@ export const adminSettingsRoutes = (deps: ApiDeps): FastifyPluginAsync => async 
     put('logo', b.logo);
     put('mau_chu_dao', b.mau_chu_dao?.toLowerCase());
     put('ten_sso', b.ten_sso?.trim());
+    put('desktop_home_url', trim(b.desktop_home_url));
     if (!sets.length) return loadBranding(deps);
     vals.push(req.user.id);
     await withTenant(deps.writer, async (t) => {

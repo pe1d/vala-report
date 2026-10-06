@@ -4,7 +4,6 @@ import { contextBridge, ipcRenderer } from 'electron';
 contextBridge.exposeInMainWorld('vala', {
   state: () => ipcRenderer.invoke('vala:settings-state'),
   setLang: (lang: string) => ipcRenderer.invoke('vala:set-lang', lang),
-  saveHome: (url: string) => ipcRenderer.invoke('vala:save-home', url),
   login: (server: string, username: string, password: string) => ipcRenderer.invoke('vala:login', { server, username, password }),
   logout: () => ipcRenderer.invoke('vala:logout'),
   openPortal: () => ipcRenderer.invoke('vala:open-portal'),

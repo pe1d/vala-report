@@ -5,14 +5,12 @@
 interface SettingsState {
   t: Record<string, string>;
   lang: 'vi' | 'en';
-  homeUrl: string;
   serverUrl: string;
   user: { ho_ten: string; email: string } | null;
 }
 interface ValaSettingsApi {
   state(): Promise<SettingsState>;
   setLang(lang: string): Promise<SettingsState>;
-  saveHome(url: string): Promise<{ ok: boolean; message: string; state?: SettingsState }>;
   login(server: string, username: string, password: string): Promise<{ ok: boolean; message?: string; state?: SettingsState }>;
   logout(): Promise<SettingsState>;
   openPortal(): Promise<void>;
@@ -54,7 +52,6 @@ interface ValaSettingsApi {
     document.title = t.title;
     for (const el of Array.from(document.querySelectorAll<HTMLElement>('[data-t]'))) el.textContent = t[el.dataset.t!] ?? '';
     for (const b of Array.from(document.querySelectorAll<HTMLButtonElement>('[data-lang]'))) b.setAttribute('aria-pressed', String(b.dataset.lang === st.lang));
-    ($('home') as HTMLInputElement).value = st.homeUrl;
     const signedIn = !!st.user;
     $('signed-in').hidden = !signedIn;
     $('login-form').hidden = signedIn;
@@ -70,18 +67,10 @@ interface ValaSettingsApi {
   for (const b of Array.from(document.querySelectorAll<HTMLButtonElement>('[data-lang]'))) {
     b.addEventListener('click', async () => {
       // Thông báo cũ đang ở ngôn ngữ trước ⇒ xoá thay vì để lẫn hai thứ tiếng.
-      note('home-note', '', '');
       note('login-note', '', '');
       render(await vala.setLang(b.dataset.lang!));
     });
   }
-
-  $('home-form').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const r = await vala.saveHome(($('home') as HTMLInputElement).value);
-    if (r.state) render(r.state);
-    note('home-note', r.message, r.ok ? 'ok' : 'err');
-  });
 
   $('login-form').addEventListener('submit', async (e) => {
     e.preventDefault();

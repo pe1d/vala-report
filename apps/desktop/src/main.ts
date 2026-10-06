@@ -9,6 +9,7 @@ import { getSettings } from './settings';
 import { syncAll } from './sync';
 import { initBrowser, refreshBrowser } from './browser';
 import { createMenus, refreshMenus, trayMenu } from './menu';
+import { refreshHomeFromServer } from './homepage';
 import { enableLinuxAutostart } from './linux';
 import { initUpdater } from './updater';
 import { onTabLeave, registerBridge, showMain, showPortal, watchCookies } from './windows';
@@ -25,9 +26,12 @@ function refreshAll() {
   refreshBrowser();
 }
 
+/** Trang chính do quản trị đặt trên cổng: đổi ⇒ tab Vala nạp trang mới. */
+const refreshHome = () => refreshHomeFromServer().then((changed) => { if (changed) refreshAll(); });
+
 function startSync() {
   void syncAll().then(refreshAll, refreshAll);
-  if (!syncTimer) syncTimer = setInterval(() => void syncAll(), SYNC_INTERVAL_MS);
+  if (!syncTimer) syncTimer = setInterval(() => { void syncAll(); void refreshHome(); }, SYNC_INTERVAL_MS);
 }
 
 function openSettings() {
@@ -35,7 +39,6 @@ function openSettings() {
     // Đăng nhập xong ⇒ mở luôn tab Báo cáo (mục đích của việc đăng nhập).
     onLogin: () => { refreshAll(); startSync(); closeSettingsWindow(); showPortal(); },
     onLogout: refreshAll,
-    onHomeChanged: () => { refreshAll(); showMain(); },
     onLangChanged: refreshAll,
     openPortal: showPortal,
   });
@@ -66,6 +69,7 @@ if (!app.requestSingleInstanceLock()) {
     // Bản mới tải xong ⇒ hiện nút "Cập nhật" trên thanh tab và trong menu.
     initUpdater(refreshAll);
 
+    void refreshHome();
     if (getSettings().deviceToken) {
       startSync();
       if (!HIDDEN) showMain();

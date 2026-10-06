@@ -9,6 +9,8 @@ import { api } from './api';
 
 export interface Branding {
   ten_ung_dung: string; ten_don_vi: string | null; mo_ta: string | null; logo: string | null; mau_chu_dao: string; ten_sso: string;
+  /** Trang mở ở tab Vala của Vala Desktop — quản trị đặt (null = mặc định của bản build). */
+  desktop_home_url?: string | null;
 }
 export const DEFAULT_BRANDING: Branding = {
   ten_ung_dung: 'Vala Reporting', ten_don_vi: null, mo_ta: null, logo: null, mau_chu_dao: '#1d4ed8', ten_sso: 'SSO',
