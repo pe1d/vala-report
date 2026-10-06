@@ -2,7 +2,8 @@
  * Luồng "kết nối một hệ thống nguồn" và các tab của Vala Desktop (xem browser.ts):
  *   - tab Vala: trang chính của đơn vị (settings.homeUrl, vd https://vala.bkav.com/);
  *   - tab Báo cáo: cổng Vala Reporting (settings.serverUrl);
- *   - tab từng hệ thống nguồn (eGov, eTask…): người dùng đăng nhập/làm việc ngay trong ứng dụng, cookie đổi ⇒ gửi phiên.
+ *   - tab từng hệ thống nguồn (eGov, eTask…), mở khi cần, đóng được: người dùng đăng nhập/làm việc ngay trong ứng dụng,
+ *     cookie đổi ⇒ gửi phiên (kể cả sau khi đóng tab — phiên vẫn nằm trong ứng dụng).
  *
  * Cầu nối với cổng báo cáo: cổng nói chuyện với tiện ích qua window.postMessage (apps/web/src/extension.ts);
  * portal-preload.ts giả lập đúng giao thức đó nên nút "Đăng nhập qua tiện ích" chạy được trong desktop mà không sửa cổng.
@@ -11,7 +12,7 @@
 import { join } from 'node:path';
 import { app, ipcMain, Notification, session, shell, type IpcMainInvokeEvent, type WebContents } from 'electron';
 import { api } from './api';
-import { showTab, showWebContents, sourceTabKey } from './browser';
+import { showSourceTab, showTab, showWebContents, sourceTabKey } from './browser';
 import { matchesSessionDomain, sessionDomain } from './cookies';
 import { messages } from './i18n';
 import { getSettings } from './settings';
@@ -48,9 +49,9 @@ export const showMain = (): void => { showTab('home'); };
 /** Tab Báo cáo: cổng Vala Reporting (chỉ có khi đã đăng nhập thiết bị). */
 export const showPortal = (): void => { showTab('portal'); };
 
-/** Tab của một hệ thống nguồn; `relogin` ⇒ đưa về trang đăng nhập (luồng kết nối). */
+/** Tab của một hệ thống nguồn (mở mới nếu đang đóng); `relogin` ⇒ đưa về trang đăng nhập (luồng kết nối). */
 export const openSourceTab = (src: SourceFull, relogin = false): void => {
-  showTab(sourceTabKey(src.code), relogin ? { reloadTo: src.login_url } : {});
+  showSourceTab(src, relogin ? { reloadTo: src.login_url } : {});
 };
 
 /** Trang trong khung gọi IPC có thuộc đúng origin máy chủ Vala Reporting không. */

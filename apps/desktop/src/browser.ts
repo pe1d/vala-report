@@ -3,9 +3,9 @@
  * dưới, chỉ tab đang chọn hiện. Cố ý KHÔNG có ô địa chỉ, nút điều hướng, nút tab mới: đây là ứng dụng làm việc, không phải
  * trình duyệt — người dùng không thấy và không gõ địa chỉ trang.
  *
- * Tab ghim (không đóng được): Vala (trang chính) · Báo cáo (cổng Vala Reporting) · mỗi hệ thống nguồn. Tab ghim chỉ nạp
- * trang khi được bấm lần đầu, để lúc khởi động không mở eGov/eTask vô ích. Tab thường: link target=_blank, window.open
- * trong trang. Popup có kích thước và form POST vẫn mở cửa sổ thật (xem tabs-model.ts openTarget).
+ * Tab ghim (không đóng được): Vala (trang chính) · Báo cáo (cổng Vala Reporting), nạp trang khi được bấm lần đầu.
+ * Tab hệ thống nguồn (eGov, eTask…): mở khi cần (menu ⋯, luồng kết nối), đóng được — đóng tab không mất kết nối, phiên
+ * vẫn nằm trong ứng dụng và Vala vẫn lấy dữ liệu theo lịch. Tab thường: link target=_blank, window.open trong trang. Popup có kích thước và form POST vẫn mở cửa sổ thật (xem tabs-model.ts openTarget).
  *
  * Mọi tab dùng portal-preload.js (cầu nối với cổng) — tiến trình chính tự kiểm origin trước khi trả lời, nên tab của
  * trang khác không gọi được gì.
@@ -34,7 +34,7 @@ const TOOLBAR_H = 40;
 const ICON = join(__dirname, '../resources/icon.png');
 const TAB_PRELOAD = join(__dirname, 'portal-preload.js');
 
-interface PinnedDef { key: string; label: string; url: string; src?: SourceFull }
+interface PinnedDef { key: string; label: string; url: string }
 interface Tab {
   key: string;
   pinned: boolean;
@@ -56,7 +56,7 @@ export interface BrowserHooks {
 let hooks: BrowserHooks;
 let win: BrowserWindow | null = null;
 const tabs = new Map<string, Tab>();
-/** Thứ tự các tab thường (tab ghim luôn đứng trước, theo pinnedDefs). */
+/** Thứ tự các tab đóng được — tab hệ thống nguồn đứng đầu nhóm (tab ghim luôn đứng trước, theo pinnedDefs). */
 let order: string[] = [];
 let active: string | null = null;
 let nextId = 1;
@@ -69,18 +69,26 @@ function pinnedDefs(): PinnedDef[] {
   const s = getSettings();
   const t = M[s.lang];
   const defs: PinnedDef[] = [{ key: 'home', label: t.home, url: s.homeUrl }];
-  if (s.deviceToken && s.serverUrl) {
-    defs.push({ key: 'portal', label: t.reports, url: s.serverUrl });
-    for (const src of cachedSources()) defs.push({ key: sourceTabKey(src.code), label: src.ten, url: src.login_url, src });
-  }
+  if (s.deviceToken && s.serverUrl) defs.push({ key: 'portal', label: t.reports, url: s.serverUrl });
   return defs;
 }
 
-/** Khớp tab ghim với cấu hình hiện tại: thêm tab mới có, bỏ tab không còn (đăng xuất), đổi trang chính ⇒ nạp lại. */
+/** Nguồn của một tab hệ thống nguồn (null nếu không phải tab nguồn hoặc nguồn không còn). */
+const sourceOf = (key: string): SourceFull | null =>
+  (key.startsWith('src:') && getSettings().deviceToken ? cachedSources().find((s) => sourceTabKey(s.code) === key) : undefined) ?? null;
+
+/**
+ * Khớp tab với cấu hình hiện tại: thêm tab ghim mới có, bỏ tab không còn (đăng xuất ⇒ đóng cả Báo cáo lẫn các tab nguồn),
+ * đổi trang chính ⇒ nạp lại.
+ */
 function syncPinned(): void {
   const defs = pinnedDefs();
   const keep = new Set(defs.map((d) => d.key));
-  for (const t of [...tabs.values()]) if (t.pinned && !keep.has(t.key)) destroyTab(t.key);
+  for (const t of [...tabs.values()]) {
+    if (t.pinned && !keep.has(t.key)) destroyTab(t.key);
+    // Danh sách nguồn chưa tải xong lúc khởi động thì chưa kết luận — chỉ đóng khi đã đăng xuất.
+    else if (t.key.startsWith('src:') && !getSettings().deviceToken) destroyTab(t.key);
+  }
   for (const d of defs) {
     const t = tabs.get(d.key);
     if (!t) { tabs.set(d.key, { key: d.key, pinned: true, url: d.url, view: null }); continue; }
@@ -181,6 +189,21 @@ export function showTab(key: string, opts: { reloadTo?: string } = {}): boolean 
   return true;
 }
 
+/** Mở (hoặc chuyển tới) tab của một hệ thống nguồn; `reloadTo` ⇒ đưa về trang đó (vd trang đăng nhập khi kết nối). */
+export function showSourceTab(src: SourceFull, opts: { reloadTo?: string } = {}): void {
+  ensureWindow();
+  const key = sourceTabKey(src.code);
+  if (!tabs.has(key)) {
+    tabs.set(key, { key, pinned: false, url: opts.reloadTo ?? src.login_url, view: null });
+    // Gom các tab nguồn ở đầu nhóm tab đóng được, theo thứ tự mở.
+    const lastSrc = order.reduce((i, k, idx) => (k.startsWith('src:') ? idx : i), -1);
+    order.splice(lastSrc + 1, 0, key);
+    showTab(key);
+    return;
+  }
+  showTab(key, opts);
+}
+
 export function openTab(url: string, foreground = true, after?: string): string {
   ensureWindow();
   const key = `t:${nextId++}`;
@@ -199,6 +222,7 @@ export function closeTab(key: string): void {
   const keys = visibleKeys();
   const idx = keys.indexOf(key);
   const wasActive = active === key;
+  if (t.since) hooks.onLeave(key, Date.now() - t.since);
   destroyTab(key);
   if (wasActive) {
     const rest = visibleKeys();
@@ -234,15 +258,16 @@ function pushState(): void {
     const tab = tabs.get(key)!;
     const wc = tab.view?.webContents;
     const def = defs.get(key);
+    const src = sourceOf(key);
     const title = wc?.getTitle() || '';
     return {
       key,
       pinned: tab.pinned,
-      label: def?.label ?? (title || (wc?.isLoading() ? t.loading : t.newTab)),
-      title: title || def?.label || '',
+      label: def?.label ?? src?.ten ?? (title || (wc?.isLoading() ? t.loading : t.newTab)),
+      title: title || def?.label || src?.ten || '',
       loading: !!wc?.isLoading(),
       favicon: tab.favicon ?? null,
-      status: def?.src ? tabStatus(statusOf(def.src.code)?.result, def.src.state) : null,
+      status: src ? tabStatus(statusOf(src.code)?.result, src.state) : null,
     };
   });
   win.webContents.send('tabs:state', { lang: s.lang, t, active, tabs: list });
