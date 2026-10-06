@@ -1,5 +1,5 @@
 import ExcelJS from 'exceljs';
-import type { Scope } from '@vala/core';
+import type { Lang, Scope } from '@vala/core';
 import type { Freshness } from './freshness.js';
 import type { ReportOutput } from './reports/index.js';
 
@@ -9,13 +9,14 @@ const ddmmyyyy = (v: unknown) => {
 };
 
 /** File xuất phải mang dòng "số liệu tính đến…" và độ phủ uỷ quyền, như dashboard. */
-export async function toXlsx(title: string, out: ReportOutput, freshness: Freshness, scope: Scope): Promise<Buffer> {
+export async function toXlsx(title: string, out: ReportOutput, freshness: Freshness, scope: Scope, lang: Lang = 'vi'): Promise<Buffer> {
+  const en = lang === 'en';
   const wb = new ExcelJS.Workbook();
   wb.creator = 'Vala Reporting';
-  const ws = wb.addWorksheet('Báo cáo');
+  const ws = wb.addWorksheet(en ? 'Report' : 'Báo cáo');
   ws.addRow([title]).font = { bold: true, size: 14 };
   ws.addRow([freshness.message]);
-  if (scope === 'don_vi' && freshness.coverage) ws.addRow([`${freshness.coverage.message} — số liệu có thể chưa đầy đủ`]);
+  if (scope === 'don_vi' && freshness.coverage) ws.addRow([`${freshness.coverage.message} — ${en ? 'data may be incomplete' : 'số liệu có thể chưa đầy đủ'}`]);
   ws.addRow([]);
   const header = ws.addRow(out.columns.map((c) => c.label));
   header.font = { bold: true };

@@ -1,4 +1,11 @@
 import { BASE } from './base';
+import { getLang, locale, messages, tr } from './i18n';
+
+const M = messages({
+  error: 'Lỗi', httpError: (s: number) => `Lỗi HTTP ${s}`,
+}, {
+  error: 'Error', httpError: (s: number) => `HTTP error ${s}`,
+});
 
 /** Client API. Lỗi RFC 7807 thành ApiProblem để màn hình rẽ nhánh theo `type`. */
 export class ApiProblem extends Error {
@@ -18,18 +25,19 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   const token = auth.get();
   if (token) headers.Authorization = `Bearer ${token}`;
   if (body !== undefined) headers['Content-Type'] = 'application/json';
+  headers['Accept-Language'] = getLang();          // máy chủ trả thông báo lỗi đúng ngôn ngữ đang chọn
   const res = await fetch(`${BASE}/api/v1${path}`, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
   if (res.status === 204) return undefined as T;
   const ct = res.headers.get('content-type') ?? '';
   if (!res.ok) {
-    const p = ct.includes('json') ? await res.json() : { type: 'internal', title: `Lỗi HTTP ${res.status}` };
+    const p = ct.includes('json') ? await res.json() : { type: 'internal', title: tr(M).httpError(res.status) };
     if (res.status === 401 && token) {
       // Phiên đăng nhập cổng hết hạn: báo App đưa người dùng sang SSO đăng nhập lại.
       auth.set(null);
       try { sessionStorage.setItem('vala.reauth', '1'); } catch { /* bỏ qua */ }
       window.dispatchEvent(new Event('vala:unauthorized'));
     }
-    throw new ApiProblem(p.type ?? 'internal', res.status, p.title ?? 'Lỗi', p.detail, p);
+    throw new ApiProblem(p.type ?? 'internal', res.status, p.title ?? tr(M).error, p.detail, p);
   }
   return (ct.includes('json') ? res.json() : res.blob()) as Promise<T>;
 }
@@ -131,7 +139,16 @@ export const PERIOD_LABELS: Array<[string, string]> = [
   ['7_ngay_toi', '7 ngày tới'], ['14_ngay_toi', '14 ngày tới'], ['30_ngay_toi', '30 ngày tới'],
   ['tat_ca', 'Toàn bộ thời gian'], ['tuy_chon', 'Tuỳ chọn…'],
 ];
-export const periodLabel = (code: string) => PERIOD_LABELS.find(([c]) => c === code)?.[1] ?? code;
+const PERIOD_EN: Record<string, string> = {
+  thang_hien_tai: 'This month', thang_truoc: 'Last month', quy_hien_tai: 'This quarter',
+  '30_ngay_qua': 'Last 30 days', '6_thang_qua': 'Last 6 months', '12_thang_qua': 'Last 12 months',
+  '7_ngay_toi': 'Next 7 days', '14_ngay_toi': 'Next 14 days', '30_ngay_toi': 'Next 30 days',
+  tat_ca: 'All time', tuy_chon: 'Custom…',
+};
+/** Danh sách [mã, nhãn] theo ngôn ngữ đang chọn (PERIOD_LABELS giữ bản tiếng Việt cho tương thích). */
+export const periodLabels = (): Array<[string, string]> =>
+  getLang() === 'en' ? PERIOD_LABELS.map(([c, vi]) => [c, PERIOD_EN[c] ?? vi]) : PERIOD_LABELS;
+export const periodLabel = (code: string) => periodLabels().find(([c]) => c === code)?.[1] ?? code;
 
 export type WidgetStatus = 'ok' | 'trong' | 'chua_co_du_lieu' | 'can_ket_noi' | 'het_han' | 'loi';
 /** Một ô trên Tổng quan: báo cáo + tình trạng nguồn dữ liệu + số liệu tóm tắt. */
@@ -180,11 +197,11 @@ export function fmtDate(v: unknown): string {
   if (typeof v !== 'string' || !v) return DASH;
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(v);
   if (m) return `${m[3]}/${m[2]}/${m[1]}`;
-  return new Date(v).toLocaleDateString('vi-VN', { timeZone: TZ, day: '2-digit', month: '2-digit', year: 'numeric' });
+  return new Date(v).toLocaleDateString(locale(), { timeZone: TZ, day: '2-digit', month: '2-digit', year: 'numeric' });
 }
 export function fmtDateTime(v: string | null | undefined): string {
   if (!v) return DASH;
   const d = new Date(v);
-  return `${d.toLocaleTimeString('vi-VN', { timeZone: TZ, hour: '2-digit', minute: '2-digit', hour12: false })} ${fmtDate(v)}`;
+  return `${d.toLocaleTimeString(locale(), { timeZone: TZ, hour: '2-digit', minute: '2-digit', hour12: false })} ${fmtDate(v)}`;
 }
-export const fmtInt = (v: unknown) => (typeof v === 'number' ? v.toLocaleString('vi-VN') : DASH);
+export const fmtInt = (v: unknown) => (typeof v === 'number' ? v.toLocaleString(locale()) : DASH);

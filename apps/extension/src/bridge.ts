@@ -20,6 +20,12 @@ async function hello() {
 const w = window as unknown as { __valaBridge?: boolean };
 if (!w.__valaBridge) {
   w.__valaBridge = true;
+  // Ngôn ngữ của tiện ích (khoá 'lang', như i18n.ts — không import được). Đọc sẵn: lúc cần báo lỗi thì tiện ích có thể
+  // vừa được cập nhật và storage cũng không đọc được nữa.
+  let lang: 'vi' | 'en' = 'vi';
+  const NO_REPLY = { vi: 'Tiện ích không phản hồi — tải lại trang', en: 'The extension is not responding — reload the page' };
+  chrome.storage.local.get('lang').then((r) => { lang = r.lang === 'en' ? 'en' : 'vi'; }, () => {});
+  chrome.storage.onChanged.addListener((ch, area) => { if (area === 'local' && 'lang' in ch) lang = ch.lang?.newValue === 'en' ? 'en' : 'vi'; });
   window.addEventListener('message', (e) => {
     if (e.source !== window || e.origin !== location.origin) return;
     const d = e.data as { source?: string; type?: string; code?: unknown };
@@ -29,7 +35,7 @@ if (!w.__valaBridge) {
       const code = d.code;
       chrome.runtime.sendMessage({ type: 'connect', code }).then(
         (r: Record<string, unknown>) => post({ type: 'connect-started', code, ...r }),
-        () => post({ type: 'connect-started', code, status: 'error', message: 'Tiện ích không phản hồi — tải lại trang' }));
+        () => post({ type: 'connect-started', code, status: 'error', message: NO_REPLY[lang] }));
     }
   });
   chrome.runtime.onMessage.addListener((m: { type?: string }) => {

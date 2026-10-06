@@ -1,5 +1,5 @@
 import type { FastifyPluginAsync } from 'fastify';
-import { SCHEDULE_TEMPLATES, allowedScopes, describeSchedule, loadMemberships, nextScheduleRuns, parseSchedule, withTenant } from '@vala/core';
+import { SCHEDULE_TEMPLATES, allowedScopes, describeSchedule, langOf, loadMemberships, nextScheduleRuns, parseSchedule, withTenant } from '@vala/core';
 import type { ApiDeps } from '../deps.js';
 
 export const meRoutes = (deps: ApiDeps): FastifyPluginAsync => async (app) => {
@@ -18,8 +18,8 @@ export const meRoutes = (deps: ApiDeps): FastifyPluginAsync => async (app) => {
   });
 
   /** Mẫu lịch chọn nhanh (dạng có cấu trúc) + các lần chạy kế tiếp, cho form đặt lịch. Người dùng không thấy cron. */
-  app.get('/presets', async () => SCHEDULE_TEMPLATES.map((x) => ({
-    code: x.code, label: describeSchedule(x.schedule), schedule: x.schedule, next_runs: nextScheduleRuns(x.schedule, 5),
+  app.get('/presets', async (req) => SCHEDULE_TEMPLATES.map((x) => ({
+    code: x.code, label: describeSchedule(x.schedule, langOf(req.headers['accept-language'])), schedule: x.schedule, next_runs: nextScheduleRuns(x.schedule, 5),
   })));
 
   /** Xem trước một lịch người dùng đang đặt: mô tả + 5 lần chạy tới; lịch sai ⇒ 422 nói rõ chỗ sai. */
@@ -27,6 +27,6 @@ export const meRoutes = (deps: ApiDeps): FastifyPluginAsync => async (app) => {
     schema: { body: { type: 'object', required: ['schedule'], properties: { schedule: { type: 'object' } } } },
   }, async (req) => {
     const s = parseSchedule(req.body.schedule);
-    return { schedule: s, label: describeSchedule(s), next_runs: nextScheduleRuns(s, 5) };
+    return { schedule: s, label: describeSchedule(s, langOf(req.headers['accept-language'])), next_runs: nextScheduleRuns(s, 5) };
   });
 };

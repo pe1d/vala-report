@@ -7,7 +7,7 @@
  * auth_method = 'extension': tiện ích trình duyệt gửi cookie về mỗi khi người dùng đăng nhập hệ thống nguồn.
  */
 import { GuardedHttpClient, cookieGroups, cookieNames, findSpec, missingCookieGroups, loadAllSpecs, parseCookieInput, passwordLogin, pickRequiredCookies, probeSession, type AdapterSpec, type FetchLike, type SessionInfo, type SourceCredential } from './adapter/index.js';
-import { Problem } from './errors.js';
+import { Problem, L } from './errors.js';
 import { vaultRef, type SecretStore, type SessionSecret } from './secrets.js';
 import type { SessionManager } from './sessions.js';
 
@@ -60,7 +60,7 @@ export class ConnectionSessions {
   }
 
   async saveCredential(userId: number, source: string, cred: SourceCredential): Promise<void> {
-    if (!cred.username.trim() || !cred.password) throw new Problem('invalid_params', 'Thiếu tên đăng nhập hoặc mật khẩu');
+    if (!cred.username.trim() || !cred.password) throw new Problem('invalid_params', L('Thiếu tên đăng nhập hoặc mật khẩu', 'Username or password is missing'));
     await this.o.secrets.put(this.credentialRef(userId, source), { username: cred.username.trim(), password: cred.password });
   }
 
@@ -99,7 +99,7 @@ export class ConnectionSessions {
     const cookies = pickRequiredCookies(spec, raw);
     if (!cookies) {
       const missing = missingCookieGroups(spec, raw);
-      throw new Problem('session_expired', 'Trình duyệt chưa đăng nhập hệ thống nguồn', `thiếu cookie: ${missing.join(', ')}`);
+      throw new Problem('session_expired', L('Trình duyệt chưa đăng nhập hệ thống nguồn', 'The browser is not signed in to the source system'), L(`thiếu cookie: ${missing.join(', ')}`, `missing cookies: ${missing.join(', ')}`));
     }
     const info = await this.o.sourceInfo(source);
     const apiBase = info.apiBaseUrl ?? spec.auth.api_base_url ?? info.baseUrl;
@@ -201,18 +201,19 @@ export class ConnectionSessions {
   /** Lấy phiên mới theo cách xác thực của kết nối và ghi vào vault. */
   async renew(userId: number, source: string, method: AuthMethod): Promise<SessionSecret> {
     if (method === 'cookie') {
-      throw new Problem('session_expired', 'Cookie đã hết hạn', 'Quản trị cần dán cookie mới cho kết nối này');
+      throw new Problem('session_expired', L('Cookie đã hết hạn', 'Cookie has expired'), L('Quản trị cần dán cookie mới cho kết nối này', 'An admin needs to paste a new cookie for this connection'));
     }
     if (method === 'extension') {
-      throw new Problem('session_expired', 'Phiên từ tiện ích trình duyệt đã hết hạn',
-        'Mở hệ thống nguồn trên trình duyệt có cài tiện ích Vala và đăng nhập — tiện ích tự gửi phiên mới');
+      throw new Problem('session_expired', L('Phiên từ tiện ích trình duyệt đã hết hạn', 'Session from the browser extension has expired'),
+        L('Mở hệ thống nguồn trên trình duyệt có cài tiện ích Vala và đăng nhập — tiện ích tự gửi phiên mới',
+          'Open the source system in a browser with the Vala extension installed and sign in — the extension sends the new session automatically'));
     }
     if (method === 'sso') {
-      if (!this.o.sso) throw new Problem('session_expired', 'Chưa cấu hình SSO cho luồng uỷ quyền');
+      if (!this.o.sso) throw new Problem('session_expired', L('Chưa cấu hình SSO cho luồng uỷ quyền', 'SSO is not configured for the authorization flow'));
       return this.o.sso.deriveAppSession(userId, source);
     }
     const cred = await this.o.secrets.get<SourceCredential>(this.credentialRef(userId, source));
-    if (!cred) throw new Problem('invalid_credentials', 'Chưa có tài khoản/mật khẩu cho kết nối này');
+    if (!cred) throw new Problem('invalid_credentials', L('Chưa có tài khoản/mật khẩu cho kết nối này', 'No username/password saved for this connection'));
     const info = await this.o.sourceInfo(source);
     const r = await passwordLogin({ spec: this.spec(source), baseUrl: info.baseUrl, loginHosts: info.loginHosts, credential: cred, fetchImpl: this.o.fetchImpl })
       .catch(async (e: unknown) => {

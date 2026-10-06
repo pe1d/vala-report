@@ -7,7 +7,7 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { randomUUID } from 'node:crypto';
 import {
-  allowedScopes, launchSpider, loadMemberships, Problem, withTenant, type Scope,
+  allowedScopes, L, langOf, launchSpider, loadMemberships, Problem, withTenant, type Scope,
 } from '@vala/core';
 import { loadAllSpecs } from '@vala/core/adapter';
 import { audit } from '../audit.js';
@@ -81,7 +81,8 @@ export const dashboardRoutes = (deps: ApiDeps): FastifyPluginAsync => async (app
           continue;
         } else {
           req.log.error({ err: e, report: rc.code }, 'ô tổng quan lỗi');
-          widgets.push({ ...base, status: 'loi' as WidgetStatus, has_data: false, message: e instanceof Problem ? e.title : 'Lỗi hệ thống' });
+          widgets.push({ ...base, status: 'loi' as WidgetStatus, has_data: false, message: e instanceof Problem ? e.toJSON(langOf(req.headers['accept-language'])).title
+            : langOf(req.headers['accept-language']) === 'en' ? 'System error' : 'Lỗi hệ thống' });
         }
       }
     }
@@ -106,10 +107,10 @@ export const dashboardRoutes = (deps: ApiDeps): FastifyPluginAsync => async (app
     const g = await withTenant(deps.writer, (t) => t.oneOrNone<{ state: string }>(
       `SELECT CASE WHEN revoked_at IS NOT NULL THEN 'revoked' ELSE session_state END AS state
          FROM source_grants WHERE app_user_id = $1 AND source_system = $2`, [req.user.id, source]));
-    if (g?.state === 'expired' || g?.state === 'failed') throw new Problem('session_expired', 'Phiên đã hết hạn', 'Kết nối lại rồi thử lại', { source_system: source });
-    if (g?.state !== 'active') throw new Problem('grant_required', 'Cần kết nối hệ thống này trước', undefined, { source_system: source });
+    if (g?.state === 'expired' || g?.state === 'failed') throw new Problem('session_expired', L('Phiên đã hết hạn', 'Session has expired'), L('Kết nối lại rồi thử lại', 'Reconnect and try again'), { source_system: source });
+    if (g?.state !== 'active') throw new Problem('grant_required', L('Cần kết nối hệ thống này trước', 'Connect this system first'), undefined, { source_system: source });
     if (!(await deps.limiter.take(`run-now-src:${req.user.id}:${source}`, RUN_NOW_WINDOW_S))) {
-      throw new Problem('rate_limited', 'Vừa lấy dữ liệu gần đây', 'Mỗi hệ thống chỉ lấy ngay được một lần trong 10 phút');
+      throw new Problem('rate_limited', L('Vừa lấy dữ liệu gần đây', 'Data was fetched recently'), L('Mỗi hệ thống chỉ lấy ngay được một lần trong 10 phút', 'Each system can be fetched on demand only once every 10 minutes'));
     }
     const spiders = await withTenant(deps.writer, (t) => t.any<{ code: string; crawlab_spider_id: string | null }>(
       `SELECT code, crawlab_spider_id FROM core.crawl_spiders WHERE source_system = $1 AND is_enabled`, [source]));
@@ -122,7 +123,7 @@ export const dashboardRoutes = (deps: ApiDeps): FastifyPluginAsync => async (app
     }
     // Không có spider: worker chạy thẳng các bước lấy dữ liệu khai trong cấu hình adapter (mọi capability có sink).
     const caps = workerCaps(source).map((capability) => ({ capability }));
-    if (!caps.length) throw new Problem('invalid_params', 'Hệ thống này chưa có cách lấy dữ liệu', 'Cấu hình adapter chưa có capability nào ghi vào kho (sink)');
+    if (!caps.length) throw new Problem('invalid_params', L('Hệ thống này chưa có cách lấy dữ liệu', 'This system has no way to fetch data yet'), L('Cấu hình adapter chưa có capability nào ghi vào kho (sink)', 'The adapter config has no capability that writes to the store (sink)'));
     // Chạy thẳng cho người này (không qua lịch: người dùng có thể chưa đặt lịch nào).
     const runKey = randomUUID();
     await deps.queue.addBulk(caps.map((c) => ({

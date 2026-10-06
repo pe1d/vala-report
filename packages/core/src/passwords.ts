@@ -3,6 +3,7 @@
  * scrypt của Node, định dạng: scrypt$N$r$p$saltBase64$hashBase64.
  */
 import { randomBytes, scrypt as scryptCb, timingSafeEqual } from 'node:crypto';
+import { L, type Bilingual } from './errors.js';
 
 const N = 16384, R = 8, P = 1, KEYLEN = 64;
 
@@ -31,8 +32,8 @@ export async function verifyPassword(password: string, stored: string | null | u
 }
 
 /** Chính sách tối thiểu: ≥ 8 ký tự, có chữ và số. Trả lý do nếu không đạt. */
-export function passwordPolicyError(pw: string): string | null {
-  if (pw.length < 8) return 'Mật khẩu cần ít nhất 8 ký tự';
-  if (!/[A-Za-zÀ-ỹ]/.test(pw) || !/\d/.test(pw)) return 'Mật khẩu cần có cả chữ và số';
+export function passwordPolicyError(pw: string): Bilingual | null {
+  if (pw.length < 8) return L('Mật khẩu cần ít nhất 8 ký tự', 'Password must be at least 8 characters');
+  if (!/[A-Za-zÀ-ỹ]/.test(pw) || !/\d/.test(pw)) return L('Mật khẩu cần có cả chữ và số', 'Password must contain both letters and digits');
   return null;
 }

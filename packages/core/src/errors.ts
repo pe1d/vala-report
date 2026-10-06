@@ -45,19 +45,43 @@ const STATUS: Record<ProblemType, number> = {
   internal: 500,
 };
 
+/** Ngôn ngữ giao diện (mặc định tiếng Việt). */
+export type Lang = 'vi' | 'en';
+/** Chữ người dùng thấy, có đủ hai ngôn ngữ. Chuỗi thường = chỉ có tiếng Việt (chưa dịch — tránh dùng cho chữ mới). */
+export interface Bilingual { vi: string; en: string }
+export type Text = string | Bilingual;
+/** Chữ song ngữ: L('Không có báo cáo này', 'Report not found'). */
+export const L = (vi: string, en: string): Bilingual => ({ vi, en });
+/** Lấy bản theo ngôn ngữ (chuỗi thường thì trả nguyên). */
+export const textOf = (t: Text | undefined, lang: Lang): string | undefined =>
+  t === undefined ? undefined : typeof t === 'string' ? t : t[lang];
+/** Ngôn ngữ từ header Accept-Language (web/tiện ích gửi 'vi' | 'en'); không rõ ⇒ tiếng Việt. */
+export const langOf = (acceptLanguage: string | undefined): Lang => (/^\s*en\b/i.test(acceptLanguage ?? '') ? 'en' : 'vi');
+
 export class Problem extends Error {
   readonly status: number;
+  /** Bản tiếng Việt (log, so sánh trong code). Bản theo ngôn ngữ người dùng: toJSON(lang). */
+  readonly title: string;
+  readonly detail?: string;
+  private readonly titleText: Text;
+  private readonly detailText?: Text;
   constructor(
     readonly type: ProblemType,
-    readonly title: string,
-    readonly detail?: string,
+    title: Text,
+    detail?: Text,
     readonly extra?: Record<string, unknown>,
   ) {
-    super(detail ? `${title}: ${detail}` : title);
+    const vi = textOf(title, 'vi')!;
+    const viDetail = textOf(detail, 'vi');
+    super(viDetail ? `${vi}: ${viDetail}` : vi);
+    this.title = vi;
+    this.detail = viDetail;
+    this.titleText = title;
+    this.detailText = detail;
     this.status = STATUS[type];
   }
 
-  toJSON() {
-    return { type: this.type, title: this.title, status: this.status, detail: this.detail, ...this.extra };
+  toJSON(lang: Lang = 'vi') {
+    return { type: this.type, title: textOf(this.titleText, lang), status: this.status, detail: textOf(this.detailText, lang), ...this.extra };
   }
 }

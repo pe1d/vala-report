@@ -3,25 +3,51 @@ import { ApiProblem, api } from '../api';
 import { useAsync } from '../hooks';
 import { startLogin } from '../reauth';
 import { ErrorBox, Loading } from '../components/States';
-import { Banner, Button, Field, Input, ThemeToggle } from '../components/ui';
+import { Banner, Button, Field, Input, LangToggle, ThemeToggle } from '../components/ui';
 import { BrandMark, useBranding } from '../branding';
+import { messages, useT } from '../i18n';
 
 /**
  * Màn hình 1 — Đăng nhập cổng bằng tài khoản/mật khẩu (chuẩn).
  * Nếu quản trị bật thêm SSO thì hiện nút đăng nhập SSO bên dưới (tên SSO lấy từ Cấu hình chung).
  */
-/** Lý do SSO trả người dùng về trang đăng nhập (?loi=… do máy chủ đặt). */
-const SSO_ERRORS = (sso: string): Record<string, string> => ({
-  chua_co_tai_khoan: `Tài khoản ${sso} của bạn chưa có trên cổng. Nhờ quản trị tạo tài khoản (cùng email hoặc tên đăng nhập) rồi thử lại.`,
-  tai_khoan_da_lien_ket: `Tài khoản cổng cùng email / tên đăng nhập đã liên kết với một tài khoản ${sso} khác. Liên hệ quản trị.`,
-  tai_khoan_bi_khoa: 'Tài khoản cổng của bạn đang bị vô hiệu hoá. Liên hệ quản trị.',
-  sso_thieu_email: `${sso} không cung cấp email nên không tự tạo được tài khoản. Liên hệ quản trị.`,
-  sso_tu_choi: `Bạn đã huỷ đăng nhập trên ${sso}.`,
-  sso_loi: `Không đăng nhập được qua ${sso} (lỗi kết nối hoặc cấu hình). Thử lại sau hoặc đăng nhập bằng mật khẩu.`,
-  state_khong_hop_le: 'Phiên đăng nhập đã quá hạn — bấm đăng nhập lại.',
+const M = messages({
+  /** Lý do SSO trả người dùng về trang đăng nhập (?loi=… do máy chủ đặt). */
+  ssoErrors: (sso: string): Record<string, string> => ({
+    chua_co_tai_khoan: `Tài khoản ${sso} của bạn chưa có trên cổng. Nhờ quản trị tạo tài khoản (cùng email hoặc tên đăng nhập) rồi thử lại.`,
+    tai_khoan_da_lien_ket: `Tài khoản cổng cùng email / tên đăng nhập đã liên kết với một tài khoản ${sso} khác. Liên hệ quản trị.`,
+    tai_khoan_bi_khoa: 'Tài khoản cổng của bạn đang bị vô hiệu hoá. Liên hệ quản trị.',
+    sso_thieu_email: `${sso} không cung cấp email nên không tự tạo được tài khoản. Liên hệ quản trị.`,
+    sso_tu_choi: `Bạn đã huỷ đăng nhập trên ${sso}.`,
+    sso_loi: `Không đăng nhập được qua ${sso} (lỗi kết nối hoặc cấu hình). Thử lại sau hoặc đăng nhập bằng mật khẩu.`,
+    state_khong_hop_le: 'Phiên đăng nhập đã quá hạn — bấm đăng nhập lại.',
+  }),
+  ssoFailed: (sso: string) => `Đăng nhập ${sso} không thành công.`,
+  defaultTagline: 'Cổng báo cáo theo lịch từ các hệ thống nguồn của đơn vị.',
+  badCredentials: 'Sai tài khoản hoặc mật khẩu.',
+  account: 'Tài khoản', usernamePh: 'Tên đăng nhập', password: 'Mật khẩu',
+  signingIn: 'Đang đăng nhập…', signIn: 'Đăng nhập',
+  orSso: (sso: string) => `Hoặc đăng nhập bằng ${sso}`,
+}, {
+  ssoErrors: (sso: string): Record<string, string> => ({
+    chua_co_tai_khoan: `Your ${sso} account doesn't exist on the portal yet. Ask an administrator to create one (same email or username), then try again.`,
+    tai_khoan_da_lien_ket: `The portal account with this email / username is already linked to a different ${sso} account. Contact an administrator.`,
+    tai_khoan_bi_khoa: 'Your portal account is disabled. Contact an administrator.',
+    sso_thieu_email: `${sso} didn't provide an email address, so an account couldn't be created automatically. Contact an administrator.`,
+    sso_tu_choi: `You cancelled sign-in on ${sso}.`,
+    sso_loi: `Couldn't sign in with ${sso} (connection or configuration error). Try again later or sign in with your password.`,
+    state_khong_hop_le: 'Your sign-in session has expired. Please sign in again.',
+  }),
+  ssoFailed: (sso: string) => `${sso} sign-in failed.`,
+  defaultTagline: "Scheduled reports from your organization's source systems.",
+  badCredentials: 'Incorrect username or password.',
+  account: 'Username', usernamePh: 'Username', password: 'Password',
+  signingIn: 'Signing in…', signIn: 'Sign in',
+  orSso: (sso: string) => `Or sign in with ${sso}`,
 });
 
 export function LoginPage({ onLogin }: { onLogin: (token: string) => void }) {
+  const t = useT(M);
   const brand = useBranding();
   const ssoErr = new URLSearchParams(window.location.search).get('loi');
   const cfg = useAsync(() => api.get<{ login_methods: Array<'password' | 'sso'> }>('/auth/config'), []);
@@ -52,11 +78,11 @@ export function LoginPage({ onLogin }: { onLogin: (token: string) => void }) {
             {brand.ten_don_vi && <div className="text-sm text-slate-600 dark:text-slate-300">{brand.ten_don_vi}</div>}
           </div>
         </div>
-        <ThemeToggle />
+        <div className="flex shrink-0 items-center gap-2"><LangToggle /><ThemeToggle /></div>
       </div>
-      <p className="mb-6 text-slate-500 dark:text-slate-400">{brand.mo_ta ?? 'Cổng báo cáo theo lịch từ các hệ thống nguồn của đơn vị.'}</p>
+      <p className="mb-6 text-slate-500 dark:text-slate-400">{brand.mo_ta ?? t.defaultTagline}</p>
 
-      {ssoErr && <Banner tone="err" role="alert">{SSO_ERRORS(brand.ten_sso)[ssoErr] ?? `Đăng nhập ${brand.ten_sso} không thành công.`}</Banner>}
+      {ssoErr && <Banner tone="err" role="alert">{t.ssoErrors(brand.ten_sso)[ssoErr] ?? t.ssoFailed(brand.ten_sso)}</Banner>}
       {cfg.loading && <Loading rows={2} />}
       {cfg.error ? <ErrorBox error={cfg.error} onRetry={cfg.reload} /> : null}
 
@@ -64,16 +90,16 @@ export function LoginPage({ onLogin }: { onLogin: (token: string) => void }) {
         <form onSubmit={submit} className="rounded-xl border border-slate-200 bg-white p-6 dark:border-slate-800 dark:bg-slate-900">
           {err instanceof ApiProblem && err.type === 'rate_limited'
             ? <Banner tone="warn" role="alert">{err.detail ?? err.title}</Banner>
-            : err ? <Banner tone="err" role="alert">Sai tài khoản hoặc mật khẩu.</Banner> : null}
+            : err ? <Banner tone="err" role="alert">{t.badCredentials}</Banner> : null}
           <div className="grid gap-4">
-            <Field label="Tài khoản">
-              <Input value={username} onChange={(e) => setUsername(e.target.value)} autoFocus autoComplete="username" placeholder="Tên đăng nhập" required />
+            <Field label={t.account}>
+              <Input value={username} onChange={(e) => setUsername(e.target.value)} autoFocus autoComplete="username" placeholder={t.usernamePh} required />
             </Field>
-            <Field label="Mật khẩu">
+            <Field label={t.password}>
               <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" required />
             </Field>
             <Button type="submit" variant="primary" className="w-full py-2.5" disabled={busy || !username || !password}>
-              {busy ? 'Đang đăng nhập…' : 'Đăng nhập'}
+              {busy ? t.signingIn : t.signIn}
             </Button>
           </div>
         </form>
@@ -83,7 +109,7 @@ export function LoginPage({ onLogin }: { onLogin: (token: string) => void }) {
         <div className="mt-4 text-center">
           <button type="button" onClick={() => startLogin('/')}
             className="text-sm text-blue-700 underline-offset-2 hover:underline dark:text-blue-400">
-            Hoặc đăng nhập bằng {brand.ten_sso}
+            {t.orSso(brand.ten_sso)}
           </button>
         </div>
       )}

@@ -6,7 +6,7 @@
  * tối thiểu MIN_GAP_MINUTES, lặp lại tối thiểu mỗi giờ, hẹn một lần chỉ trong tương lai gần.
  */
 import { z } from 'zod';
-import { Problem } from './errors.js';
+import { L, Problem, type Lang, type Text } from './errors.js';
 
 export const MIN_GAP_MINUTES = 60;
 const VN_OFFSET_MS = 7 * 3600_000;
@@ -37,6 +37,18 @@ export type Schedule = z.infer<typeof ScheduleSchema>;
 
 const minutes = (hhmm: string) => Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(3, 5));
 const hhmm = (m: number) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+/** Bản tiếng Anh cho các thông báo kiểm tra (zod) ở trên. */
+const ZOD_EN: Record<string, string> = {
+  'Giờ phải dạng HH:MM': 'Time must be in HH:MM format',
+  'Cần ít nhất một giờ chạy': 'At least one run time is required',
+  'Tối đa 6 giờ mỗi ngày': 'At most 6 run times per day',
+  'Chọn ít nhất một ngày trong tuần': 'Choose at least one day of the week',
+  'Ngày trong tháng không hợp lệ': 'Invalid day of the month',
+  'Chọn ít nhất một ngày trong tháng': 'Choose at least one day of the month',
+  'Tối đa 10 ngày mỗi tháng': 'At most 10 days per month',
+  'Lặp lại tối thiểu mỗi 1 giờ': 'Repeat at most once per hour',
+  'Thời điểm không hợp lệ': 'Invalid date/time',
+};
 const uniqSorted = <T>(xs: T[], cmp: (a: T, b: T) => number) => [...new Set(xs)].sort(cmp);
 
 /** Giờ chạy trong một ngày (phút tính từ 0h). */
@@ -53,22 +65,27 @@ function dayTimes(s: Exclude<Schedule, { kind: 'mot_lan' }>): number[] {
  */
 export function parseSchedule(raw: unknown, now = new Date()): Schedule {
   const p = ScheduleSchema.safeParse(raw);
-  if (!p.success) throw new Problem('invalid_params', 'Lịch chưa hợp lệ', p.error.issues[0]!.message);
+  const title = L('Lịch chưa hợp lệ', 'Invalid schedule');
+  if (!p.success) {
+    const m = p.error.issues[0]!.message;
+    throw new Problem('invalid_params', title, L(m, ZOD_EN[m] ?? m));
+  }
   const s = p.data;
-  const bad = (detail: string) => new Problem('invalid_params', 'Lịch chưa hợp lệ', detail);
+  const bad = (detail: Text) => new Problem('invalid_params', title, detail);
   if (s.kind === 'mot_lan') {
     const at = localToUtc(s.at);
-    if (at.getTime() <= now.getTime() + 60_000) throw bad('Thời điểm hẹn phải ở tương lai');
-    if (at.getTime() > now.getTime() + 60 * 86_400_000) throw bad('Chỉ hẹn trước tối đa 60 ngày');
+    if (at.getTime() <= now.getTime() + 60_000) throw bad(L('Thời điểm hẹn phải ở tương lai', 'The scheduled time must be in the future'));
+    if (at.getTime() > now.getTime() + 60 * 86_400_000) throw bad(L('Chỉ hẹn trước tối đa 60 ngày', 'You can schedule at most 60 days ahead'));
     return s;
   }
   if ('times' in s) s.times = uniqSorted(s.times, (a, b) => minutes(a) - minutes(b));
   if ('days' in s) s.days = uniqSorted(s.days, (a, b) => a - b);
   if (s.kind === 'hang_thang') s.days_of_month = uniqSorted(s.days_of_month, (a, b) => (a === -1 ? 99 : a) - (b === -1 ? 99 : b));
-  if (s.kind === 'lap_lai' && minutes(s.from) >= minutes(s.to)) throw bad('Giờ bắt đầu phải trước giờ kết thúc');
+  if (s.kind === 'lap_lai' && minutes(s.from) >= minutes(s.to)) throw bad(L('Giờ bắt đầu phải trước giờ kết thúc', 'Start time must be before end time'));
   const ts = dayTimes(s);
   for (let i = 1; i < ts.length; i++) {
-    if (ts[i]! - ts[i - 1]! < MIN_GAP_MINUTES) throw bad(`Các giờ chạy phải cách nhau ít nhất ${MIN_GAP_MINUTES} phút (${hhmm(ts[i - 1]!)} và ${hhmm(ts[i]!)})`);
+    if (ts[i]! - ts[i - 1]! < MIN_GAP_MINUTES) throw bad(L(`Các giờ chạy phải cách nhau ít nhất ${MIN_GAP_MINUTES} phút (${hhmm(ts[i - 1]!)} và ${hhmm(ts[i]!)})`,
+      `Run times must be at least ${MIN_GAP_MINUTES} minutes apart (${hhmm(ts[i - 1]!)} and ${hhmm(ts[i]!)})`));
   }
   return s;
 }
@@ -106,22 +123,27 @@ export function nextScheduleRuns(s: Schedule, count = 1, from = new Date()): Dat
   return out;
 }
 
-const DOW_LABEL = ['', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
-const DOW_FULL = ['', 'Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy', 'Chủ nhật'];
-/** "T2–T6", "T2, T4, T6", "cả tuần". */
-function daysLabel(days: number[]): string {
-  if (days.length === 7) return 'cả tuần';
+const DOW_LABEL = { vi: ['', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'], en: ['', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] };
+const DOW_FULL = {
+  vi: ['', 'Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy', 'Chủ nhật'],
+  en: ['', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'],
+};
+/** "T2–T6", "T2, T4, T6", "cả tuần" (en: "Mon–Fri", "Mon, Wed, Fri", "every day"). */
+function daysLabel(days: number[], lang: Lang = 'vi'): string {
+  if (days.length === 7) return lang === 'en' ? 'every day' : 'cả tuần';
+  const lb = DOW_LABEL[lang];
   const contiguous = days.length >= 3 && days.every((d, i) => i === 0 || d === days[i - 1]! + 1);
-  return contiguous ? `${DOW_LABEL[days[0]!]}–${DOW_LABEL[days.at(-1)!]}` : days.map((d) => DOW_LABEL[d]).join(', ');
+  return contiguous ? `${lb[days[0]!]}–${lb[days.at(-1)!]}` : days.map((d) => lb[d]).join(', ');
 }
 const timesLabel = (ts: string[]) => ts.join(', ');
 
-/** Mô tả lịch bằng tiếng Việt cho người dùng. */
-export function describeSchedule(s: Schedule): string {
+/** Mô tả lịch cho người dùng (mặc định tiếng Việt). */
+export function describeSchedule(s: Schedule, lang: Lang = 'vi'): string {
+  if (lang === 'en') return describeScheduleEn(s);
   switch (s.kind) {
     case 'hang_ngay': return `Hàng ngày lúc ${timesLabel(s.times)}`;
     case 'hang_tuan': return s.days.length === 7 ? `Hàng ngày lúc ${timesLabel(s.times)}`
-      : s.days.length === 1 ? `${DOW_FULL[s.days[0]!]} hàng tuần lúc ${timesLabel(s.times)}`
+      : s.days.length === 1 ? `${DOW_FULL.vi[s.days[0]!]} hàng tuần lúc ${timesLabel(s.times)}`
       : `${daysLabel(s.days)} lúc ${timesLabel(s.times)}`;
     case 'hang_thang': {
       const ds = s.days_of_month.map((d) => (d === -1 ? 'cuối tháng' : String(d)));
@@ -129,6 +151,23 @@ export function describeSchedule(s: Schedule): string {
     }
     case 'lap_lai': return `Mỗi ${s.every_hours} giờ từ ${s.from} đến ${s.to}, ${daysLabel(s.days)}`;
     case 'mot_lan': return `Một lần lúc ${s.at.slice(11)} ${s.at.slice(8, 10)}/${s.at.slice(5, 7)}/${s.at.slice(0, 4)}`;
+  }
+}
+
+function describeScheduleEn(s: Schedule): string {
+  switch (s.kind) {
+    case 'hang_ngay': return `Daily at ${timesLabel(s.times)}`;
+    case 'hang_tuan': return s.days.length === 7 ? `Daily at ${timesLabel(s.times)}`
+      : s.days.length === 1 ? `Every ${DOW_FULL.en[s.days[0]!]} at ${timesLabel(s.times)}`
+      : `${daysLabel(s.days, 'en')} at ${timesLabel(s.times)}`;
+    case 'hang_thang': {
+      const ds = s.days_of_month.map((d) => (d === -1 ? 'last day' : String(d)));
+      const one = ds.length === 1 && ds[0] === 'last day';
+      return one ? `Last day of every month at ${timesLabel(s.times)}`
+        : `${ds.length > 1 ? 'Days' : 'Day'} ${ds.join(', ')} of every month at ${timesLabel(s.times)}`;
+    }
+    case 'lap_lai': return `Every ${s.every_hours === 1 ? 'hour' : `${s.every_hours} hours`} from ${s.from} to ${s.to}, ${daysLabel(s.days, 'en')}`;
+    case 'mot_lan': return `Once at ${s.at.slice(11)} ${s.at.slice(8, 10)}/${s.at.slice(5, 7)}/${s.at.slice(0, 4)}`;
   }
 }
 

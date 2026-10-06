@@ -13,10 +13,38 @@ import { DataSourceBar } from '../components/DataSource';
 import { Empty, ErrorBox, Loading } from '../components/States';
 import { Pager, SearchBox } from '../components/TableTools';
 import { Button, Card, Muted, PageTitle, TextLink } from '../components/ui';
+import { messages, useT } from '../i18n';
+
+const M = messages({
+  notFound: 'Không tìm thấy báo cáo. ', backToCatalog: 'Quay lại danh mục',
+  reports: 'Báo cáo',
+  view: 'Xem báo cáo', exportXlsx: 'Xuất Excel',
+  range: (from: string, to: string) => `Khoảng dữ liệu: ${from} – ${to}`,
+  day: (d: string) => `Ngày: ${d}`,
+  searchPh: 'Tìm trong bảng (mọi cột)…',
+  filtering: (q: string) => `Đang lọc theo “${q}” — thẻ số liệu và biểu đồ vẫn tính trên toàn bộ.`,
+  noMatch: (q: string) => `Không có dòng nào khớp “${q}”. `,
+  clearSearch: 'Xoá tìm kiếm',
+  noRows: (at: string) => `Không có bản ghi nào khớp điều kiện của báo cáo trong khoảng đã chọn. Dữ liệu vẫn cập nhật bình thường (lần cuối ${at}) — thử đổi khoảng thời gian hoặc bộ lọc.`,
+  noData: 'Chưa có dữ liệu — hệ thống chưa lấy được dữ liệu lần nào, xem dòng trạng thái ở trên.',
+}, {
+  notFound: 'Report not found. ', backToCatalog: 'Back to catalog',
+  reports: 'Reports',
+  view: 'View report', exportXlsx: 'Export to Excel',
+  range: (from: string, to: string) => `Data range: ${from} – ${to}`,
+  day: (d: string) => `Date: ${d}`,
+  searchPh: 'Search the table (all columns)…',
+  filtering: (q: string) => `Filtering by “${q}” — stat tiles and charts still cover all data.`,
+  noMatch: (q: string) => `No rows match “${q}”. `,
+  clearSearch: 'Clear search',
+  noRows: (at: string) => `No records match this report's criteria in the selected range. Data is still updating normally (last run ${at}) — try a different time range or filter.`,
+  noData: 'No data yet — the system hasn’t fetched any data so far; see the status line above.',
+});
 
 
 /** Màn hình 4 — Xem báo cáo: tham số, phạm vi, bảng, biểu đồ, độ tươi, xuất file, đặt lịch. */
 export function ReportPage() {
+  const t = useT(M);
   const { code = '' } = useParams();
   const catalog = useAsync(() => api.get<ReportDef[]>('/reports'), []);
   const def = catalog.data?.find((r) => r.code === code);
@@ -58,7 +86,7 @@ export function ReportPage() {
 
   if (catalog.loading) return <Loading />;
   if (catalog.error) return <ErrorBox error={catalog.error} onRetry={catalog.reload} />;
-  if (!def) return <Empty>Không tìm thấy báo cáo. <TextLink to="/bao-cao">Quay lại danh mục</TextLink></Empty>;
+  if (!def) return <Empty>{t.notFound}<TextLink to="/bao-cao">{t.backToCatalog}</TextLink></Empty>;
 
   const d = result.data;
   const go = (p: number) => { setPage(p); run(p); };
@@ -66,18 +94,18 @@ export function ReportPage() {
   const resize = (n: number) => { setPageSize(n); setPage(1); run(1, { size: n }); };
   return (
     <>
-      <div className="text-slate-500 dark:text-slate-400"><TextLink to="/bao-cao">Báo cáo</TextLink> / {def.ten}</div>
+      <div className="text-slate-500 dark:text-slate-400"><TextLink to="/bao-cao">{t.reports}</TextLink> / {def.ten}</div>
       <PageTitle title={def.ten} subtitle={def.mo_ta} />
 
       <Card>
         <div className="flex flex-wrap items-end gap-3">
           {params && <ParamForm code={def.code} props={def.param_schema.properties} value={params} onChange={setParams} />}
-          <Button variant="primary" onClick={() => go(1)}>Xem báo cáo</Button>
+          <Button variant="primary" onClick={() => go(1)}>{t.view}</Button>
           <span className="flex-1" />
-          <Button disabled={!d} onClick={() => void exportXlsx()}>Xuất Excel</Button>
+          <Button disabled={!d} onClick={() => void exportXlsx()}>{t.exportXlsx}</Button>
         </div>
-        {d?.applied?.tu_ngay ? <Muted className="mt-3">Khoảng dữ liệu: {fmtDate(d.applied.tu_ngay)} – {fmtDate(d.applied.den_ngay)}</Muted> : null}
-        {d?.applied?.ngay ? <Muted className="mt-3">Ngày: {fmtDate(d.applied.ngay)}</Muted> : null}
+        {d?.applied?.tu_ngay ? <Muted className="mt-3">{t.range(fmtDate(d.applied.tu_ngay), fmtDate(d.applied.den_ngay))}</Muted> : null}
+        {d?.applied?.ngay ? <Muted className="mt-3">{t.day(fmtDate(d.applied.ngay))}</Muted> : null}
         <DataSourceBar reportCode={code} version={srcVer} />
         <AutoRefreshBar st={auto} className="mt-2" />
       </Card>
@@ -92,16 +120,16 @@ export function ReportPage() {
           {d.charts?.map((c) => <ChartView key={c.title} chart={c} rows={d.chart_rows ?? d.rows} />)}
           {d.columns.length > 0 && (d.rows.length > 0 || q) && (
             <div className="mb-3 mt-4 flex flex-wrap items-center gap-3">
-              <SearchBox value={q} onChange={search} placeholder="Tìm trong bảng (mọi cột)…" />
-              {q && <Muted className="text-sm">Đang lọc theo “{q}” — thẻ số liệu và biểu đồ vẫn tính trên toàn bộ.</Muted>}
+              <SearchBox value={q} onChange={search} placeholder={t.searchPh} />
+              {q && <Muted className="text-sm">{t.filtering(q)}</Muted>}
             </div>
           )}
           {d.rows.length === 0
             ? (q
-              ? <Empty>Không có dòng nào khớp “{q}”. <button type="button" className="text-blue-700 underline dark:text-blue-400" onClick={() => search('')}>Xoá tìm kiếm</button></Empty>
+              ? <Empty>{t.noMatch(q)}<button type="button" className="text-blue-700 underline dark:text-blue-400" onClick={() => search('')}>{t.clearSearch}</button></Empty>
               : <Empty>{d.freshness.last_success_at
-                ? <>Không có bản ghi nào khớp điều kiện của báo cáo trong khoảng đã chọn. Dữ liệu vẫn cập nhật bình thường (lần cuối {fmtDateTime(d.freshness.last_success_at)}) — thử đổi khoảng thời gian hoặc bộ lọc.</>
-                : <>Chưa có dữ liệu — hệ thống chưa lấy được dữ liệu lần nào, xem dòng trạng thái ở trên.</>}</Empty>)
+                ? t.noRows(fmtDateTime(d.freshness.last_success_at))
+                : t.noData}</Empty>)
             : <DataTable columns={d.columns} rows={d.rows} />}
           {d.rows.length > 0 && <Pager page={page} pageSize={pageSize} total={d.total_rows} onPage={go} onPageSize={resize} />}
         </div>

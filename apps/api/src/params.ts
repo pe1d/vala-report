@@ -1,6 +1,6 @@
 import Ajv from 'ajv';
 import addFormats from 'ajv-formats';
-import { Problem } from '@vala/core';
+import { L, Problem } from '@vala/core';
 
 const ajv = new Ajv({ allErrors: true, useDefaults: true, coerceTypes: false, strict: false });
 addFormats.default(ajv, ['date']);
@@ -18,7 +18,7 @@ export function validateParams(code: string, schema: object, defaults: object, p
   }
   const value = { ...defaults, ...(params && typeof params === 'object' ? params : {}) };
   if (!validate(value)) {
-    throw new Problem('invalid_params', 'Tham số không hợp lệ', undefined, {
+    throw new Problem('invalid_params', L('Tham số không hợp lệ', 'Invalid parameters'), undefined, {
       errors: (validate.errors ?? []).map((e) => ({ path: e.instancePath || '/', message: e.message })),
     });
   }
@@ -64,8 +64,8 @@ export function resolvePeriod(p: Record<string, unknown>, now = new Date()): { t
     case 'tuy_chon': {
       const tu = p.tu_ngay as string | undefined;
       const den = p.den_ngay as string | undefined;
-      if (!tu || !den) throw new Problem('invalid_params', 'Tham số không hợp lệ', 'Khoảng tuỳ chọn cần cả Từ ngày và Đến ngày');
-      if (tu > den) throw new Problem('invalid_params', 'Tham số không hợp lệ', 'Từ ngày phải trước Đến ngày');
+      if (!tu || !den) throw new Problem('invalid_params', L('Tham số không hợp lệ', 'Invalid parameters'), L('Khoảng tuỳ chọn cần cả Từ ngày và Đến ngày', 'A custom range needs both From date and To date'));
+      if (tu > den) throw new Problem('invalid_params', L('Tham số không hợp lệ', 'Invalid parameters'), L('Từ ngày phải trước Đến ngày', 'From date must be before To date'));
       return { tu_ngay: tu, den_ngay: den };
     }
     default:

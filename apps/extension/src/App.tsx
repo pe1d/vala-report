@@ -4,26 +4,142 @@ import {
   ApiError, allDomainCookies, api, applicableCookies, cookieGroupsOf, deviceName, missingGroups, getCachedSources, getSettings, getStatuses, normalizeServer, originPattern, setSettings, sourcePermissions,
   type ConnectEvent, type Message, type Settings, type Source, type SyncStatus,
 } from './shared';
-import { Badge, Banner, Button, Field, Input, Muted, SuccessDialog, ThemeToggle, cx, type Tone } from './ui';
+import { locale, messages, tr } from './i18n';
+import { Badge, Banner, Button, Field, Input, LangToggle, Muted, SuccessDialog, ThemeToggle, cx, useT, type Tone } from './ui';
+
+const M = messages({
+  // trạng thái nguồn
+  stManaged: 'Hệ thống tự đăng nhập', stNoPermission: 'Chưa cho phép', stNeedConsent: 'Chờ xác nhận', stNotLoggedIn: 'Chưa đăng nhập',
+  stExpired: 'Phiên hết hạn', stError: 'Lỗi gửi', stActive: 'Đang lấy dữ liệu', stNotSent: 'Chưa gửi',
+  // đầu trang
+  tagline: 'Tiện ích gửi phiên hệ thống nguồn',
+  // chẩn đoán
+  jsSet: '(JS đặt · document.cookie)',
+  discoverConfirm: (domain: string, ten: string) => `Gửi tạm TẤT CẢ cookie của ${domain} lên máy chủ Vala để dò xem ${ten} cần cookie nào?\n\nMáy chủ chỉ mở thử trang ${ten} bằng các cookie này rồi bỏ đi — không lưu, không ghi log giá trị.`,
+  discoverFailed: 'Dò lỗi',
+  discovering: 'Đang dò… (có thể mất 10–20 giây)',
+  discover: 'Dò cookie phiên',
+  discoverOk: 'Máy chủ dùng được phiên với:',
+  discoverOkTail: (n: number) => `(${n} lần thử). Gửi danh sách tên này cho quản trị để sửa adapter.`,
+  discoverNo: 'Kể cả gửi đủ mọi cookie, máy chủ vẫn không dùng được phiên:',
+  attrSession: 'phiên', attrPartitioned: 'phân vùng', attrNotSent: '(không gửi cho trang này)',
+  needs: 'Vala cần:', or: ' hoặc ',
+  missing: (n: number, ten: string) => `Thiếu ${n} cookie. Hãy chắc là bạn đang đăng nhập ${ten} (mở trang vẫn vào thẳng, không hỏi mật khẩu). Đã đăng nhập mà vẫn thiếu thì tên cookie trong adapter chưa đúng — gửi danh sách dưới đây cho quản trị.`,
+  haveCookies: (n: number) => `Trình duyệt đang có ${n} cookie (chỉ tên, không có giá trị):`,
+  none: '(không có)',
+  copyNames: 'Sao chép danh sách tên',
+  // dòng nguồn
+  lastSent: (t: string) => ` · gửi lần cuối ${t}`,
+  allow: 'Cho phép',
+  openToLogin: (ten: string) => `Mở ${ten} để đăng nhập`,
+  hideDiag: 'Ẩn chẩn đoán', diag: 'Chẩn đoán cookie',
+  // xác nhận đồng ý — khớp apps/web/src/components/Consent.tsx
+  consent: (ten: string) => `Vala sẽ dùng tài khoản ${ten} của bạn để tự lấy dữ liệu công việc của chính bạn theo lịch bạn đặt (và khi bạn đang dùng cổng). Nhật ký của ${ten} sẽ ghi nhận các lần truy cập này dưới tên tài khoản của bạn. Chỉ bạn xem được dữ liệu lấy về; bạn có thể gỡ kết nối bất cứ lúc nào.`,
+  consentAgree: 'Tôi đã hiểu và đồng ý',
+  // popup
+  popupIntro: 'Đăng nhập tiện ích bằng tài khoản Vala để hệ thống nhận phiên các hệ thống nguồn từ trình duyệt này.',
+  signIn: 'Đăng nhập',
+  signedInAs: 'Đăng nhập Vala:',
+  loadingSources: 'Đang tải danh sách hệ thống…',
+  sending: 'Đang gửi…', resend: 'Gửi lại ngay', settings: 'Cài đặt',
+  // trang cài đặt
+  connectFailed: 'Kết nối không thành công',
+  pressAllow: (ten: string) => `Bấm "Cho phép" ở dòng ${ten} để tiện ích đọc được phiên đăng nhập.`,
+  badServer: 'Địa chỉ máy chủ phải là https://… (http chỉ cho localhost).',
+  needServerPermission: (host: string) => `Cần cho phép tiện ích kết nối ${host}.`,
+  signedIn: 'Đã đăng nhập tiện ích. Từ giờ mỗi khi bạn đăng nhập các hệ thống bên dưới trên trình duyệt này, tiện ích tự gửi phiên cho Vala.',
+  signInFailed: 'Đăng nhập lỗi',
+  notAllowed: 'Chưa cho phép — tiện ích sẽ không đọc được phiên các hệ thống đó.',
+  allowed: 'Đã cho phép. Từ giờ mỗi khi bạn đăng nhập các hệ thống này, tiện ích tự gửi phiên cho Vala.',
+  signedOut: 'Đã đăng xuất tiện ích. Phiên đã gửi trước đó vẫn ở Vala cho tới khi bạn gỡ tại cổng.',
+  connected: (ten: string) => `Đã kết nối ${ten}`,
+  notConnected: (ten: string) => `Chưa kết nối được ${ten}`,
+  backToVala: 'Về Vala Reporting',
+  connectedBody: 'Vala đã nhận phiên đăng nhập và sẽ lấy dữ liệu thay bạn theo lịch.',
+  tipPre: 'Mẹo: khi trình duyệt hỏi, bấm ', tipSave: '“Lưu mật khẩu”',
+  tipPost: '. Lần sau phiên hết hạn, tiện ích sẽ báo — bấm vào thông báo là trình duyệt tự điền, bạn chỉ cần bấm Đăng nhập.',
+  signInTitle: 'Đăng nhập tài khoản Vala',
+  server: 'Máy chủ Vala', serverHint: 'Địa chỉ cổng báo cáo của đơn vị, ví dụ https://bao-cao.ten-don-vi.vn',
+  username: 'Tên đăng nhập', password: 'Mật khẩu', signingIn: 'Đang đăng nhập…', signOut: 'Đăng xuất',
+  sources: 'Hệ thống nguồn', allowAll: (n: number) => `Cho phép đọc phiên (${n})`,
+  aboutTitle: 'Tiện ích làm gì',
+  about1Pre: 'Bạn đăng nhập các hệ thống nguồn (danh sách ở trên, do quản trị cấu hình) như mọi ngày. Tiện ích đọc ',
+  about1Strong: 'đúng các cookie phiên',
+  about1Post: ' Vala cần và gửi về máy chủ Vala, để hệ thống lấy dữ liệu thay bạn theo lịch — không phải dán cookie, không lưu mật khẩu.',
+  about2: 'Tiện ích chỉ đọc tên miền bạn đã bấm cho phép. Cookie được lưu trong kho bí mật của Vala; tiện ích không giữ lại giá trị cookie. Gỡ tại cổng Vala (Tài khoản nguồn) để xoá phiên đã gửi.',
+}, {
+  stManaged: 'Signed in by the system', stNoPermission: 'Not allowed', stNeedConsent: 'Awaiting consent', stNotLoggedIn: 'Not signed in',
+  stExpired: 'Session expired', stError: 'Send failed', stActive: 'Fetching data', stNotSent: 'Not sent',
+  tagline: 'Sends your source system sessions to Vala',
+  jsSet: '(set by JS · document.cookie)',
+  discoverConfirm: (domain: string, ten: string) => `Temporarily send ALL cookies of ${domain} to the Vala server to find out which cookies ${ten} needs?\n\nThe server only tries opening ${ten} with these cookies, then discards them — values are not stored or logged.`,
+  discoverFailed: 'Detection failed',
+  discovering: 'Detecting… (may take 10–20 seconds)',
+  discover: 'Detect session cookies',
+  discoverOk: 'The server can use the session with:',
+  discoverOkTail: (n: number) => `(${n} attempts). Send these names to your administrator to fix the adapter.`,
+  discoverNo: 'Even with all cookies, the server still cannot use the session:',
+  attrSession: 'session', attrPartitioned: 'partitioned', attrNotSent: '(not sent to this site)',
+  needs: 'Vala needs:', or: ' or ',
+  missing: (n: number, ten: string) => `${n} cookie(s) missing. Make sure you are signed in to ${ten} (opening the site goes straight in without asking for a password). If you are signed in and they are still missing, the cookie names in the adapter are wrong — send the list below to your administrator.`,
+  haveCookies: (n: number) => `The browser has ${n} cookie(s) (names only, no values):`,
+  none: '(none)',
+  copyNames: 'Copy names',
+  lastSent: (t: string) => ` · last sent ${t}`,
+  allow: 'Allow',
+  openToLogin: (ten: string) => `Open ${ten} to sign in`,
+  hideDiag: 'Hide diagnosis', diag: 'Diagnose cookies',
+  consent: (ten: string) => `Vala will use your ${ten} account to automatically fetch your own work data on the schedule you set (and while you are using the portal). ${ten}'s logs will record these accesses under your account. Only you can see the fetched data; you can remove the connection at any time.`,
+  consentAgree: 'I understand and agree',
+  popupIntro: 'Sign in to the extension with your Vala account so Vala can receive your source system sessions from this browser.',
+  signIn: 'Sign in',
+  signedInAs: 'Signed in to Vala:',
+  loadingSources: 'Loading systems…',
+  sending: 'Sending…', resend: 'Resend now', settings: 'Settings',
+  connectFailed: 'Connection failed',
+  pressAllow: (ten: string) => `Click "Allow" on the ${ten} row so the extension can read your sign-in session.`,
+  badServer: 'The server address must be https://… (http only for localhost).',
+  needServerPermission: (host: string) => `Allow the extension to connect to ${host}.`,
+  signedIn: 'Signed in to the extension. From now on, whenever you sign in to the systems below in this browser, the extension sends the session to Vala automatically.',
+  signInFailed: 'Sign-in failed',
+  notAllowed: 'Not allowed — the extension cannot read sessions of those systems.',
+  allowed: 'Allowed. From now on, whenever you sign in to these systems, the extension sends the session to Vala automatically.',
+  signedOut: 'Signed out of the extension. Sessions sent earlier stay in Vala until you remove them in the portal.',
+  connected: (ten: string) => `Connected to ${ten}`,
+  notConnected: (ten: string) => `Could not connect to ${ten}`,
+  backToVala: 'Back to Vala Reporting',
+  connectedBody: 'Vala has received your sign-in session and will fetch data for you on schedule.',
+  tipPre: 'Tip: when the browser asks, click ', tipSave: '“Save password”',
+  tipPost: '. Next time the session expires, the extension will notify you — click the notification and the browser fills in your details; just click Sign in.',
+  signInTitle: 'Sign in to your Vala account',
+  server: 'Vala server', serverHint: 'Your organization\'s reporting portal address, e.g. https://reports.your-org.example',
+  username: 'Username', password: 'Password', signingIn: 'Signing in…', signOut: 'Sign out',
+  sources: 'Source systems', allowAll: (n: number) => `Allow reading sessions (${n})`,
+  aboutTitle: 'What the extension does',
+  about1Pre: 'You sign in to your source systems (listed above, configured by your administrator) as usual. The extension reads ',
+  about1Strong: 'only the session cookies',
+  about1Post: ' Vala needs and sends them to the Vala server, so Vala can fetch data for you on schedule — no pasting cookies, no stored passwords.',
+  about2: 'The extension only reads domains you have allowed. Cookies are kept in Vala\'s secret vault; the extension does not keep cookie values. Remove the connection in the Vala portal (Source accounts) to delete sent sessions.',
+});
 
 const send = (m: Message) => chrome.runtime.sendMessage(m) as Promise<{ ok?: boolean; error?: string; status?: string; message?: string }>;
 const fmt = (iso: string | null | undefined) => iso
-  ? new Date(iso).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', hour12: false })
+  ? new Date(iso).toLocaleString(locale(), { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', hour12: false })
   : '–';
 
 /** Trạng thái hiển thị của một nguồn: ghép trạng thái kết nối trên máy chủ với lần đồng bộ gần nhất. */
-function sourceState(src: Source, st: SyncStatus | undefined): [Tone, string] {
-  if (src.managed) return ['ok', 'Hệ thống tự đăng nhập'];
+function sourceState(src: Source, st: SyncStatus | undefined, t: (typeof M)['vi']): [Tone, string] {
+  if (src.managed) return ['ok', t.stManaged];
   switch (st?.result) {
-    case 'no_permission': return ['warn', 'Chưa cho phép'];
-    case 'need_consent': return ['warn', 'Chờ xác nhận'];
-    case 'not_logged_in': return ['warn', 'Chưa đăng nhập'];
-    case 'rejected': return ['err', 'Phiên hết hạn'];
-    case 'error': return ['err', 'Lỗi gửi'];
+    case 'no_permission': return ['warn', t.stNoPermission];
+    case 'need_consent': return ['warn', t.stNeedConsent];
+    case 'not_logged_in': return ['warn', t.stNotLoggedIn];
+    case 'rejected': return ['err', t.stExpired];
+    case 'error': return ['err', t.stError];
   }
-  if (src.state === 'active') return ['ok', 'Đang lấy dữ liệu'];
-  if (src.state === 'expired') return ['err', 'Phiên hết hạn'];
-  return ['neutral', 'Chưa gửi'];
+  if (src.state === 'active') return ['ok', t.stActive];
+  if (src.state === 'expired') return ['err', t.stExpired];
+  return ['neutral', t.stNotSent];
 }
 
 function useExtState() {
@@ -48,13 +164,15 @@ function useExtState() {
 }
 
 function Header({ compact }: { compact?: boolean }) {
+  const t = useT(M);
   return (
     <header className="flex items-center gap-2.5">
       <img src={chrome.runtime.getManifest().icons?.['48'] ?? 'icons/vala-48.png'} alt="" className={compact ? 'h-6 w-6' : 'h-8 w-8'} />
       <div className="flex-1">
         <div className={cx('font-bold', !compact && 'text-lg')}>Vala Reporting</div>
-        {!compact && <Muted className="text-xs">Tiện ích gửi phiên hệ thống nguồn</Muted>}
+        {!compact && <Muted className="text-xs">{t.tagline}</Muted>}
       </div>
+      <LangToggle />
       <ThemeToggle />
     </header>
   );
@@ -89,7 +207,7 @@ async function diagnose(src: Source): Promise<CookieInfo[]> {
   // Bổ sung cookie JS đặt (companyId/meId…) chỉ thấy qua document.cookie của trang nguồn.
   const have = new Set(infos.map((c) => c.name));
   for (const name of await pageCookieNames(src))
-    if (!have.has(name)) infos.push({ name, domain: '(JS đặt · document.cookie)', path: '/', httpOnly: false, session: true, partitioned: false, applies: true });
+    if (!have.has(name)) infos.push({ name, domain: tr(M).jsSet, path: '/', httpOnly: false, session: true, partitioned: false, applies: true });
   return infos.sort((a, b) => a.name.localeCompare(b.name));
 }
 
@@ -97,55 +215,58 @@ type Discover = { ok: true; required: string[]; probes: number } | { ok: false; 
 
 /** Nút "Dò cookie phiên": gửi TẠM mọi cookie của tên miền nguồn để máy chủ tìm bộ cookie cần. Không lưu. */
 function DiscoverButton({ src }: { src: Source }) {
+  const t = useT(M);
   const [busy, setBusy] = useState(false);
   const [r, setR] = useState<Discover | { error: string } | null>(null);
   const run = async () => {
-    if (!confirm(`Gửi tạm TẤT CẢ cookie của ${src.cookie_domain ?? new URL(src.origin).host} lên máy chủ Vala để dò xem ${src.ten} cần cookie nào?\n\nMáy chủ chỉ mở thử trang ${src.ten} bằng các cookie này rồi bỏ đi — không lưu, không ghi log giá trị.`)) return;
+    if (!confirm(t.discoverConfirm(src.cookie_domain ?? new URL(src.origin).host, src.ten))) return;
     setBusy(true); setR(null);
     try {
       const cookies: Record<string, string> = {};
       for (const c of await applicableCookies(src)) if (!(c.name in cookies)) cookies[c.name] = c.value;
       setR(await api<Discover>('POST', `/ext/sources/${src.code}/discover`, { cookies }));
     } catch (e) {
-      setR({ error: e instanceof ApiError ? (e.detail ? `${e.message}: ${e.detail}` : e.message) : 'Dò lỗi' });
+      setR({ error: e instanceof ApiError ? (e.detail ? `${e.message}: ${e.detail}` : e.message) : t.discoverFailed });
     } finally { setBusy(false); }
   };
   return (
     <div className="grid gap-1.5">
-      <Button className="justify-self-start" disabled={busy} onClick={() => void run()}>{busy ? 'Đang dò… (có thể mất 10–20 giây)' : 'Dò cookie phiên'}</Button>
+      <Button className="justify-self-start" disabled={busy} onClick={() => void run()}>{busy ? t.discovering : t.discover}</Button>
       {r && 'error' in r && <div className="text-red-700 dark:text-red-400">{r.error}</div>}
-      {r && 'ok' in r && r.ok && <div>Máy chủ dùng được phiên với: <strong>{r.required.join(', ')}</strong> ({r.probes} lần thử). Gửi danh sách tên này cho quản trị để sửa adapter.</div>}
-      {r && 'ok' in r && !r.ok && <div>Kể cả gửi đủ mọi cookie, máy chủ vẫn không dùng được phiên: <strong>{r.detail}</strong></div>}
+      {r && 'ok' in r && r.ok && <div>{t.discoverOk} <strong>{r.required.join(', ')}</strong> {t.discoverOkTail(r.probes)}</div>}
+      {r && 'ok' in r && !r.ok && <div>{t.discoverNo} <strong>{r.detail}</strong></div>}
     </div>
   );
 }
 
 function Diagnosis({ src, items }: { src: Source; items: CookieInfo[] }) {
+  const t = useT(M);
   const names = new Set(items.filter((c) => c.applies).map((c) => c.name));
   const missing = missingGroups(src, names);
-  const text = items.map((c) => [c.name, c.domain, c.path, c.httpOnly && 'HttpOnly', c.session && 'phiên', c.partitioned && 'phân vùng', !c.applies && '(không gửi cho trang này)']
+  const text = items.map((c) => [c.name, c.domain, c.path, c.httpOnly && 'HttpOnly', c.session && t.attrSession, c.partitioned && t.attrPartitioned, !c.applies && t.attrNotSent]
     .filter(Boolean).join('\t')).join('\n');
   return (
     <div className="mt-2 grid gap-1.5 rounded-md bg-slate-50 p-2 text-xs dark:bg-slate-950">
-      <div>Vala cần: {cookieGroupsOf(src).map((g) => {
+      <div>{t.needs} {cookieGroupsOf(src).map((g) => {
         const ok = g.some((n) => names.has(n));
         return (
           <code key={g.join('|')} className={cx('mr-1 inline-block rounded px-1', ok ? 'bg-emerald-100 dark:bg-emerald-950' : 'bg-red-100 dark:bg-red-950')}>
-            {g.map((n) => (names.has(n) ? <strong key={n}>{n}</strong> : <span key={n}>{n}</span>)).reduce<React.ReactNode[]>((a, x, i) => (i ? [...a, ' hoặc ', x] : [x]), [])}{ok ? ' ✓' : ' ✗'}
+            {g.map((n) => (names.has(n) ? <strong key={n}>{n}</strong> : <span key={n}>{n}</span>)).reduce<React.ReactNode[]>((a, x, i) => (i ? [...a, t.or, x] : [x]), [])}{ok ? ' ✓' : ' ✗'}
           </code>
         );
       })}</div>
-      {missing.length > 0 && <div>Thiếu {missing.length} cookie. Hãy chắc là bạn đang đăng nhập {src.ten} (mở trang vẫn vào thẳng, không hỏi mật khẩu). Đã đăng nhập mà vẫn thiếu thì tên cookie trong adapter chưa đúng — gửi danh sách dưới đây cho quản trị.</div>}
-      <div>Trình duyệt đang có {items.length} cookie (chỉ tên, không có giá trị):</div>
-      <pre className="max-h-48 overflow-auto whitespace-pre-wrap rounded border border-slate-200 p-1.5 font-mono dark:border-slate-800">{text || '(không có)'}</pre>
-      <Button className="justify-self-start" onClick={() => void navigator.clipboard.writeText(text)}>Sao chép danh sách tên</Button>
+      {missing.length > 0 && <div>{t.missing(missing.length, src.ten)}</div>}
+      <div>{t.haveCookies(items.length)}</div>
+      <pre className="max-h-48 overflow-auto whitespace-pre-wrap rounded border border-slate-200 p-1.5 font-mono dark:border-slate-800">{text || t.none}</pre>
+      <Button className="justify-self-start" onClick={() => void navigator.clipboard.writeText(text)}>{t.copyNames}</Button>
       <DiscoverButton src={src} />
     </div>
   );
 }
 
 function SourceRow({ src, st, granted, onGrant, canDiagnose, highlight }: { src: Source; st?: SyncStatus; granted: boolean; onGrant?: () => void; canDiagnose?: boolean; highlight?: boolean }) {
-  const [tone, label] = sourceState(src, st);
+  const t = useT(M);
+  const [tone, label] = sourceState(src, st, t);
   const [diag, setDiag] = useState<CookieInfo[] | null>(null);
   const needLogin = st?.result === 'not_logged_in' || st?.result === 'rejected' || (!st && src.state === 'expired');
   return (
@@ -154,14 +275,14 @@ function SourceRow({ src, st, granted, onGrant, canDiagnose, highlight }: { src:
         <span className="flex-1 font-semibold">{src.ten}</span>
         <Badge tone={tone}>{label}</Badge>
       </div>
-      <Muted className="mt-0.5 text-xs">{new URL(src.origin).host}{src.last_push_at && src.state === 'active' ? ` · gửi lần cuối ${fmt(src.last_push_at)}` : ''}</Muted>
+      <Muted className="mt-0.5 text-xs">{new URL(src.origin).host}{src.last_push_at && src.state === 'active' ? t.lastSent(fmt(src.last_push_at)) : ''}</Muted>
       {st && st.result !== 'sent' && st.result !== 'unchanged' && st.result !== 'managed' && st.result !== 'need_consent' && <p className="mt-1 text-xs">{st.message}</p>}
       {src.consented === false && !src.managed && <ConsentConfirm src={src} />}
       {(needLogin || (!granted && onGrant) || (canDiagnose && granted)) && (
         <div className="mt-2 flex flex-wrap gap-2">
-          {!granted && onGrant && <Button variant="primary" onClick={onGrant}>Cho phép</Button>}
-          {granted && needLogin && <Button onClick={() => void send({ type: 'connect', code: src.code }).then(() => { if (location.pathname.endsWith('popup.html')) window.close(); })}>Mở {src.ten} để đăng nhập</Button>}
-          {canDiagnose && granted && <Button onClick={() => void (diag ? setDiag(null) : diagnose(src).then(setDiag))}>{diag ? 'Ẩn chẩn đoán' : 'Chẩn đoán cookie'}</Button>}
+          {!granted && onGrant && <Button variant="primary" onClick={onGrant}>{t.allow}</Button>}
+          {granted && needLogin && <Button onClick={() => void send({ type: 'connect', code: src.code }).then(() => { if (location.pathname.endsWith('popup.html')) window.close(); })}>{t.openToLogin(src.ten)}</Button>}
+          {canDiagnose && granted && <Button onClick={() => void (diag ? setDiag(null) : diagnose(src).then(setDiag))}>{diag ? t.hideDiag : t.diag}</Button>}
         </div>
       )}
       {diag && <Diagnosis src={src} items={diag} />}
@@ -174,6 +295,7 @@ function SourceRow({ src, st, granted, onGrant, canDiagnose, highlight }: { src:
  * hệ thống nguồn ghi nhận các lần truy cập đó. Nội dung khớp apps/web/src/components/Consent.tsx + CONSENT_VERSION ở máy chủ.
  */
 function ConsentConfirm({ src }: { src: Source }) {
+  const t = useT(M);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const agree = async () => {
@@ -186,14 +308,10 @@ function ConsentConfirm({ src }: { src: Source }) {
   };
   return (
     <div className="mt-2 rounded border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
-      <p>
-        Vala sẽ dùng tài khoản {src.ten} của bạn để tự lấy dữ liệu công việc của chính bạn theo lịch bạn đặt (và khi bạn đang dùng
-        cổng). Nhật ký của {src.ten} sẽ ghi nhận các lần truy cập này dưới tên tài khoản của bạn. Chỉ bạn xem được dữ liệu lấy về;
-        bạn có thể gỡ kết nối bất cứ lúc nào.
-      </p>
+      <p>{t.consent(src.ten)}</p>
       <label className="mt-1.5 flex cursor-pointer items-center gap-1.5 font-medium">
         <input type="checkbox" disabled={busy} onChange={(e) => e.target.checked && void agree()} />
-        Tôi đã hiểu và đồng ý
+        {t.consentAgree}
       </label>
       {err && <p className="mt-1 text-red-700 dark:text-red-400">{err}</p>}
     </div>
@@ -205,6 +323,7 @@ function ConsentConfirm({ src }: { src: Source }) {
 // ---------------------------------------------------------------------------------------------
 export function Popup() {
   const { settings, sources, statuses, granted } = useExtState();
+  const t = useT(M);
   const [busy, setBusy] = useState(false);
   const syncNow = async () => { setBusy(true); try { await send({ type: 'sync', force: true }); } finally { setBusy(false); } };
   // Mở popup ⇒ đồng bộ nhẹ (không ép gửi lại) để trạng thái mới nhất.
@@ -216,20 +335,20 @@ export function Popup() {
       <Header compact />
       {!settings.token ? (
         <div className="grid gap-2">
-          <Muted>Đăng nhập tiện ích bằng tài khoản Vala để hệ thống nhận phiên các hệ thống nguồn từ trình duyệt này.</Muted>
-          <Button variant="primary" onClick={() => void chrome.runtime.openOptionsPage()}>Đăng nhập</Button>
+          <Muted>{t.popupIntro}</Muted>
+          <Button variant="primary" onClick={() => void chrome.runtime.openOptionsPage()}>{t.signIn}</Button>
         </div>
       ) : (
         <>
-          <Muted className="text-xs">Đăng nhập Vala: <span className="font-medium text-slate-800 dark:text-slate-200">{settings.user?.ho_ten}</span></Muted>
+          <Muted className="text-xs">{t.signedInAs} <span className="font-medium text-slate-800 dark:text-slate-200">{settings.user?.ho_ten}</span></Muted>
           <ul className="grid gap-2">
             {sources.map((s) => <SourceRow key={s.code} src={s} st={statuses[s.code]} granted={granted[s.code] ?? false}
               onGrant={() => void chrome.runtime.openOptionsPage()} />)}
-            {!sources.length && <Muted>Đang tải danh sách hệ thống…</Muted>}
+            {!sources.length && <Muted>{t.loadingSources}</Muted>}
           </ul>
           <div className="flex gap-2">
-            <Button variant="primary" disabled={busy} onClick={() => void syncNow()}>{busy ? 'Đang gửi…' : 'Gửi lại ngay'}</Button>
-            <Button onClick={() => void chrome.runtime.openOptionsPage()}>Cài đặt</Button>
+            <Button variant="primary" disabled={busy} onClick={() => void syncNow()}>{busy ? t.sending : t.resend}</Button>
+            <Button onClick={() => void chrome.runtime.openOptionsPage()}>{t.settings}</Button>
           </div>
         </>
       )}
@@ -243,6 +362,7 @@ export function Popup() {
 // ---------------------------------------------------------------------------------------------
 export function Options() {
   const { settings, sources, statuses, granted, reload } = useExtState();
+  const t = useT(M);
   const [server, setServer] = useState('');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -267,19 +387,19 @@ export function Options() {
     if (!src) return;
     history.replaceState(null, '', location.pathname);
     if (m[1] === 'da-ket-noi') setDone({ type: 'connected', code: src.code, ten: src.ten });
-    else if (m[1] === 'loi') setDone({ type: 'connect-failed', code: src.code, ten: src.ten, message: statuses[src.code]?.message ?? 'Kết nối không thành công' });
-    else { setAskGrant(src.code); setNote({ tone: 'info', text: `Bấm "Cho phép" ở dòng ${src.ten} để tiện ích đọc được phiên đăng nhập.` }); }
+    else if (m[1] === 'loi') setDone({ type: 'connect-failed', code: src.code, ten: src.ten, message: statuses[src.code]?.message ?? tr(M).connectFailed });
+    else { setAskGrant(src.code); setNote({ tone: 'info', text: tr(M).pressAllow(src.ten) }); }
   }, [sources, statuses]);
 
   const login = async (e: FormEvent) => {
     e.preventDefault();
     const origin = normalizeServer(server);
-    if (!origin) { setNote({ tone: 'err', text: 'Địa chỉ máy chủ phải là https://… (http chỉ cho localhost).' }); return; }
+    if (!origin) { setNote({ tone: 'err', text: t.badServer }); return; }
     setBusy(true); setNote(null);
     try {
       // Xin quyền gọi máy chủ Vala TRƯỚC mọi await khác (Chrome yêu cầu còn trong cú bấm).
       if (!(await chrome.permissions.request({ origins: [originPattern(origin)] }))) {
-        setNote({ tone: 'err', text: `Cần cho phép tiện ích kết nối ${new URL(origin).host}.` }); return;
+        setNote({ tone: 'err', text: t.needServerPermission(new URL(origin).host) }); return;
       }
       await setSettings({ serverUrl: origin, token: null, user: null });
       const r = await api<{ token: string; user: Settings['user'] }>('POST', '/ext/login',
@@ -288,9 +408,9 @@ export function Options() {
       setPassword('');
       await send({ type: 'sync' });
       await reload();
-      setNote({ tone: 'ok', text: 'Đã đăng nhập tiện ích. Từ giờ mỗi khi bạn đăng nhập các hệ thống bên dưới trên trình duyệt này, tiện ích tự gửi phiên cho Vala.' });
+      setNote({ tone: 'ok', text: tr(M).signedIn });
     } catch (err) {
-      setNote({ tone: 'err', text: err instanceof ApiError ? (err.detail ? `${err.message}. ${err.detail}` : err.message) : 'Đăng nhập lỗi' });
+      setNote({ tone: 'err', text: err instanceof ApiError ? (err.detail ? `${err.message}. ${err.detail}` : err.message) : tr(M).signInFailed });
     } finally { setBusy(false); }
   };
 
@@ -298,8 +418,8 @@ export function Options() {
   const grant = async (list: Source[]) => {
     const origins = [...new Set(list.flatMap(sourcePermissions))];
     const ok = await chrome.permissions.request({ origins });
-    if (!ok) { setNote({ tone: 'err', text: 'Chưa cho phép — tiện ích sẽ không đọc được phiên các hệ thống đó.' }); return; }
-    setNote({ tone: 'ok', text: 'Đã cho phép. Từ giờ mỗi khi bạn đăng nhập các hệ thống này, tiện ích tự gửi phiên cho Vala.' });
+    if (!ok) { setNote({ tone: 'err', text: t.notAllowed }); return; }
+    setNote({ tone: 'ok', text: t.allowed });
     // Cho phép xong ⇒ kết nối luôn: có phiên sẵn thì gửi, chưa đăng nhập thì mở trang đăng nhập rồi quay lại đây.
     for (const s of list) await send({ type: 'connect', code: s.code });
     setAskGrant(null);
@@ -310,7 +430,7 @@ export function Options() {
     try { await api('POST', '/ext/logout'); } catch { /* token đã hết hạn cũng coi như xong */ }
     await setSettings({ token: null, user: null });
     await chrome.storage.local.remove(['sources', 'statuses', ...sources.map((s) => `sent:${s.code}`)]);
-    setNote({ tone: 'info', text: 'Đã đăng xuất tiện ích. Phiên đã gửi trước đó vẫn ở Vala cho tới khi bạn gỡ tại cổng.' });
+    setNote({ tone: 'info', text: tr(M).signedOut });
     await reload();
   };
 
@@ -320,12 +440,12 @@ export function Options() {
       <Header />
       {done && (
         <SuccessDialog ok={done.type === 'connected'} onClose={() => setDone(null)}
-          title={done.type === 'connected' ? `Đã kết nối ${done.ten}` : `Chưa kết nối được ${done.ten}`}
+          title={done.type === 'connected' ? t.connected(done.ten) : t.notConnected(done.ten)}
           action={done.type === 'connected' && settings.serverUrl
-            ? { label: 'Về Vala Reporting', onClick: () => void chrome.tabs.create({ url: `${settings.serverUrl}/uy-quyen` }).then(() => setDone(null)) } : undefined}>
+            ? { label: t.backToVala, onClick: () => void chrome.tabs.create({ url: `${settings.serverUrl}/uy-quyen` }).then(() => setDone(null)) } : undefined}>
           {done.type === 'connected'
-            ? <>Vala đã nhận phiên đăng nhập và sẽ lấy dữ liệu thay bạn theo lịch.
-                <span className="mt-2 block text-sm">Mẹo: khi trình duyệt hỏi, bấm <strong>“Lưu mật khẩu”</strong>. Lần sau phiên hết hạn, tiện ích sẽ báo — bấm vào thông báo là trình duyệt tự điền, bạn chỉ cần bấm Đăng nhập.</span></>
+            ? <>{t.connectedBody}
+                <span className="mt-2 block text-sm">{t.tipPre}<strong>{t.tipSave}</strong>{t.tipPost}</span></>
             : done.message}
         </SuccessDialog>
       )}
@@ -333,13 +453,13 @@ export function Options() {
 
       {!settings.token ? (
         <form onSubmit={(e) => void login(e)} className="grid gap-3 rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
-          <h2 className="text-base font-semibold">Đăng nhập tài khoản Vala</h2>
-          <Field label="Máy chủ Vala" hint="Địa chỉ cổng báo cáo của đơn vị, ví dụ https://bao-cao.ten-don-vi.vn">
+          <h2 className="text-base font-semibold">{t.signInTitle}</h2>
+          <Field label={t.server} hint={t.serverHint}>
             <Input value={server} onChange={(e) => setServer(e.target.value)} placeholder="https://…" required />
           </Field>
-          <Field label="Tên đăng nhập"><Input autoComplete="username" value={username} onChange={(e) => setUsername(e.target.value)} required /></Field>
-          <Field label="Mật khẩu"><Input type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required /></Field>
-          <Button type="submit" variant="primary" disabled={busy} className="justify-self-start">{busy ? 'Đang đăng nhập…' : 'Đăng nhập'}</Button>
+          <Field label={t.username}><Input autoComplete="username" value={username} onChange={(e) => setUsername(e.target.value)} required /></Field>
+          <Field label={t.password}><Input type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required /></Field>
+          <Button type="submit" variant="primary" disabled={busy} className="justify-self-start">{busy ? t.signingIn : t.signIn}</Button>
         </form>
       ) : (
         <section className="grid gap-3 rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
@@ -348,7 +468,7 @@ export function Options() {
               <div className="font-semibold">{settings.user?.ho_ten}</div>
               <Muted className="text-xs">{settings.user?.email} · {new URL(settings.serverUrl).host}</Muted>
             </div>
-            <Button variant="danger" onClick={() => void logout()}>Đăng xuất</Button>
+            <Button variant="danger" onClick={() => void logout()}>{t.signOut}</Button>
           </div>
         </section>
       )}
@@ -356,8 +476,8 @@ export function Options() {
       {settings.token && (
         <section className="grid gap-3">
           <div className="flex items-center gap-3">
-            <h2 className="flex-1 text-base font-semibold">Hệ thống nguồn</h2>
-            {missing.length > 0 && <Button variant="primary" onClick={() => void grant(missing)}>Cho phép đọc phiên ({missing.length})</Button>}
+            <h2 className="flex-1 text-base font-semibold">{t.sources}</h2>
+            {missing.length > 0 && <Button variant="primary" onClick={() => void grant(missing)}>{t.allowAll(missing.length)}</Button>}
           </div>
           <ul className="grid gap-2">
             {sources.map((s) => <SourceRow key={s.code} src={s} st={statuses[s.code]} granted={granted[s.code] ?? false} onGrant={() => void grant([s])} canDiagnose highlight={askGrant === s.code} />)}
@@ -366,9 +486,9 @@ export function Options() {
       )}
 
       <section className="grid gap-1.5 text-slate-600 dark:text-slate-400">
-        <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">Tiện ích làm gì</h2>
-        <p>Bạn đăng nhập các hệ thống nguồn (danh sách ở trên, do quản trị cấu hình) như mọi ngày. Tiện ích đọc <strong>đúng các cookie phiên</strong> Vala cần và gửi về máy chủ Vala, để hệ thống lấy dữ liệu thay bạn theo lịch — không phải dán cookie, không lưu mật khẩu.</p>
-        <p>Tiện ích chỉ đọc tên miền bạn đã bấm cho phép. Cookie được lưu trong kho bí mật của Vala; tiện ích không giữ lại giá trị cookie. Gỡ tại cổng Vala (Tài khoản nguồn) để xoá phiên đã gửi.</p>
+        <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">{t.aboutTitle}</h2>
+        <p>{t.about1Pre}<strong>{t.about1Strong}</strong>{t.about1Post}</p>
+        <p>{t.about2}</p>
       </section>
     </div>
   );

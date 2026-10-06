@@ -8,7 +8,7 @@
  * người đó ngừng chạy. Mật khẩu chỉ lưu dạng băm, không bao giờ trả về.
  */
 import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
-import { Problem, hashPassword, passwordPolicyError, withTenant, type Tx } from '@vala/core';
+import { L, Problem, hashPassword, passwordPolicyError, withTenant, type Tx } from '@vala/core';
 import { audit } from '../audit.js';
 import type { ApiDeps } from '../deps.js';
 
@@ -35,7 +35,9 @@ const patchSchema = {
 function uniqueError(e: unknown): never {
   const c = (e as { code?: string; constraint?: string }).constraint ?? '';
   if ((e as { code?: string }).code === '23505') {
-    throw new Problem('invalid_params', c.includes('email') ? 'Email đã được dùng cho tài khoản khác' : 'Tên đăng nhập đã tồn tại');
+    throw new Problem('invalid_params', c.includes('email')
+      ? L('Email đã được dùng cho tài khoản khác', 'This email is already used by another account')
+      : L('Tên đăng nhập đã tồn tại', 'Username already exists'));
   }
   throw e;
 }
@@ -56,7 +58,7 @@ export const adminUserRoutes = (deps: ApiDeps): FastifyPluginAsync => async (app
   app.post<{ Body: UserBody }>('/admin/users', { schema: { body: createSchema } }, async (req, reply) => {
     const b = req.body;
     const policy = passwordPolicyError(b.password!);
-    if (policy) throw new Problem('invalid_params', 'Mật khẩu chưa đạt', policy);
+    if (policy) throw new Problem('invalid_params', L('Mật khẩu chưa đạt', 'Password does not meet the requirements'), policy);
     const hash = await hashPassword(b.password!);
     const id = await withTenant(deps.writer, async (t) => {
       const r = await t.one<{ id: number }>(
@@ -74,15 +76,15 @@ export const adminUserRoutes = (deps: ApiDeps): FastifyPluginAsync => async (app
     const b = req.body;
     // Không tự khoá mình ra ngoài: không tự vô hiệu hoá, không tự bỏ quyền quản trị.
     if (id === req.user.id && (b.is_active === false || b.is_ops_admin === false)) {
-      throw new Problem('invalid_params', 'Không tự vô hiệu hoá hay tự bỏ quyền quản trị của chính mình');
+      throw new Problem('invalid_params', L('Không tự vô hiệu hoá hay tự bỏ quyền quản trị của chính mình', 'You cannot deactivate yourself or remove your own admin rights'));
     }
     return withTenant(deps.writer, async (t) => {
       const cur = await t.oneOrNone<{ is_ops_admin: boolean; is_active: boolean }>('SELECT is_ops_admin, is_active FROM app_users WHERE id = $1 FOR UPDATE', [id]);
-      if (!cur) throw new Problem('not_found', 'Không có người dùng này');
+      if (!cur) throw new Problem('not_found', L('Không có người dùng này', 'User not found'));
       // Luôn còn ít nhất một quản trị đang hoạt động.
       if (cur.is_ops_admin && cur.is_active && (b.is_ops_admin === false || b.is_active === false)) {
         const others = await t.one('SELECT count(*)::int AS n FROM app_users WHERE is_ops_admin AND is_active AND id <> $1', [id], (r: { n: number }) => r.n);
-        if (!others) throw new Problem('invalid_params', 'Phải còn ít nhất một quản trị đang hoạt động');
+        if (!others) throw new Problem('invalid_params', L('Phải còn ít nhất một quản trị đang hoạt động', 'At least one active admin must remain'));
       }
       await t.none(
         `UPDATE app_users SET ho_ten = coalesce($2, ho_ten), email = coalesce($3, email),
@@ -101,14 +103,14 @@ export const adminUserRoutes = (deps: ApiDeps): FastifyPluginAsync => async (app
   }, async (req) => {
     const id = Number(req.params.id);
     const policy = passwordPolicyError(req.body.password);
-    if (policy) throw new Problem('invalid_params', 'Mật khẩu chưa đạt', policy);
+    if (policy) throw new Problem('invalid_params', L('Mật khẩu chưa đạt', 'Password does not meet the requirements'), policy);
     const hash = await hashPassword(req.body.password);
     return withTenant(deps.writer, async (t) => {
       const n = await t.result(
         `UPDATE app_users SET password_hash = $2, password_changed_at = now(), must_change_password = true,
                 failed_logins = 0, locked_until = NULL
           WHERE id = $1`, [id, hash], (r) => r.rowCount);
-      if (!n) throw new Problem('not_found', 'Không có người dùng này');
+      if (!n) throw new Problem('not_found', L('Không có người dùng này', 'User not found'));
       await userAudit(t, req, id, { op: 'reset_password' });
       return { id, must_change_password: true };
     });
@@ -118,7 +120,7 @@ export const adminUserRoutes = (deps: ApiDeps): FastifyPluginAsync => async (app
   app.post<{ Params: { id: string } }>('/admin/users/:id/unlock', async (req) => withTenant(deps.writer, async (t) => {
     const id = Number(req.params.id);
     const n = await t.result('UPDATE app_users SET failed_logins = 0, locked_until = NULL WHERE id = $1', [id], (r) => r.rowCount);
-    if (!n) throw new Problem('not_found', 'Không có người dùng này');
+    if (!n) throw new Problem('not_found', L('Không có người dùng này', 'User not found'));
     await userAudit(t, req, id, { op: 'unlock' });
     return { id, unlocked: true };
   }));

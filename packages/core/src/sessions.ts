@@ -8,7 +8,7 @@
  * SSO từ chối refresh token ⇒ session_expired ⇒ người dùng phải đăng nhập lại qua giao diện.
  */
 import { bootstrapAppSession, findSpec, loadAllSpecs, type AdapterSpec, type FetchLike } from './adapter/index.js';
-import { Problem } from './errors.js';
+import { Problem, L } from './errors.js';
 import { vaultRef, type SecretStore, type SessionSecret } from './secrets.js';
 import { toSsoSecret, type SsoClient, type SsoSecret, type SsoTokens } from './sso.js';
 
@@ -58,7 +58,7 @@ export class SessionManager {
   accessToken(userId: number, force = false): Promise<string> {
     return this.withLock(userId, async () => {
       const s = await this.o.secrets.get<SsoSecret>(this.ssoRef(userId));
-      if (!s) throw new Problem('session_expired', 'Chưa có phiên SSO', 'Người dùng cần đăng nhập để uỷ quyền');
+      if (!s) throw new Problem('session_expired', L('Chưa có phiên SSO', 'No SSO session yet'), L('Người dùng cần đăng nhập để uỷ quyền', 'The user needs to sign in to authorize'));
       const skew = (this.o.refreshSkewSeconds ?? 60) * 1000;
       if (!force && new Date(s.access_expires_at).getTime() - Date.now() > skew) return s.access_token;
       try {

@@ -14,7 +14,7 @@ import {
   type AdapterSpec, type CapabilityResult, type FetchLike, type FetchResult, type SessionInfo,
 } from '../adapter/index.js';
 import { pgp, withTenant, type Db, type Tx } from '../db/index.js';
-import { Problem } from '../errors.js';
+import { Problem, L } from '../errors.js';
 import type { SecretStore, SessionSecret } from '../secrets.js';
 import type { SessionManager } from '../sessions.js';
 import { canAutoRenew, isPermanentLoginError, type AuthMethod, type ConnectionSessions } from '../connections.js';
@@ -111,13 +111,15 @@ export async function crawlUserSource(deps: CrawlDeps, job: CrawlJob): Promise<C
     const renew = async (): Promise<SessionSecret> => {
       if (deps.connections) return deps.connections.renew(job.userId, job.source, grant.auth_method);
       if (deps.sessions) return deps.sessions.deriveAppSession(job.userId, job.source);
-      throw new Problem('session_expired', 'Không cấu hình cách lấy lại phiên');
+      throw new Problem('session_expired', L('Không cấu hình cách lấy lại phiên', 'No way to renew the session is configured'));
     };
 
     let secret = await deps.secrets.get(grant.vault_ref);
     let rederived = false;
     if (!secret) {
-      if (!canRenew) throw new Problem('session_missing', 'Phiên đã lưu bị mất', 'Phiên đã lưu bị mất (kho bí mật không còn phiên này) — mở hệ thống nguồn trên trình duyệt, tiện ích tự gửi lại');
+      if (!canRenew) throw new Problem('session_missing', L('Phiên đã lưu bị mất', 'Saved session was lost'),
+        L('Phiên đã lưu bị mất (kho bí mật không còn phiên này) — mở hệ thống nguồn trên trình duyệt, tiện ích tự gửi lại',
+          'Saved session was lost (the secret store no longer has it) — open the source system in the browser, the extension will resend it automatically'));
       secret = await renew();
       rederived = true;
     }
@@ -193,7 +195,8 @@ export async function saveSourceAccount(db: Db, job: Pick<CrawlJob, 'source' | '
       [job.source, session.puid], (r: { app_user_id: number } | null) => r?.app_user_id);
     // Hai người dùng cổng cùng uỷ quyền một tài khoản nguồn ⇒ dữ liệu sẽ bị gán nhầm chủ. Dừng.
     if (owner !== undefined && owner !== job.userId) {
-      throw new Problem('forbidden', 'Tài khoản nguồn đã gắn với người dùng khác', `${job.source} puid đã thuộc người dùng khác`);
+      throw new Problem('forbidden', L('Tài khoản nguồn đã gắn với người dùng khác', 'This source account is already linked to another user'),
+        L(`${job.source} puid đã thuộc người dùng khác`, `${job.source} puid already belongs to another user`));
     }
     await t.none(
       `INSERT INTO user_source_accounts (app_user_id, source_system, source_user_id) VALUES ($1, $2, $3)

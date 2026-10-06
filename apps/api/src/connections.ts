@@ -3,7 +3,7 @@
  * Bí mật (mật khẩu, cookie hệ thống nguồn) chỉ vào vault; hàm nào ở đây cũng không trả bí mật ra.
  */
 import type { FastifyRequest } from 'fastify';
-import { AUTH_METHODS, Problem, canAutoRenew, isPermanentLoginError, vaultRef, withTenant, type AuthMethod } from '@vala/core';
+import { AUTH_METHODS, L, Problem, canAutoRenew, isPermanentLoginError, localizeStored, vaultRef, withTenant, type AuthMethod, type Lang } from '@vala/core';
 import { loadAllSpecs } from '@vala/core/adapter';
 import { audit } from './audit.js';
 import type { ApiDeps } from './deps.js';
@@ -28,8 +28,8 @@ export const connectionBodySchema = {
 } as const;
 
 /** Danh sách kết nối, lọc theo người dùng nếu có. Không có cột bí mật nào. */
-export function listConnections(deps: ApiDeps, userId?: number) {
-  return withTenant(deps.writer, (t) => t.any(
+export async function listConnections(deps: ApiDeps, userId?: number, lang: Lang = 'vi') {
+  const rows = await withTenant(deps.writer, (t) => t.any<{ last_error: string | null }>(
     `SELECT u.id AS app_user_id, u.ho_ten, u.email, ss.code AS source_system, ss.ten AS source_ten,
             g.auth_method, g.source_username, ss.connection_methods,
             coalesce(CASE WHEN g.revoked_at IS NOT NULL THEN 'revoked' ELSE g.session_state END, 'chua_cau_hinh') AS state,
@@ -41,6 +41,7 @@ export function listConnections(deps: ApiDeps, userId?: number) {
        LEFT JOIN source_grants g ON g.app_user_id = u.id AND g.source_system = ss.code
       WHERE u.is_active AND ss.enabled AND ($1::bigint IS NULL OR u.id = $1)
       ORDER BY u.ho_ten, ss.code`, [userId ?? null, CONSENT_VERSION]));
+  return rows.map((r) => ({ ...r, last_error: localizeStored(r.last_error, lang) }));
 }
 
 export async function configureConnection(
@@ -48,15 +49,18 @@ export async function configureConnection(
 ): Promise<{ state: string; expires_at: string | null }> {
   const src = await withTenant(deps.writer, (t) => t.oneOrNone<{ connection_methods: AuthMethod[]; mfa: string }>(
     'SELECT connection_methods, mfa FROM core.source_systems WHERE code = $1 AND enabled', [source]));
-  if (!src) throw new Problem('not_found', 'Không có hệ thống nguồn này');
+  if (!src) throw new Problem('not_found', L('Không có hệ thống nguồn này', 'Source system not found'));
   if (b.auth_method === 'password' && src.mfa === 'co') {
-    throw new Problem('invalid_params', 'Hệ thống này có xác thực 2 lớp (OTP)', 'Máy chủ không tự đăng nhập bằng mật khẩu được — kết nối qua tiện ích trình duyệt');
+    throw new Problem('invalid_params', L('Hệ thống này có xác thực 2 lớp (OTP)', 'This system uses two-factor authentication (OTP)'),
+      L('Máy chủ không tự đăng nhập bằng mật khẩu được — kết nối qua tiện ích trình duyệt', 'The server cannot sign in with a password — connect via the browser extension'));
   }
   if (!src.connection_methods.includes(b.auth_method)) {
-    throw new Problem('invalid_params', 'Hệ thống này không cho kết nối theo cách đã chọn', `cho phép: ${src.connection_methods.join(', ')}`);
+    throw new Problem('invalid_params', L('Hệ thống này không cho kết nối theo cách đã chọn', 'This system does not allow the selected connection method'),
+      L(`cho phép: ${src.connection_methods.join(', ')}`, `allowed: ${src.connection_methods.join(', ')}`));
   }
   if (b.auth_method === 'password' && !deps.connections.supportsPassword(source)) {
-    throw new Problem('invalid_params', 'Hệ thống này chưa có cách tự đăng nhập bằng mật khẩu', 'Dùng tiện ích trình duyệt hoặc dán cookie');
+    throw new Problem('invalid_params', L('Hệ thống này chưa có cách tự đăng nhập bằng mật khẩu', 'This system does not support password sign-in yet'),
+      L('Dùng tiện ích trình duyệt hoặc dán cookie', 'Use the browser extension or paste a cookie'));
   }
   const all = loadAllSpecs().filter((x) => x.source_system === source).flatMap((x) => x.capabilities.map((c) => c.id));
   // Hệ thống tạo trên cổng chưa có capability nào ⇒ phạm vi rỗng (dữ liệu đi qua spider).
@@ -65,10 +69,10 @@ export async function configureConnection(
   let state = 'pending';
   let expiresAt: string | null = null;
   if (b.auth_method === 'password') {
-    if (!b.source_username?.trim()) throw new Problem('invalid_params', 'Cần tên đăng nhập hệ thống nguồn');
+    if (!b.source_username?.trim()) throw new Problem('invalid_params', L('Cần tên đăng nhập hệ thống nguồn', 'Source system username is required'));
     if (!b.password) {
       // Sửa tên/giữ mật khẩu cũ: chỉ cho phép khi đã có mật khẩu trong vault.
-      if (!(await deps.connections.hasCredential(userId, source))) throw new Problem('invalid_params', 'Cần mật khẩu hệ thống nguồn');
+      if (!(await deps.connections.hasCredential(userId, source))) throw new Problem('invalid_params', L('Cần mật khẩu hệ thống nguồn', 'Source system password is required'));
     } else {
       await deps.connections.saveCredential(userId, source, { username: b.source_username, password: b.password });
     }
@@ -82,7 +86,7 @@ export async function configureConnection(
       state = 'pending';                          // lỗi tạm (mạng…): lưu cấu hình, lượt chạy sau thử lại
     }
   } else if (b.auth_method === 'cookie') {
-    if (!b.cookie?.trim()) throw new Problem('invalid_params', 'Cần dán chuỗi cookie');
+    if (!b.cookie?.trim()) throw new Problem('invalid_params', L('Cần dán chuỗi cookie', 'Please paste the cookie string'));
     await deps.connections.saveCookie(userId, source, b.cookie);
     state = 'active';
   }
@@ -105,10 +109,10 @@ export async function configureConnection(
   return { state, expires_at: expiresAt };
 }
 
-export async function testConnection(deps: ApiDeps, userId: number, source: string) {
+export async function testConnection(deps: ApiDeps, userId: number, source: string, lang: Lang = 'vi') {
   const g = await withTenant(deps.writer, (t) => t.oneOrNone<{ auth_method: AuthMethod }>(
     'SELECT auth_method FROM source_grants WHERE app_user_id = $1 AND source_system = $2 AND revoked_at IS NULL', [userId, source]));
-  if (!g) throw new Problem('not_found', 'Kết nối chưa được cấu hình');
+  if (!g) throw new Problem('not_found', L('Kết nối chưa được cấu hình', 'Connection is not configured'));
   try {
     let s: { expires_at?: string };
     if (canAutoRenew(g.auth_method)) {
@@ -116,11 +120,12 @@ export async function testConnection(deps: ApiDeps, userId: number, source: stri
     } else {
       // Cookie dán / tiện ích gửi: không tự lấy lại được ⇒ probe phiên đang có trong vault.
       const cur = await deps.secrets.get(vaultRef(deps.config.tenant, userId, source));
-      if (!cur) throw new Problem('session_expired', 'Chưa có phiên trong kho bí mật');
+      if (!cur) throw new Problem('session_expired', L('Chưa có phiên trong kho bí mật', 'No session in the secret store'));
       await deps.connections.verifyCookies(source, cur.cookies).catch((e) => {
         if (e instanceof Problem && e.type === 'session_expired') {
-          throw new Problem('session_expired', 'Phiên đã hết hạn', g.auth_method === 'extension'
-            ? 'Mở hệ thống nguồn trên trình duyệt có tiện ích Vala và đăng nhập lại' : 'Dán cookie mới');
+          throw new Problem('session_expired', L('Phiên đã hết hạn', 'Session has expired'), g.auth_method === 'extension'
+            ? L('Mở hệ thống nguồn trên trình duyệt có tiện ích Vala và đăng nhập lại', 'Open the source system in a browser with the Vala extension and sign in again')
+            : L('Dán cookie mới', 'Paste a new cookie'));
         }
         throw e;
       });
@@ -131,12 +136,13 @@ export async function testConnection(deps: ApiDeps, userId: number, source: stri
         WHERE app_user_id = $1 AND source_system = $2`, [userId, source, s.expires_at ?? null]));
     return { ok: true, expires_at: s.expires_at ?? null };
   } catch (e) {
-    const p = e instanceof Problem ? e : new Problem('internal', 'Không kết nối được');
+    const p = e instanceof Problem ? e : new Problem('internal', L('Không kết nối được', 'Could not connect'));
     await withTenant(deps.writer, (t) => t.none(
       `UPDATE source_grants SET last_error = $3,
               session_state = CASE WHEN $4 THEN 'failed' WHEN $5 THEN 'expired' ELSE session_state END
         WHERE app_user_id = $1 AND source_system = $2`, [userId, source, p.title, isPermanentLoginError(e), p.type === 'session_expired' && !canAutoRenew(g.auth_method)]));
-    return { ok: false, error: p.type, message: p.title, detail: p.detail };
+    const j = p.toJSON(lang);
+    return { ok: false, error: p.type, message: j.title, detail: j.detail };
   }
 }
 

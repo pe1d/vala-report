@@ -8,6 +8,24 @@
  *   - Token thiết bị chỉ gửi tới máy chủ Vala đã cấu hình.
  */
 
+import { messages, readLang, tr } from './i18n';
+
+const M = messages({
+  noServer: 'Chưa cấu hình địa chỉ máy chủ Vala',
+  network: 'Không kết nối được máy chủ Vala',
+  http: (n: number) => `Lỗi HTTP ${n}`,
+  browser: 'Trình duyệt',
+  computer: 'máy tính',
+  device: (browser: string, os: string) => `${browser} trên ${os}`,
+}, {
+  noServer: 'Vala server address is not set',
+  network: 'Cannot reach the Vala server',
+  http: (n: number) => `HTTP error ${n}`,
+  browser: 'Browser',
+  computer: 'computer',
+  device: (browser: string, os: string) => `${browser} on ${os}`,
+});
+
 export interface Settings {
   serverUrl: string;
   token: string | null;
@@ -100,8 +118,11 @@ export class ApiError extends Error {
 
 export async function api<T>(method: string, path: string, body?: unknown, s?: Settings): Promise<T> {
   const st = s ?? (await getSettings());
-  if (!st.serverUrl) throw new ApiError(0, 'no_server', 'Chưa cấu hình địa chỉ máy chủ Vala');
-  const headers: Record<string, string> = {};
+  // Ngôn ngữ đọc lại mỗi lần gọi (service worker có thể vừa khởi động lại) — máy chủ trả thông báo lỗi theo ngôn ngữ này.
+  const lang = await readLang();
+  const t = M[lang];
+  if (!st.serverUrl) throw new ApiError(0, 'no_server', t.noServer);
+  const headers: Record<string, string> = { 'Accept-Language': lang };
   if (st.token) headers.Authorization = `Bearer ${st.token}`;
   if (body !== undefined) headers['Content-Type'] = 'application/json';
   let res: Response;
@@ -110,13 +131,13 @@ export async function api<T>(method: string, path: string, body?: unknown, s?: S
       method, headers, body: body === undefined ? undefined : JSON.stringify(body), credentials: 'omit',
     });
   } catch {
-    throw new ApiError(0, 'network', 'Không kết nối được máy chủ Vala');
+    throw new ApiError(0, 'network', t.network);
   }
   if (res.status === 204) return undefined as T;
   const json = await res.json().catch(() => ({}));
   if (!res.ok) {
     if (res.status === 401 && st.token) await setSettings({ token: null, user: null });
-    throw new ApiError(res.status, json.type ?? 'internal', json.title ?? `Lỗi HTTP ${res.status}`, json.detail);
+    throw new ApiError(res.status, json.type ?? 'internal', json.title ?? t.http(res.status), json.detail);
   }
   return json as T;
 }
@@ -124,9 +145,10 @@ export async function api<T>(method: string, path: string, body?: unknown, s?: S
 /** Tên thiết bị gợi ý, để người dùng nhận ra trình duyệt trong danh sách ở cổng. */
 export function deviceName(): string {
   const ua = navigator.userAgent;
-  const browser = /Edg\//.test(ua) ? 'Edge' : /Chrome\//.test(ua) ? 'Chrome' : 'Trình duyệt';
-  const os = /Windows/.test(ua) ? 'Windows' : /Mac OS X/.test(ua) ? 'macOS' : /Linux/.test(ua) ? 'Linux' : 'máy tính';
-  return `${browser} trên ${os}`;
+  const t = tr(M);
+  const browser = /Edg\//.test(ua) ? 'Edge' : /Chrome\//.test(ua) ? 'Chrome' : t.browser;
+  const os = /Windows/.test(ua) ? 'Windows' : /Mac OS X/.test(ua) ? 'macOS' : /Linux/.test(ua) ? 'Linux' : t.computer;
+  return t.device(browser, os);
 }
 
 const sessionDomain = (src: Source) => (src.cookie_domain ?? new URL(src.origin).hostname).replace(/^\./, '');

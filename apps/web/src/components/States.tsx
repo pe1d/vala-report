@@ -2,9 +2,25 @@ import type { ReactNode } from 'react';
 import { ApiProblem } from '../api';
 import { ReauthButton } from './Reauth';
 import { Banner, Button, LinkButton, Skeleton } from './ui';
+import { messages, useT } from '../i18n';
+
+const M = messages({
+  loading: 'Đang tải',
+  sessionExpired: 'Phiên uỷ quyền đã hết hạn nên hệ thống chưa lấy được dữ liệu mới.',
+  grantRequired: 'Bạn chưa cấp tài khoản hệ thống nguồn cho báo cáo này, nên chưa có số liệu để hiển thị.',
+  grant: 'Cấp tài khoản', scopeDenied: 'Bạn không có quyền xem phạm vi này.',
+  network: 'Không kết nối được máy chủ.', retry: 'Thử lại',
+}, {
+  loading: 'Loading',
+  sessionExpired: "The authorization session has expired, so new data couldn't be fetched yet.",
+  grantRequired: "You haven't provided a source system account for this report yet, so there's no data to show.",
+  grant: 'Add account', scopeDenied: "You don't have permission to view this scope.",
+  network: "Couldn't reach the server.", retry: 'Try again',
+});
 
 export function Loading({ rows = 4 }: { rows?: number }) {
-  return <div aria-busy="true" aria-label="Đang tải">{Array.from({ length: rows }, (_, i) => <Skeleton key={i} width={`${90 - i * 12}%`} />)}</div>;
+  const t = useT(M);
+  return <div aria-busy="true" aria-label={t.loading}>{Array.from({ length: rows }, (_, i) => <Skeleton key={i} width={`${90 - i * 12}%`} />)}</div>;
 }
 
 export function Empty({ children }: { children: ReactNode }) {
@@ -15,26 +31,27 @@ export function Empty({ children }: { children: ReactNode }) {
  * session_expired và grant_required KHÔNG hiện như lỗi kỹ thuật: dẫn người dùng đi uỷ quyền (mục 05).
  */
 export function ErrorBox({ error, onRetry }: { error: unknown; onRetry?: () => void }) {
+  const t = useT(M);
   if (error instanceof ApiProblem && (error.type === 'grant_required' || error.type === 'session_expired')) {
     return (
       <Banner tone="warn" role="alert">
         <span>{error.type === 'session_expired'
-          ? 'Phiên uỷ quyền đã hết hạn nên hệ thống chưa lấy được dữ liệu mới.'
-          : 'Bạn chưa cấp tài khoản hệ thống nguồn cho báo cáo này, nên chưa có số liệu để hiển thị.'}</span>
+          ? t.sessionExpired
+          : t.grantRequired}</span>
         {error.type === 'session_expired' && typeof error.body?.source_system === 'string'
           ? <ReauthButton source={error.body.source_system} />
-          : <LinkButton variant="primary" to="/uy-quyen">Cấp tài khoản</LinkButton>}
+          : <LinkButton variant="primary" to="/uy-quyen">{t.grant}</LinkButton>}
       </Banner>
     );
   }
   if (error instanceof ApiProblem && error.type === 'scope_denied') {
-    return <Banner tone="err" role="alert">Bạn không có quyền xem phạm vi này. {error.detail}</Banner>;
+    return <Banner tone="err" role="alert">{t.scopeDenied} {error.detail}</Banner>;
   }
-  const msg = error instanceof ApiProblem ? `${error.title}${error.detail ? ` — ${error.detail}` : ''}` : 'Không kết nối được máy chủ.';
+  const msg = error instanceof ApiProblem ? `${error.title}${error.detail ? ` — ${error.detail}` : ''}` : t.network;
   return (
     <Banner tone="err" role="alert">
       <span>{msg}</span>
-      {onRetry && <Button onClick={onRetry}>Thử lại</Button>}
+      {onRetry && <Button onClick={onRetry}>{t.retry}</Button>}
     </Banner>
   );
 }

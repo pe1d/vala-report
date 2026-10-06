@@ -1,5 +1,5 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import { Problem, withTenant } from '@vala/core';
+import { L, Problem, withTenant } from '@vala/core';
 import type { ApiDeps } from './deps.js';
 import { sign, verify } from './tokens.js';
 
@@ -30,16 +30,16 @@ declare module 'fastify' {
 export function authenticate(deps: ApiDeps) {
   return async (req: FastifyRequest, _reply: FastifyReply) => {
     const m = /^Bearer (.+)$/.exec(req.headers.authorization ?? '');
-    if (!m) throw new Problem('unauthenticated', 'Cần đăng nhập');
+    if (!m) throw new Problem('unauthenticated', L('Cần đăng nhập', 'Sign-in required'));
     const payload = verify<{ uid: number; kind?: string }>(m[1]!, deps.config.jwtSecret);
-    if (!payload || payload.kind !== 'portal') throw new Problem('unauthenticated', 'Phiên đăng nhập không hợp lệ hoặc đã hết hạn');
+    if (!payload || payload.kind !== 'portal') throw new Problem('unauthenticated', L('Phiên đăng nhập không hợp lệ hoặc đã hết hạn', 'Your sign-in session is invalid or has expired'));
     // Pool writer: pool reader chỉ được đọc một số cột của app_users (không có cột mật khẩu / trạng thái mật khẩu).
     const user = await withTenant(deps.writer, (t) => t.oneOrNone<AuthUser>(
       `SELECT id, ho_ten, email, is_ops_admin, must_change_password, password_hash IS NOT NULL AS has_password
          FROM app_users WHERE id = $1 AND is_active`, [payload.uid]));
-    if (!user) throw new Problem('unauthenticated', 'Tài khoản không tồn tại hoặc đã bị khoá');
+    if (!user) throw new Problem('unauthenticated', L('Tài khoản không tồn tại hoặc đã bị khoá', 'The account does not exist or has been locked'));
     if (user.must_change_password && !ALLOWED_BEFORE_PASSWORD_CHANGE.has(req.url.split('?')[0]!)) {
-      throw new Problem('password_change_required', 'Cần đổi mật khẩu', 'Bạn đang dùng mật khẩu tạm — đổi mật khẩu để tiếp tục');
+      throw new Problem('password_change_required', L('Cần đổi mật khẩu', 'Password change required'), L('Bạn đang dùng mật khẩu tạm — đổi mật khẩu để tiếp tục', 'You are using a temporary password — change it to continue'));
     }
     req.user = user;
   };

@@ -9,16 +9,77 @@ import { Badge, Banner, Button, Card, Muted, PageTitle, ResultDialog, Tabs, type
 import { useValaExtension, type ExtensionEvent } from '../extension';
 import { useAsync } from '../hooks';
 import { AutoRefreshBar, useAutoRefresh } from '../components/AutoRefresh';
+import { messages, useT } from '../i18n';
 
-const STATUS: Record<WidgetStatus, [Tone, string]> = {
-  ok: ['ok', 'Có số liệu'], trong: ['neutral', 'Không có bản ghi khớp'], chua_co_du_lieu: ['neutral', 'Chưa có dữ liệu'], can_ket_noi: ['warn', 'Cần kết nối'],
-  het_han: ['err', 'Phiên hết hạn'], loi: ['err', 'Lỗi'],
+const M = messages({
+  status: { ok: 'Có số liệu', trong: 'Không có bản ghi khớp', chua_co_du_lieu: 'Chưa có dữ liệu', can_ket_noi: 'Cần kết nối', het_han: 'Phiên hết hạn', loi: 'Lỗi' } as Record<WidgetStatus, string>,
+  state: { active: 'Đang kết nối', expired: 'Phiên hết hạn', failed: 'Lỗi đăng nhập', pending: 'Chờ đăng nhập', revoked: 'Chưa kết nối', chua_cau_hinh: 'Chưa kết nối' } as Record<string, string>,
+  fetching: (ten: string) => `Đang lấy dữ liệu ${ten}… Trang tự cập nhật khi có số liệu.`,
+  fetchFailed: 'Không lấy được dữ liệu',
+  followTab: 'Làm theo hướng dẫn trong tab vừa mở — xong tiện ích tự đưa bạn về đây.',
+  dotExpired: 'phiên hết hạn', dotNotConnected: 'chưa kết nối',
+  yourReports: 'Báo cáo của bạn', unit: (_n: number) => 'báo cáo',
+  connectForData: 'Kết nối để có đủ số liệu', connectOnce: 'Kết nối một lần, hệ thống tự lấy dữ liệu theo lịch.',
+  connect: (src: string) => `Kết nối ${src}`, reconnect: (src: string) => `Kết nối lại ${src}`,
+  noneOnOverview: 'Chưa có báo cáo nào hiện trên Tổng quan.',
+  title: 'Tổng quan',
+  summary: (withData: number, total: number, need: number) => `${withData}/${total} báo cáo có số liệu${need ? ` · ${need} hệ thống cần kết nối` : ''}`,
+  emptySubtitle: 'Toàn bộ báo cáo của bạn trên một trang.',
+  tabsLabel: 'Các phần của Tổng quan',
+  connected: (ten: string) => `Đã kết nối ${ten}`, connectFailed: (ten: string) => `Chưa kết nối được ${ten}`,
+  firstFetch: (ten: string) => `Đang lấy dữ liệu ${ten} lần đầu — số liệu sẽ hiện trên Tổng quan sau ít phút.`,
+  updatedAt: (at: string) => `· cập nhật ${at}`,
+  updatedAtInline: (at: string) => ` · cập nhật ${at}`,
+  sending: 'Đang gửi…', updateNow: 'Cập nhật ngay', fetchNow: 'Lấy dữ liệu ngay',
+  waitingFirst: 'Đã kết nối — đang chờ lượt lấy dữ liệu đầu tiên.', connectToStart: 'Kết nối để bắt đầu lấy số liệu tự động.',
+  sessionExpired: (src: string) => `Phiên ${src} đã hết hạn.`, reconnectBtn: 'Kết nối lại',
+  needConnect: (src: string) => `Cần kết nối ${src}.`, connectBtn: 'Kết nối',
+  noData: 'Chưa có dữ liệu.', connectedNoData: 'Đã kết nối, chưa có dữ liệu.',
+  blockFailed: 'Không tải được khối này.', reportFailed: 'Không tải được báo cáo này.',
+  noMatch: 'Không có bản ghi nào khớp điều kiện của báo cáo trong khoảng thời gian này.',
+  stillUpdating: (src: string, at: string) => ` Dữ liệu ${src} vẫn cập nhật bình thường (lần cuối ${at}).`,
+  details: 'Xem chi tiết →', rows: 'dòng',
+}, {
+  status: { ok: 'Has data', trong: 'No matching records', chua_co_du_lieu: 'No data yet', can_ket_noi: 'Needs connection', het_han: 'Session expired', loi: 'Error' },
+  state: { active: 'Connected', expired: 'Session expired', failed: 'Sign-in failed', pending: 'Awaiting sign-in', revoked: 'Not connected', chua_cau_hinh: 'Not connected' },
+  fetching: (ten: string) => `Fetching ${ten} data… The page updates automatically when data arrives.`,
+  fetchFailed: 'Couldn’t fetch data',
+  followTab: 'Follow the instructions in the tab that just opened — the browser extension will bring you back here when done.',
+  dotExpired: 'session expired', dotNotConnected: 'not connected',
+  yourReports: 'Your reports', unit: (n: number) => (n === 1 ? 'report' : 'reports'),
+  connectForData: 'Connect to get complete data', connectOnce: 'Connect once and the system fetches data on schedule.',
+  connect: (src: string) => `Connect ${src}`, reconnect: (src: string) => `Reconnect ${src}`,
+  noneOnOverview: 'No reports are shown on Overview yet.',
+  title: 'Overview',
+  summary: (withData: number, total: number, need: number) =>
+    `${withData}/${total} ${total === 1 ? 'report has' : 'reports have'} data${need ? ` · ${need} source ${need === 1 ? 'system needs' : 'systems need'} connecting` : ''}`,
+  emptySubtitle: 'All your reports on one page.',
+  tabsLabel: 'Overview sections',
+  connected: (ten: string) => `Connected to ${ten}`, connectFailed: (ten: string) => `Couldn’t connect to ${ten}`,
+  firstFetch: (ten: string) => `Fetching ${ten} data for the first time — it will appear on Overview in a few minutes.`,
+  updatedAt: (at: string) => `· updated ${at}`,
+  updatedAtInline: (at: string) => ` · updated ${at}`,
+  sending: 'Sending…', updateNow: 'Update now', fetchNow: 'Fetch data now',
+  waitingFirst: 'Connected — waiting for the first data fetch.', connectToStart: 'Connect to start fetching data automatically.',
+  sessionExpired: (src: string) => `Your ${src} session has expired.`, reconnectBtn: 'Reconnect',
+  needConnect: (src: string) => `Connect ${src} to continue.`, connectBtn: 'Connect',
+  noData: 'No data yet.', connectedNoData: 'Connected, no data yet.',
+  blockFailed: 'Couldn’t load this block.', reportFailed: 'Couldn’t load this report.',
+  noMatch: 'No records match this report’s criteria in this time range.',
+  stillUpdating: (src: string, at: string) => ` ${src} data is still updating normally (last run ${at}).`,
+  details: 'View details →', rows: 'rows',
+});
+type Labels = typeof M.vi;
+
+const STATUS_TONE: Record<WidgetStatus, Tone> = {
+  ok: 'ok', trong: 'neutral', chua_co_du_lieu: 'neutral', can_ket_noi: 'warn', het_han: 'err', loi: 'err',
 };
 
-const STATE_BADGE: Record<string, [Tone, string]> = {
-  active: ['ok', 'Đang kết nối'], expired: ['err', 'Phiên hết hạn'], failed: ['err', 'Lỗi đăng nhập'],
-  pending: ['warn', 'Chờ đăng nhập'], revoked: ['neutral', 'Chưa kết nối'], chua_cau_hinh: ['neutral', 'Chưa kết nối'],
+const STATE_TONE: Record<string, Tone> = {
+  active: 'ok', expired: 'err', failed: 'err', pending: 'warn', revoked: 'neutral', chua_cau_hinh: 'neutral',
 };
+const stateBadge = (t: Labels, state: string): [Tone, string] | undefined =>
+  STATE_TONE[state] ? [STATE_TONE[state], t.state[state] ?? state] : undefined;
 const SPAN = { 1: 'lg:col-span-1', 2: 'lg:col-span-2', 3: 'lg:col-span-3' } as const;
 
 /**
@@ -28,6 +89,7 @@ const SPAN = { 1: 'lg:col-span-1', 2: 'lg:col-span-2', 3: 'lg:col-span-3' } as c
  * hết phiên ⇒ "Kết nối lại", đã kết nối ⇒ "Lấy dữ liệu ngay". Kết nối qua tiện ích xong ⇒ tự lấy dữ liệu và làm mới.
  */
 export function DashboardPage() {
+  const t = useT(M);
   const dash = useAsync(() => api.get<DashboardData>('/dashboard'), []);
   const navigate = useNavigate();
   const [note, setNote] = useState<{ tone: 'ok' | 'err' | 'info'; text: string } | null>(null);
@@ -41,7 +103,7 @@ export function DashboardPage() {
     setBusy(source);
     try {
       await api.post(`/me/sources/${source}/run-now`);
-      setNote({ tone: 'info', text: `Đang lấy dữ liệu ${ten}… Trang tự cập nhật khi có số liệu.` });
+      setNote({ tone: 'info', text: t.fetching(ten) });
       let n = 0;
       if (poll.current) clearInterval(poll.current);
       poll.current = setInterval(() => {
@@ -50,9 +112,9 @@ export function DashboardPage() {
         if (n >= 12 && poll.current) { clearInterval(poll.current); poll.current = null; }
       }, 5000);
     } catch (e) {
-      setNote({ tone: 'err', text: e instanceof ApiProblem ? `${e.title}${e.detail ? `. ${e.detail}` : ''}` : 'Không lấy được dữ liệu' });
+      setNote({ tone: 'err', text: e instanceof ApiProblem ? `${e.title}${e.detail ? `. ${e.detail}` : ''}` : t.fetchFailed });
     } finally { setBusy(null); }
-  }, [dash]);
+  }, [dash, t]);
 
   const onExt = useCallback((e: ExtensionEvent) => {
     if (e.type === 'connected') {
@@ -61,12 +123,12 @@ export function DashboardPage() {
     } else if (e.type === 'connect-failed') {
       setResult({ ok: false, ten: e.ten, message: e.message });
     } else if (e.status === 'login_opened' || e.status === 'need_permission') {
-      setNote({ tone: 'info', text: e.message ?? 'Làm theo hướng dẫn trong tab vừa mở — xong tiện ích tự đưa bạn về đây.' });
+      setNote({ tone: 'info', text: e.message ?? t.followTab });
     } else if (e.status === 'unknown_source') {
       // Tiện ích không phục vụ nguồn này (hoặc chưa đăng nhập) ⇒ sang trang cấp tài khoản.
       navigate(`/uy-quyen?ket-noi=${e.code}`);
     }
-  }, [navigate, runNow]);
+  }, [navigate, runNow, t]);
   const ext = useValaExtension(onExt);
 
   const connectSource = (code: string) => {
@@ -90,13 +152,13 @@ export function DashboardPage() {
   // Hệ thống đã có tab riêng (kèm nút kết nối) ⇒ khung nhắc ở "Báo cáo của bạn" chỉ cho các hệ thống còn lại.
   const tabSources = new Set(tabCfg.map((t) => t.source?.code).filter(Boolean));
   const needConnectOther = needConnect.filter((w) => !tabSources.has(w.source_system));
-  const dotOf = (t: DashboardTab): Pick<TabItem, 'dot' | 'dotLabel'> =>
-    !t.source || t.source.state === 'active' ? {}
-      : t.source.state === 'expired' || t.source.state === 'failed' ? { dot: 'err', dotLabel: 'phiên hết hạn' } : { dot: 'warn', dotLabel: 'chưa kết nối' };
+  const dotOf = (tb: DashboardTab): Pick<TabItem, 'dot' | 'dotLabel'> =>
+    !tb.source || tb.source.state === 'active' ? {}
+      : tb.source.state === 'expired' || tb.source.state === 'failed' ? { dot: 'err', dotLabel: t.dotExpired } : { dot: 'warn', dotLabel: t.dotNotConnected };
   /** Số trên tab: thẻ số liệu đầu tiên đang ở mức nghiêm trọng (vd "5 việc quá hạn"). */
   const alertOf = (blocks: DashboardWidget[]): TabItem['count'] => {
-    const t = blocks.flatMap((b) => b.tiles ?? []).find((x) => x.tone === 'err' && x.value > 0);
-    return t ? { n: t.value, tone: 'err', label: t.label.toLowerCase() } : undefined;
+    const hit = blocks.flatMap((b) => b.tiles ?? []).find((x) => x.tone === 'err' && x.value > 0);
+    return hit ? { n: hit.value, tone: 'err', label: hit.label.toLowerCase() } : undefined;
   };
   const tabs: Array<TabItem & { render: () => ReactNode }> = [
     ...tabCfg.map((tb) => ({ tb, blocks: widgets.filter((w) => w.tab === tb.id) })).filter((x) => x.blocks.length).map(({ tb, blocks }) => ({
@@ -107,7 +169,7 @@ export function DashboardPage() {
       ),
     })),
     ...(untabbed.length || !tabCfg.length ? [{
-      id: 'bao-cao', label: 'Báo cáo của bạn', count: untabbed.length ? { n: untabbed.length, label: 'báo cáo' } : undefined, render: () => reports,
+      id: 'bao-cao', label: t.yourReports, count: untabbed.length ? { n: untabbed.length, label: t.unit(untabbed.length) } : undefined, render: () => reports,
     }] : []),
   ];
   const [params, setParams] = useSearchParams();
@@ -125,12 +187,12 @@ export function DashboardPage() {
         <Card className="mb-4 border-amber-300 dark:border-amber-800">
           <div className="flex flex-wrap items-center gap-3">
             <div className="flex-1">
-              <div className="font-semibold">Kết nối để có đủ số liệu</div>
-              <Muted>Kết nối một lần, hệ thống tự lấy dữ liệu theo lịch.</Muted>
+              <div className="font-semibold">{t.connectForData}</div>
+              <Muted>{t.connectOnce}</Muted>
             </div>
             {needConnectOther.map((w) => (
               <Button key={w.source_system} variant="primary" onClick={() => connect(w)}>
-                {w.status === 'het_han' ? `Kết nối lại ${w.source_ten}` : `Kết nối ${w.source_ten}`}
+                {w.status === 'het_han' ? t.reconnect(w.source_ten) : t.connect(w.source_ten)}
               </Button>
             ))}
           </div>
@@ -147,31 +209,31 @@ export function DashboardPage() {
         );
         // Chỉ một hệ thống ⇒ không cần tiêu đề nhóm.
         return all.length > 1
-          ? <GroupSection key={g.key} id={`tong-quan-${g.key}`} title={g.label} count={g.rows.length} unit="báo cáo">{grid}</GroupSection>
+          ? <GroupSection key={g.key} id={`tong-quan-${g.key}`} title={g.label} count={g.rows.length} unit={t.unit(g.rows.length)}>{grid}</GroupSection>
           : <div key={g.key}>{grid}</div>;
       })}
-      {dash.data && !untabbed.length && <Muted>Chưa có báo cáo nào hiện trên Tổng quan.</Muted>}
+      {dash.data && !untabbed.length && <Muted>{t.noneOnOverview}</Muted>}
     </>
   );
 
   return (
     <>
-      <PageTitle title="Tổng quan"
-        subtitle={widgets.length ? `${withData}/${widgets.length} báo cáo có số liệu${needConnect.length ? ` · ${needConnect.length} hệ thống cần kết nối` : ''}` : 'Toàn bộ báo cáo của bạn trên một trang.'} />
+      <PageTitle title={t.title}
+        subtitle={widgets.length ? t.summary(withData, widgets.length, needConnect.length) : t.emptySubtitle} />
       {note && <Banner tone={note.tone} role="status">{note.text}</Banner>}
       <AutoRefreshBar st={auto} className="mb-3" />
       {dash.error ? <ErrorBox error={dash.error} onRetry={dash.reload} /> : null}
       {dash.loading && !dash.data && !dash.error ? <Loading /> : dash.data && (
         <>
-          {tabs.length > 1 && <Tabs label="Các phần của Tổng quan" items={tabs} value={active.id} onChange={choose} />}
+          {tabs.length > 1 && <Tabs label={t.tabsLabel} items={tabs} value={active.id} onChange={choose} />}
           <div role="tabpanel" id={`panel-${active.id}`} aria-labelledby={`tab-${active.id}`}>{active.render()}</div>
         </>
       )}
 
       {result && (
         <ResultDialog ok={result.ok} onClose={() => setResult(null)}
-          title={result.ok ? `Đã kết nối ${result.ten}` : `Chưa kết nối được ${result.ten}`}>
-          {result.ok ? `Đang lấy dữ liệu ${result.ten} lần đầu — số liệu sẽ hiện trên Tổng quan sau ít phút.` : result.message}
+          title={result.ok ? t.connected(result.ten) : t.connectFailed(result.ten)}>
+          {result.ok ? t.firstFetch(result.ten) : result.message}
         </ResultDialog>
       )}
     </>
@@ -183,8 +245,9 @@ function TabPanel({ tab, blocks, busy, onConnect, onRunNow }: {
   tab: DashboardTab; blocks: DashboardWidget[]; busy: string | null;
   onConnect: (code: string) => void; onRunNow: (code: string, ten: string) => void;
 }) {
+  const t = useT(M);
   const src = tab.source;
-  const [tone, label]: [Tone, string] = src ? STATE_BADGE[src.state] ?? ['neutral', src.state] : ['neutral', ''];
+  const [tone, label]: [Tone, string] = src ? stateBadge(t, src.state) ?? ['neutral', src.state] : ['neutral', ''];
   const connected = !src || src.state === 'active';
   const needFix = src?.state === 'expired' || src?.state === 'failed';
   // Đã lấy dữ liệu (kể cả khi bộ lọc của khối ra rỗng) ⇒ hiện các khối, không báo "chờ lượt đầu tiên".
@@ -196,24 +259,24 @@ function TabPanel({ tab, blocks, busy, onConnect, onRunNow }: {
         <div className="flex flex-wrap items-center gap-2">
           <Muted className="text-sm">{src.ten}</Muted>
           <Badge tone={tone}>{label}</Badge>
-          {updated && <Muted className="text-xs">· cập nhật {fmtDateTime(updated)}</Muted>}
+          {updated && <Muted className="text-xs">{t.updatedAt(fmtDateTime(updated))}</Muted>}
           <span className="flex-1" />
           {(!connected || needFix) && (
-            <Button variant="primary" disabled={busy === src.code} onClick={() => onConnect(src.code)}>{needFix ? `Kết nối lại ${src.ten}` : `Kết nối ${src.ten}`}</Button>
+            <Button variant="primary" disabled={busy === src.code} onClick={() => onConnect(src.code)}>{needFix ? t.reconnect(src.ten) : t.connect(src.ten)}</Button>
           )}
           {connected && hasData && src.can_run_now && (
             <button type="button" disabled={busy === src.code} onClick={() => onRunNow(src.code, src.ten)}
               className="text-sm text-slate-500 hover:text-slate-900 disabled:opacity-50 dark:text-slate-400 dark:hover:text-slate-100">
-              {busy === src.code ? 'Đang gửi…' : 'Cập nhật ngay'}
+              {busy === src.code ? t.sending : t.updateNow}
             </button>
           )}
         </div>
       )}
       {!hasData && src ? (
         <div className="flex flex-wrap items-center gap-3 rounded-md border border-dashed border-slate-300 px-3 py-2.5 text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
-          <span className="flex-1">{connected ? 'Đã kết nối — đang chờ lượt lấy dữ liệu đầu tiên.' : 'Kết nối để bắt đầu lấy số liệu tự động.'}</span>
+          <span className="flex-1">{connected ? t.waitingFirst : t.connectToStart}</span>
           {connected && src.can_run_now && (
-            <Button disabled={busy === src.code} onClick={() => onRunNow(src.code, src.ten)}>{busy === src.code ? 'Đang gửi…' : 'Lấy dữ liệu ngay'}</Button>
+            <Button disabled={busy === src.code} onClick={() => onRunNow(src.code, src.ten)}>{busy === src.code ? t.sending : t.fetchNow}</Button>
           )}
         </div>
       ) : (
@@ -235,6 +298,7 @@ function TabPanel({ tab, blocks, busy, onConnect, onRunNow }: {
 function Block({ w, className, busy, onConnect, onRunNow }: {
   w: DashboardWidget; className: string; busy: boolean; onConnect: () => void; onRunNow: () => void;
 }) {
+  const t = useT(M);
   const chart = w.charts?.[0];
   const tilesOnly = !!w.tiles?.length && !chart && !(w.columns ?? []).length;
   if (w.has_data && tilesOnly) return <div className={`min-w-0 ${className}`}><StatTiles tiles={w.tiles!} className="" /></div>;
@@ -249,13 +313,13 @@ function Block({ w, className, busy, onConnect, onRunNow }: {
       {/* Cột grid minmax(0,1fr): biểu đồ co theo khung, không đẩy khung nở theo bề rộng lúc vẽ lần đầu. */}
       <figure className="grid grid-cols-[minmax(0,1fr)] gap-2">
         {title}
-        {w.status === 'het_han' && <Action text={`Phiên ${w.source_ten} đã hết hạn.`} button="Kết nối lại" onClick={onConnect} primary />}
-        {w.status === 'can_ket_noi' && <Action text={`Cần kết nối ${w.source_ten}.`} button="Kết nối" onClick={onConnect} primary />}
+        {w.status === 'het_han' && <Action text={t.sessionExpired(w.source_ten)} button={t.reconnectBtn} onClick={onConnect} primary />}
+        {w.status === 'can_ket_noi' && <Action text={t.needConnect(w.source_ten)} button={t.connectBtn} onClick={onConnect} primary />}
         {w.status === 'chua_co_du_lieu' && (
-          <Action text="Chưa có dữ liệu." button={busy ? 'Đang gửi…' : 'Lấy dữ liệu ngay'} onClick={onRunNow} disabled={busy || !w.can_run_now} />
+          <Action text={t.noData} button={busy ? t.sending : t.fetchNow} onClick={onRunNow} disabled={busy || !w.can_run_now} />
         )}
         {w.status === 'trong' && <NoMatch w={w} />}
-        {w.status === 'loi' && <p className="text-sm text-red-700 dark:text-red-400">{w.message ?? 'Không tải được khối này.'}</p>}
+        {w.status === 'loi' && <p className="text-sm text-red-700 dark:text-red-400">{w.message ?? t.blockFailed}</p>}
         {w.has_data && <Summary w={w} />}
       </figure>
     </Card>
@@ -264,16 +328,19 @@ function Block({ w, className, busy, onConnect, onRunNow }: {
 
 /** Dữ liệu vẫn cập nhật bình thường, chỉ là không bản ghi nào khớp điều kiện của báo cáo — nói rõ để không nhầm với lỗi kết nối. */
 function NoMatch({ w }: { w: DashboardWidget }) {
+  const t = useT(M);
   return (
     <p className="text-sm text-slate-500 dark:text-slate-400">
-      Không có bản ghi nào khớp điều kiện của báo cáo trong khoảng thời gian này.
-      {w.freshness?.last_success_at && <> Dữ liệu {w.source_ten} vẫn cập nhật bình thường (lần cuối {fmtDateTime(w.freshness.last_success_at)}).</>}
+      {t.noMatch}
+      {w.freshness?.last_success_at && t.stillUpdating(w.source_ten, fmtDateTime(w.freshness.last_success_at))}
     </p>
   );
 }
 
 function Widget({ w, busy, onConnect, onRunNow }: { w: DashboardWidget; busy: boolean; onConnect: () => void; onRunNow: () => void }) {
-  const [tone, label] = STATUS[w.status];
+  const t = useT(M);
+  const tone = STATUS_TONE[w.status];
+  const label = t.status[w.status];
   const wide = w.view_template === 'tong_hop' || !!w.tiles?.length;
   return (
     <Card className={wide ? 'lg:col-span-2' : ''}>
@@ -281,31 +348,31 @@ function Widget({ w, busy, onConnect, onRunNow }: { w: DashboardWidget; busy: bo
         <div className="min-w-0 flex-1">
           <Link to={`/bao-cao/${w.code}`} className="font-semibold text-slate-900 no-underline hover:underline dark:text-slate-100">{w.ten}</Link>
           <Muted className="text-xs">{w.source_ten}
-            {w.freshness?.last_success_at ? ` · cập nhật ${fmtDateTime(w.freshness.last_success_at)}` : ''}</Muted>
+            {w.freshness?.last_success_at ? t.updatedAtInline(fmtDateTime(w.freshness.last_success_at)) : ''}</Muted>
         </div>
         <Badge tone={tone}>{label}</Badge>
       </div>
 
       {w.status === 'het_han' && (
-        <Action text={`Phiên ${w.source_ten} đã hết hạn.`} button={`Kết nối lại`} onClick={onConnect} primary />
+        <Action text={t.sessionExpired(w.source_ten)} button={t.reconnectBtn} onClick={onConnect} primary />
       )}
       {w.status === 'can_ket_noi' && (
-        <Action text={`Cần kết nối ${w.source_ten}.`} button="Kết nối" onClick={onConnect} primary />
+        <Action text={t.needConnect(w.source_ten)} button={t.connectBtn} onClick={onConnect} primary />
       )}
       {w.status === 'chua_co_du_lieu' && (
-        <Action text="Đã kết nối, chưa có dữ liệu." button={busy ? 'Đang gửi…' : 'Lấy dữ liệu ngay'} onClick={onRunNow} disabled={busy || !w.can_run_now} />
+        <Action text={t.connectedNoData} button={busy ? t.sending : t.fetchNow} onClick={onRunNow} disabled={busy || !w.can_run_now} />
       )}
       {w.status === 'trong' && <div className="mt-3"><NoMatch w={w} /></div>}
-      {w.status === 'loi' && <p className="mt-3 text-sm text-red-700 dark:text-red-400">{w.message ?? 'Không tải được báo cáo này.'}</p>}
+      {w.status === 'loi' && <p className="mt-3 text-sm text-red-700 dark:text-red-400">{w.message ?? t.reportFailed}</p>}
 
       {w.has_data && <Summary w={w} />}
 
       <div className="mt-3 flex items-center gap-3 text-sm">
-        <Link to={`/bao-cao/${w.code}`} className="text-blue-700 no-underline hover:underline dark:text-blue-400">Xem chi tiết →</Link>
+        <Link to={`/bao-cao/${w.code}`} className="text-blue-700 no-underline hover:underline dark:text-blue-400">{t.details}</Link>
         {(w.status === 'ok' || w.status === 'trong') && w.can_run_now && (
           <button type="button" disabled={busy} onClick={onRunNow}
             className="text-slate-500 hover:text-slate-900 disabled:opacity-50 dark:text-slate-400 dark:hover:text-slate-100">
-            {busy ? 'Đang gửi…' : 'Cập nhật ngay'}
+            {busy ? t.sending : t.updateNow}
           </button>
         )}
       </div>
@@ -324,6 +391,7 @@ function Action({ text, button, onClick, primary, disabled }: { text: string; bu
 
 /** Tóm tắt trong ô: thẻ số liệu, hoặc biểu đồ đầu tiên, hoặc vài dòng đầu của bảng. */
 function Summary({ w }: { w: DashboardWidget }) {
+  const t = useT(M);
   const chart = w.charts?.[0];
   const hasChart = !!chart && !!w.chart_rows?.length;
   if (w.tiles?.length || hasChart) {
@@ -337,7 +405,7 @@ function Summary({ w }: { w: DashboardWidget }) {
   const cols = w.columns ?? [];
   return (
     <div className="mt-3">
-      <div className="text-2xl font-semibold">{fmtInt(w.total_rows ?? 0)} <span className="text-sm font-normal text-slate-500 dark:text-slate-400">dòng</span></div>
+      <div className="text-2xl font-semibold">{fmtInt(w.total_rows ?? 0)} <span className="text-sm font-normal text-slate-500 dark:text-slate-400">{t.rows}</span></div>
       <table className="mt-2 w-full table-fixed text-sm">
         <thead><tr>{cols.map((c) => <th key={c.field} className="truncate border-b border-slate-200 py-1 pr-2 text-left font-medium text-slate-500 dark:border-slate-800 dark:text-slate-400">{c.label}</th>)}</tr></thead>
         <tbody>

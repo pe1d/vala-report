@@ -14,7 +14,7 @@
  */
 import { createHash, randomBytes } from 'node:crypto';
 import { env, envBool } from './env.js';
-import { Problem } from './errors.js';
+import { Problem, L } from './errors.js';
 import type { FetchLike } from './adapter/http.js';
 
 export interface SsoConfig {
@@ -163,7 +163,7 @@ export class SsoClient {
     }
     const json = (await res.json().catch(() => ({}))) as Partial<SsoTokens> & { error?: string };
     // invalid_grant = refresh token/code đã hết hạn hoặc bị thu hồi ⇒ người dùng phải đăng nhập lại.
-    if (json.error === 'invalid_grant') throw new Problem('session_expired', 'Phiên SSO đã hết hạn', 'SSO từ chối refresh token');
+    if (json.error === 'invalid_grant') throw new Problem('session_expired', L('Phiên SSO đã hết hạn', 'SSO session has expired'), L('SSO từ chối refresh token', 'SSO rejected the refresh token'));
     if (!res.ok || !json.access_token) throw new Error(`SSO token endpoint → HTTP ${res.status} ${json.error ?? ''}`.trim());
     return json as SsoTokens;
   }
@@ -183,9 +183,9 @@ export class SsoClient {
       headers: { Authorization: `Bearer ${accessToken}` },
       signal: AbortSignal.timeout(15_000),
     });
-    if (!res.ok) throw new Problem('unauthenticated', 'SSO không xác nhận được người dùng');
+    if (!res.ok) throw new Problem('unauthenticated', L('SSO không xác nhận được người dùng', 'SSO could not verify the user'));
     const u = (await res.json()) as SsoUser;
-    if (!u.sub) throw new Problem('unauthenticated', 'SSO không trả định danh người dùng');
+    if (!u.sub) throw new Problem('unauthenticated', L('SSO không trả định danh người dùng', 'SSO did not return a user identifier'));
     return u;
   }
 
@@ -207,7 +207,7 @@ export class SsoClient {
 
 export function toSsoSecret(t: SsoTokens, sub: string, previousRefresh?: string, now = Date.now()): SsoSecret {
   const refresh = t.refresh_token ?? previousRefresh;
-  if (!refresh) throw new Problem('grant_required', 'SSO không cấp refresh token', 'Thiếu scope offline_access');
+  if (!refresh) throw new Problem('grant_required', L('SSO không cấp refresh token', 'SSO did not issue a refresh token'), L('Thiếu scope offline_access', 'Missing offline_access scope'));
   return {
     access_token: t.access_token,
     access_expires_at: new Date(now + t.expires_in * 1000).toISOString(),

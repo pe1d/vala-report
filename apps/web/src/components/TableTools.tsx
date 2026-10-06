@@ -5,6 +5,21 @@
  */
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Button, Input, Select } from './ui';
+import { locale, messages, useT } from '../i18n';
+
+const M = messages({
+  searchPh: 'Tìm trong bảng…', searchLabel: 'Tìm trong bảng', rows: 'dòng',
+  of: 'trên', pagination: 'Phân trang', perPage: 'Mỗi trang', rowsPerPage: 'Số dòng mỗi trang',
+  first: 'Trang đầu', prev: 'Trước', page: (p: number, n: number) => `Trang ${p}/${n}`, next: 'Sau', last: 'Trang cuối',
+  noMatch: (q: string) => `Không có dòng nào khớp “${q}”.`, clearSearch: 'Xoá tìm kiếm',
+  all: 'Tất cả', filterByGroup: 'Lọc theo nhóm',
+}, {
+  searchPh: 'Search table…', searchLabel: 'Search table', rows: 'rows',
+  of: 'of', pagination: 'Pagination', perPage: 'Per page', rowsPerPage: 'Rows per page',
+  first: 'First page', prev: 'Previous', page: (p: number, n: number) => `Page ${p}/${n}`, next: 'Next', last: 'Last page',
+  noMatch: (q: string) => `No rows match “${q}”.`, clearSearch: 'Clear search',
+  all: 'All', filterByGroup: 'Filter by group',
+});
 
 export const PAGE_SIZES = [10, 20, 50, 100] as const;
 
@@ -12,9 +27,12 @@ export const PAGE_SIZES = [10, 20, 50, 100] as const;
 export const fold = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'D').toLowerCase();
 
 /** Ô tìm kiếm; gõ xong 300ms mới gọi onChange (đỡ gọi máy chủ mỗi phím). Esc để xoá. */
-export function SearchBox({ value, onChange, placeholder = 'Tìm trong bảng…', label = 'Tìm trong bảng', delay = 300 }: {
+export function SearchBox({ value, onChange, placeholder, label, delay = 300 }: {
   value: string; onChange: (v: string) => void; placeholder?: string; label?: string; delay?: number;
 }) {
+  const t = useT(M);
+  placeholder ??= t.searchPh;
+  label ??= t.searchLabel;
   const [text, setText] = useState(value);
   useEffect(() => setText(value), [value]);
   useEffect(() => {
@@ -34,32 +52,34 @@ export function SearchBox({ value, onChange, placeholder = 'Tìm trong bảng…
 }
 
 /** Thanh phân trang: "1–20 trên 57", trang trước/sau, số dòng mỗi trang. Ẩn nút khi chỉ có một trang. */
-export function Pager({ page, pageSize, total, onPage, onPageSize, unit = 'dòng' }: {
+export function Pager({ page, pageSize, total, onPage, onPageSize, unit }: {
   page: number; pageSize: number; total: number; onPage: (p: number) => void; onPageSize?: (n: number) => void; unit?: string;
 }) {
+  const t = useT(M);
+  unit ??= t.rows;
   const pages = Math.max(1, Math.ceil(total / pageSize));
   const from = total ? (page - 1) * pageSize + 1 : 0;
   const to = Math.min(total, page * pageSize);
-  if (total <= PAGE_SIZES[0]) return <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">{total.toLocaleString('vi-VN')} {unit}</p>;
+  if (total <= PAGE_SIZES[0]) return <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">{total.toLocaleString(locale())} {unit}</p>;
   return (
-    <nav aria-label="Phân trang" className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 text-sm text-slate-600 dark:text-slate-300">
-      <span className="tabular-nums">{from.toLocaleString('vi-VN')}–{to.toLocaleString('vi-VN')} trên {total.toLocaleString('vi-VN')} {unit}</span>
+    <nav aria-label={t.pagination} className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 text-sm text-slate-600 dark:text-slate-300">
+      <span className="tabular-nums">{from.toLocaleString(locale())}–{to.toLocaleString(locale())} {t.of} {total.toLocaleString(locale())} {unit}</span>
       <span className="flex-1" />
       {onPageSize && (
         <label className="flex items-center gap-2">
-          <span>Mỗi trang</span>
-          <Select aria-label="Số dòng mỗi trang" className="!min-w-0 w-20" value={pageSize} onChange={(e) => onPageSize(Number(e.target.value))}>
+          <span>{t.perPage}</span>
+          <Select aria-label={t.rowsPerPage} className="!min-w-0 w-20" value={pageSize} onChange={(e) => onPageSize(Number(e.target.value))}>
             {PAGE_SIZES.map((n) => <option key={n} value={n}>{n}</option>)}
           </Select>
         </label>
       )}
       {pages > 1 && (
         <span className="flex items-center gap-1.5">
-          <Button disabled={page <= 1} onClick={() => onPage(1)} aria-label="Trang đầu">«</Button>
-          <Button disabled={page <= 1} onClick={() => onPage(page - 1)}>Trước</Button>
-          <span className="px-1 tabular-nums">Trang {page}/{pages}</span>
-          <Button disabled={page >= pages} onClick={() => onPage(page + 1)}>Sau</Button>
-          <Button disabled={page >= pages} onClick={() => onPage(pages)} aria-label="Trang cuối">»</Button>
+          <Button disabled={page <= 1} onClick={() => onPage(1)} aria-label={t.first}>«</Button>
+          <Button disabled={page <= 1} onClick={() => onPage(page - 1)}>{t.prev}</Button>
+          <span className="px-1 tabular-nums">{t.page(page, pages)}</span>
+          <Button disabled={page >= pages} onClick={() => onPage(page + 1)}>{t.next}</Button>
+          <Button disabled={page >= pages} onClick={() => onPage(pages)} aria-label={t.last}>»</Button>
         </span>
       )}
     </nav>
@@ -100,9 +120,10 @@ export function TableToolbar({ q, onQ, placeholder, children }: { q: string; onQ
 
 /** Dòng "không khớp" thay cho bảng rỗng khi đang tìm. */
 export function NoMatch({ q, onClear }: { q: string; onClear: () => void }) {
+  const t = useT(M);
   return (
     <p className="rounded-md border border-dashed border-slate-300 px-3 py-4 text-center text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
-      Không có dòng nào khớp “{q}”. <button type="button" className="text-blue-700 underline dark:text-blue-400" onClick={onClear}>Xoá tìm kiếm</button>
+      {t.noMatch(q)} <button type="button" className="text-blue-700 underline dark:text-blue-400" onClick={onClear}>{t.clearSearch}</button>
     </p>
   );
 }
@@ -123,9 +144,11 @@ export function groupRows<T>(rows: T[], key: (r: T) => string, label: (r: T) => 
 }
 
 /** Hàng chip chọn nhóm: "Tất cả" + từng nhóm kèm số lượng. */
-export function GroupChips({ groups, value, onChange, allLabel = 'Tất cả' }: {
+export function GroupChips({ groups, value, onChange, allLabel }: {
   groups: Array<{ key: string; label: string; n: number }>; value: string; onChange: (k: string) => void; allLabel?: string;
 }) {
+  const t = useT(M);
+  allLabel ??= t.all;
   if (groups.length < 2) return null;
   const total = groups.reduce((a, g) => a + g.n, 0);
   const chip = (k: string, label: string, n: number) => (
@@ -137,7 +160,7 @@ export function GroupChips({ groups, value, onChange, allLabel = 'Tất cả' }:
     </button>
   );
   return (
-    <div role="group" aria-label="Lọc theo nhóm" className="flex flex-wrap gap-2">
+    <div role="group" aria-label={t.filterByGroup} className="flex flex-wrap gap-2">
       {chip('', allLabel, total)}
       {groups.map((g) => chip(g.key, g.label, g.n))}
     </div>
@@ -160,7 +183,7 @@ export function GroupSection({ id, title, count, unit, extra, children }: {
             className={`transition-transform ${open ? 'rotate-90' : ''}`}><path d="m9 6 6 6-6 6" /></svg>
           {title}
         </button>
-        <span className="text-sm tabular-nums text-slate-500 dark:text-slate-400">{count.toLocaleString('vi-VN')} {unit}</span>
+        <span className="text-sm tabular-nums text-slate-500 dark:text-slate-400">{count.toLocaleString(locale())} {unit}</span>
         {extra}
       </div>
       {open && children}

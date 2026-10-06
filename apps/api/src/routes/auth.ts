@@ -3,7 +3,7 @@
  * không đọc được password_hash). Khoá tạm thời sau nhiều lần sai để chống dò mật khẩu.
  */
 import type { FastifyPluginAsync } from 'fastify';
-import { Problem, hashPassword, passwordPolicyError, verifyPassword, withTenant } from '@vala/core';
+import { L, Problem, hashPassword, passwordPolicyError, verifyPassword, withTenant } from '@vala/core';
 import { authenticate, issuePortalToken } from '../auth.js';
 import type { ApiDeps } from '../deps.js';
 
@@ -27,9 +27,9 @@ export const loginBodySchema = { type: 'object', required: ['username', 'passwor
  * Ném invalid_credentials / rate_limited; trả về người dùng khi đúng.
  */
 export async function checkPortalPassword(deps: ApiDeps, rawUsername: string, password: string): Promise<Row> {
-  if (!deps.config.loginMethods.includes('password')) throw new Problem('forbidden', 'Đăng nhập bằng mật khẩu đang tắt');
+  if (!deps.config.loginMethods.includes('password')) throw new Problem('forbidden', L('Đăng nhập bằng mật khẩu đang tắt', 'Password sign-in is disabled'));
   const username = rawUsername.trim().toLowerCase();
-  const fail = () => new Problem('invalid_credentials', 'Sai tài khoản hoặc mật khẩu');
+  const fail = () => new Problem('invalid_credentials', L('Sai tài khoản hoặc mật khẩu', 'Incorrect username or password'));
 
   const row = await withTenant(deps.writer, (t) => t.oneOrNone<Row>(
     `SELECT id, password_hash, is_active, failed_logins, locked_until, must_change_password
@@ -37,7 +37,8 @@ export async function checkPortalPassword(deps: ApiDeps, rawUsername: string, pa
   // Vẫn kiểm mật khẩu với chuỗi rỗng để thời gian phản hồi không lộ tài khoản có tồn tại hay không.
   if (!row || !row.is_active) { await verifyPassword(password, null); throw fail(); }
   if (row.locked_until && row.locked_until > new Date()) {
-    throw new Problem('rate_limited', 'Tài khoản tạm khoá', `Sai mật khẩu quá nhiều lần. Thử lại sau ${LOCK_MINUTES} phút.`);
+    throw new Problem('rate_limited', L('Tài khoản tạm khoá', 'Account temporarily locked'),
+      L(`Sai mật khẩu quá nhiều lần. Thử lại sau ${LOCK_MINUTES} phút.`, `Too many failed password attempts. Try again in ${LOCK_MINUTES} minutes.`));
   }
   if (!(await verifyPassword(password, row.password_hash))) {
     const fails = row.failed_logins + 1;
@@ -71,11 +72,11 @@ export const authRoutes = (deps: ApiDeps): FastifyPluginAsync => async (app) => 
       current_password: { type: 'string' }, new_password: { type: 'string', maxLength: 400 } } } },
   }, async (req, reply) => {
     const policy = passwordPolicyError(req.body.new_password!);
-    if (policy) throw new Problem('invalid_params', 'Mật khẩu chưa đạt', policy);
+    if (policy) throw new Problem('invalid_params', L('Mật khẩu chưa đạt', 'Password does not meet the requirements'), policy);
     const row = await withTenant(deps.writer, (t) => t.one<{ password_hash: string | null }>(
       `SELECT password_hash FROM app_users WHERE id = $1`, [req.user.id]));
     if (!(await verifyPassword(req.body.current_password!, row.password_hash))) {
-      throw new Problem('invalid_credentials', 'Mật khẩu hiện tại không đúng');
+      throw new Problem('invalid_credentials', L('Mật khẩu hiện tại không đúng', 'Current password is incorrect'));
     }
     const hash = await hashPassword(req.body.new_password!);
     await withTenant(deps.writer, (t) => t.none(

@@ -7,7 +7,7 @@
  */
 import { createHash, randomBytes } from 'node:crypto';
 import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
-import { Problem, canAutoRenew, saveSourceAccount, vaultRef, withTenant, type AuthMethod } from '@vala/core';
+import { L, Problem, canAutoRenew, langOf, localizeStored, saveSourceAccount, vaultRef, withTenant, type AuthMethod } from '@vala/core';
 import { loadAllSpecs } from '@vala/core/adapter';
 import { audit } from '../audit.js';
 import type { AuthUser } from '../auth.js';
@@ -32,7 +32,8 @@ export const extensionLoginRoutes = (deps: ApiDeps): FastifyPluginAsync => async
   }, async (req) => {
     const row = await checkPortalPassword(deps, req.body.username, req.body.password);
     if (row.must_change_password) {
-      throw new Problem('password_change_required', 'Cần đổi mật khẩu', 'Đăng nhập cổng Vala một lần để đổi mật khẩu tạm, rồi đăng nhập lại tiện ích');
+      throw new Problem('password_change_required', L('Cần đổi mật khẩu', 'Password change required'),
+        L('Đăng nhập cổng Vala một lần để đổi mật khẩu tạm, rồi đăng nhập lại tiện ích', 'Sign in to the Vala portal once to change your temporary password, then sign in to the extension again'));
     }
     const token = `vxt_${randomBytes(32).toString('base64url')}`;
     const user = await withTenant(deps.writer, async (t) => {
@@ -51,13 +52,13 @@ export const extensionLoginRoutes = (deps: ApiDeps): FastifyPluginAsync => async
 function authenticateDevice(deps: ApiDeps) {
   return async (req: FastifyRequest) => {
     const m = /^Bearer (vxt_[\w-]{20,100})$/.exec(req.headers.authorization ?? '');
-    if (!m) throw new Problem('unauthenticated', 'Tiện ích chưa đăng nhập');
+    if (!m) throw new Problem('unauthenticated', L('Tiện ích chưa đăng nhập', 'The extension is not signed in'));
     const row = await withTenant(deps.writer, (t) => t.oneOrNone<AuthUser & { device_id: number; stale: boolean }>(
       `SELECT d.id AS device_id, u.id, u.ho_ten, u.email, u.is_ops_admin, u.must_change_password, u.password_hash IS NOT NULL AS has_password,
               d.last_used_at IS NULL OR d.last_used_at < now() - interval '5 minutes' AS stale
          FROM extension_devices d JOIN app_users u ON u.id = d.app_user_id
         WHERE d.token_hash = $1 AND d.revoked_at IS NULL AND d.expires_at > now() AND u.is_active`, [hashToken(m[1]!)]));
-    if (!row) throw new Problem('unauthenticated', 'Tiện ích đã bị ngắt kết nối hoặc hết hạn', 'Đăng nhập lại trong tiện ích');
+    if (!row) throw new Problem('unauthenticated', L('Tiện ích đã bị ngắt kết nối hoặc hết hạn', 'The extension was disconnected or has expired'), L('Đăng nhập lại trong tiện ích', 'Sign in again in the extension'));
     if (row.stale) await withTenant(deps.writer, (t) => t.none('UPDATE extension_devices SET last_used_at = now() WHERE id = $1', [row.device_id]));
     req.user = { id: row.id, ho_ten: row.ho_ten, email: row.email, is_ops_admin: row.is_ops_admin,
       must_change_password: row.must_change_password, has_password: row.has_password };
@@ -80,7 +81,7 @@ export const extensionRoutes = (deps: ApiDeps): FastifyPluginAsync => async (app
    * lại dữ liệu ngay, lúc quay sang cổng Vala số liệu đã mới. Cùng luật với tự cập nhật khi mở báo cáo (ngưỡng ngắn hơn).
    */
   app.post<{ Params: { source: string } }>('/ext/sources/:source/refresh', async (req) => {
-    if (!deps.sources.get(req.params.source)) throw new Problem('not_found', 'Không có hệ thống nguồn này');
+    if (!deps.sources.get(req.params.source)) throw new Problem('not_found', L('Không có hệ thống nguồn này', 'Source system not found'));
     return { sources: await autoRefresh(deps, req, req.user.id, { source_system: req.params.source }, 'extension') };
   });
 
@@ -96,6 +97,7 @@ export const extensionRoutes = (deps: ApiDeps): FastifyPluginAsync => async (app
          LEFT JOIN source_grants g ON g.app_user_id = $1 AND g.source_system = ss.code
         WHERE ss.enabled AND 'extension' = ANY(ss.connection_methods) ORDER BY ss.code`, [req.user.id]));
     const consents = await consentsFor(deps, req.user.id);
+    const lang = langOf(req.headers['accept-language']);
     const out = [];
     for (const r of rows) {
       let cookieNames: string[];
@@ -108,7 +110,7 @@ export const extensionRoutes = (deps: ApiDeps): FastifyPluginAsync => async (app
         stable_cookies: deps.connections.stableCookies(r.code),
         permission_origins: deps.connections.permissionOrigins(r.code, baseUrl),
         cookie_domain: deps.connections.cookieDomain(r.code, baseUrl),
-        state: r.session_state, auth_method: r.auth_method ?? null, last_push_at: r.last_push_at, last_error: r.last_error,
+        state: r.session_state, auth_method: r.auth_method ?? null, last_push_at: r.last_push_at, last_error: localizeStored(r.last_error, lang),
         managed: managed(r.auth_method ? r : null),
         consented: consents.has(r.code),
       });
@@ -133,12 +135,14 @@ export const extensionRoutes = (deps: ApiDeps): FastifyPluginAsync => async (app
     const source = req.params.source;
     const src = await withTenant(deps.writer, (t) => t.oneOrNone(
       `SELECT 1 FROM core.source_systems WHERE code = $1 AND enabled AND 'extension' = ANY(connection_methods)`, [source]));
-    if (!src) throw new Problem('not_found', 'Hệ thống nguồn này không nhận phiên từ tiện ích');
-    if (!(await deps.limiter.take(`ext:${userId}:${source}`, 5))) throw new Problem('rate_limited', 'Gửi phiên quá dày, thử lại sau vài giây');
+    if (!src) throw new Problem('not_found', L('Hệ thống nguồn này không nhận phiên từ tiện ích', 'This source system does not accept sessions from the browser extension'));
+    if (!(await deps.limiter.take(`ext:${userId}:${source}`, 5))) throw new Problem('rate_limited', L('Gửi phiên quá dày, thử lại sau vài giây', 'Sessions are being sent too often, try again in a few seconds'));
 
     const g = await withTenant(deps.writer, (t) => t.oneOrNone<GrantRow>(
       'SELECT auth_method, session_state, revoked_at FROM source_grants WHERE app_user_id = $1 AND source_system = $2', [userId, source]));
-    if (managed(g)) return { status: 'skipped', reason: 'managed', message: 'Kết nối đang dùng tài khoản/mật khẩu hoặc SSO, hệ thống tự lấy phiên' };
+    if (managed(g)) return { status: 'skipped', reason: 'managed', message: langOf(req.headers['accept-language']) === 'en'
+      ? 'This connection uses a username/password or SSO; the system obtains sessions automatically'
+      : 'Kết nối đang dùng tài khoản/mật khẩu hoặc SSO, hệ thống tự lấy phiên' };
 
     // Bổ sung cookie định danh chỉ khi kết nối hiện tại của người này là qua tiện ích (không lấy của kết nối khác).
     const canFill = !!g && g.auth_method === 'extension' && g.revoked_at === null;
@@ -149,7 +153,8 @@ export const extensionRoutes = (deps: ApiDeps): FastifyPluginAsync => async (app
       req.log.warn({ source, user: userId, names: Object.keys(req.body.cookies), filled, reason: (e as Problem).detail ?? (e as Error).message }, 'tiện ích gửi phiên không dùng được');
       const stable = deps.connections.stableCookies(source).filter((n) => !req.body.cookies[n] && !filled.includes(n));
       if (e instanceof Problem && e.type === 'session_expired' && stable.length) {
-        throw new Problem('session_expired', 'Cần mở trang hệ thống nguồn một lần', `Mở ${source} trên trình duyệt để tiện ích đọc được ${stable.join(', ')}`);
+        throw new Problem('session_expired', L('Cần mở trang hệ thống nguồn một lần', 'Open the source system page once'),
+          L(`Mở ${source} trên trình duyệt để tiện ích đọc được ${stable.join(', ')}`, `Open ${source} in the browser so the extension can read ${stable.join(', ')}`));
       }
       throw e;
     });
@@ -191,11 +196,12 @@ export const extensionRoutes = (deps: ApiDeps): FastifyPluginAsync => async (app
       cookies: { type: 'object', minProperties: 1, maxProperties: 40, additionalProperties: { type: 'string', maxLength: 8192 } } } } },
   }, async (req) => {
     const src = await withTenant(deps.writer, (t) => t.oneOrNone('SELECT 1 FROM core.source_systems WHERE code = $1 AND enabled', [req.params.source]));
-    if (!src) throw new Problem('not_found', 'Không có hệ thống nguồn này');
-    if (!(await deps.limiter.take(`ext-discover:${req.user.id}`, 60))) throw new Problem('rate_limited', 'Mỗi phút chỉ dò một lần');
+    if (!src) throw new Problem('not_found', L('Không có hệ thống nguồn này', 'Source system not found'));
+    if (!(await deps.limiter.take(`ext-discover:${req.user.id}`, 60))) throw new Problem('rate_limited', L('Mỗi phút chỉ dò một lần', 'Only one detection per minute'));
     const r = await deps.connections.discoverCookies(req.params.source, req.body.cookies);
     req.log.info({ source: req.params.source, user: req.user.id, sent: Object.keys(req.body.cookies), result: r }, 'dò cookie phiên');
-    return { ...r, expected: deps.connections.cookieGroups(req.params.source) };
+    const out = r.ok ? r : { ...r, detail: localizeStored(r.detail, langOf(req.headers['accept-language'])) };
+    return { ...out, expected: deps.connections.cookieGroups(req.params.source) };
   });
 
   /** Tiện ích đăng xuất: thu hồi token của chính thiết bị này. */
@@ -207,15 +213,20 @@ export const extensionRoutes = (deps: ApiDeps): FastifyPluginAsync => async (app
 
 /** /me/extension-devices — người dùng xem và thu hồi các trình duyệt đã cài tiện ích (token cổng). */
 export const extensionDeviceRoutes = (deps: ApiDeps): FastifyPluginAsync => async (app) => {
-  app.get('/me/extension-devices', async (req) => withTenant(deps.writer, (t) => t.any(
-    `SELECT id, ten, created_at, last_used_at, expires_at FROM extension_devices
-      WHERE app_user_id = $1 AND revoked_at IS NULL AND expires_at > now() ORDER BY created_at DESC`, [req.user.id])));
+  app.get('/me/extension-devices', async (req) => {
+    const rows = await withTenant(deps.writer, (t) => t.any<{ ten: string }>(
+      `SELECT id, ten, created_at, last_used_at, expires_at FROM extension_devices
+        WHERE app_user_id = $1 AND revoked_at IS NULL AND expires_at > now() ORDER BY created_at DESC`, [req.user.id]));
+    // Tên mặc định khi tiện ích không gửi device_name.
+    const en = langOf(req.headers['accept-language']) === 'en';
+    return rows.map((r) => (en && r.ten === 'Trình duyệt' ? { ...r, ten: 'Browser' } : r));
+  });
 
   app.delete<{ Params: { id: string } }>('/me/extension-devices/:id', async (req, reply) => {
     const r = await withTenant(deps.writer, (t) => t.result(
       'UPDATE extension_devices SET revoked_at = now() WHERE id = $1 AND app_user_id = $2 AND revoked_at IS NULL',
       [Number(req.params.id), req.user.id]));
-    if (!r.rowCount) throw new Problem('not_found', 'Không có thiết bị này');
+    if (!r.rowCount) throw new Problem('not_found', L('Không có thiết bị này', 'Device not found'));
     return reply.status(204).send();
   });
 };

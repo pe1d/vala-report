@@ -10,13 +10,25 @@ import type { Chart } from '../api';
 import { EChart } from './EChart';
 import { Card } from './ui';
 import { useViz, type VizTokens } from '../viz';
+import { locale, messages, tr, useT } from '../i18n';
 
 type Row = Record<string, unknown>;
-const WEEKDAY = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
-const fmtN = (n: number) => n.toLocaleString('vi-VN');
+const M = messages({
+  /** Thứ trong tuần, bắt đầu từ Chủ nhật (Date.getDay). */
+  weekday: ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'],
+  months: ['T1', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'T8', 'T9', 'T10', 'T11', 'T12'],
+  unknown: 'Không rõ', other: 'Khác', more: 'Nhiều', less: 'Ít',
+  heatmapAria: (title: string, total: number, max: number) => `${title}: tổng ${total}, nhiều nhất ${max} một ngày`,
+}, {
+  weekday: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
+  months: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
+  unknown: 'Unknown', other: 'Other', more: 'More', less: 'Less',
+  heatmapAria: (title: string, total: number, max: number) => `${title}: total ${total}, at most ${max} in a day`,
+});
+const fmtN = (n: number) => n.toLocaleString(locale());
 /** DD/MM/YYYY ⇒ YYYY-MM-DD (nhãn ngày của báo cáo nhóm theo ngày). */
 const isoOf = (s: string) => (/^\d{2}\/\d{2}\/\d{4}$/.test(s) ? `${s.slice(6)}-${s.slice(3, 5)}-${s.slice(0, 2)}` : s);
-const dayLabel = (iso: string) => { const d = new Date(`${iso}T00:00:00`); return `${WEEKDAY[d.getDay()]} ${iso.slice(8)}/${iso.slice(5, 7)}`; };
+const dayLabel = (iso: string) => { const d = new Date(`${iso}T00:00:00`); return `${tr(M).weekday[d.getDay()]} ${iso.slice(8)}/${iso.slice(5, 7)}`; };
 /** Nhãn trục gọn: 09/2026 ⇒ 09/26, 29/09/2026 ⇒ 29/09. */
 const shortLabel = (s: string) => (/^\d{2}\/\d{4}$/.test(s) ? `${s.slice(0, 3)}${s.slice(5)}` : /^\d{2}\/\d{2}\/\d{4}$/.test(s) ? s.slice(0, 5) : s);
 
@@ -46,9 +58,10 @@ export function ChartView({ chart, rows, bare }: { chart: Chart; rows: Row[]; ba
 }
 
 function ChartBody({ chart, rows }: { chart: Chart; rows: Row[] }) {
+  const t = useT(M);
   const field = chart.series[0]!.field;
   const name = chart.series[0]!.label;
-  const data = rows.map((r) => ({ x: String(r[chart.x_field] ?? 'Không rõ'), y: Number(r[field] ?? 0) }));
+  const data = rows.map((r) => ({ x: String(r[chart.x_field] ?? t.unknown), y: Number(r[field] ?? 0) }));
   switch (chart.kind) {
     case 'line': return <LineChart data={data} name={name} title={chart.title} />;
     case 'column': return <ColumnChart data={data} name={name} title={chart.title} />;
@@ -62,6 +75,7 @@ interface P { data: Array<{ x: string; y: number }>; name: string; title: string
 const describe = (title: string, data: P['data']) => `${title}: ${data.slice(0, 40).map((d) => `${d.x} ${d.y}`).join(', ')}`;
 
 function LineChart({ data, name, title }: P) {
+  const t = useT(M);
   const v = useViz();
   const option = useMemo<EChartsCoreOption>(() => ({
     grid: { left: 36, right: 30, top: 16, bottom: 28 },
@@ -76,11 +90,12 @@ function LineChart({ data, name, title }: P) {
       // Nhãn trực tiếp chỉ ở điểm cuối, không gắn số lên mọi điểm.
       endLabel: { show: true, color: v.text2, fontSize: 11, formatter: (p: { value: number }) => fmtN(p.value) },
     }],
-  }), [data, name, v]);
+  }), [data, name, v, t]);
   return <EChart option={option} height={240} label={describe(title, data)} />;
 }
 
 function ColumnChart({ data, name, title }: P) {
+  const t = useT(M);
   const v = useViz();
   const option = useMemo<EChartsCoreOption>(() => {
     const isDay = data.every((d) => /^\d{2}\/\d{2}\/\d{4}$/.test(d.x));
@@ -97,11 +112,12 @@ function ColumnChart({ data, name, title }: P) {
         label: { show: data.length <= 31, position: 'top', color: v.text2, fontSize: 10, formatter: (p: { value: number }) => (p.value ? fmtN(p.value) : '') },
       }],
     };
-  }, [data, name, v]);
+  }, [data, name, v, t]);
   return <EChart option={option} height={240} label={describe(title, data)} />;
 }
 
 function BarChart({ data, name, title }: P) {
+  const t = useT(M);
   const v = useViz();
   const option = useMemo<EChartsCoreOption>(() => ({
     grid: { left: 8, right: 36, top: 4, bottom: 4, containLabel: true },
@@ -115,18 +131,19 @@ function BarChart({ data, name, title }: P) {
       label: { show: true, position: 'right', color: v.text2, fontSize: 11, formatter: (p: { value: number }) => fmtN(p.value) },
       emphasis: { itemStyle: { opacity: 0.85 } },
     }],
-  }), [data, name, v]);
+  }), [data, name, v, t]);
   return <EChart option={option} height={Math.max(140, data.length * 34)} label={describe(title, data)} />;
 }
 
 /** Phần của tổng thể: 3 nhóm lớn nhất giữ màu riêng, phần còn lại gộp "Khác" (xám) — không sinh màu thứ 4. */
 function DonutChart({ data, name, title }: P) {
+  const t = useT(M);
   const v = useViz();
   const option = useMemo<EChartsCoreOption>(() => {
     const top = data.slice(0, 3);
     const rest = data.slice(3).reduce((a, d) => a + d.y, 0);
     const slices = [...top.map((d, i) => ({ name: d.x, value: d.y, itemStyle: { color: v.series[i as 0 | 1 | 2] } })),
-      ...(rest ? [{ name: 'Khác', value: rest, itemStyle: { color: v.baseline } }] : [])];
+      ...(rest ? [{ name: t.other, value: rest, itemStyle: { color: v.baseline } }] : [])];
     const total = data.reduce((a, d) => a + d.y, 0);
     return {
       tooltip: { ...tooltip(v, 'item'), formatter: (p: { name: string; value: number; percent: number }) => `${p.name}: <b>${fmtN(p.value)}</b> (${p.percent}%)` },
@@ -141,11 +158,12 @@ function DonutChart({ data, name, title }: P) {
         data: slices,
       }],
     };
-  }, [data, name, v]);
+  }, [data, name, v, t]);
   return <EChart option={option} height={260} label={describe(title, data)} />;
 }
 
 function DayHeatmap({ data, name, title, range }: P & { range?: Chart['range'] }) {
+  const t = useT(M);
   const v = useViz();
   const points = useMemo(() => data.map((d) => [isoOf(d.x), d.y] as [string, number]).filter((p) => p[1] > 0), [data]);
   const option = useMemo<EChartsCoreOption>(() => {
@@ -158,18 +176,18 @@ function DayHeatmap({ data, name, title, range }: P & { range?: Chart['range'] }
       tooltip: { ...tooltip(v, 'item'), formatter: (p: { value: [string, number] }) => `${dayLabel(p.value[0])}/${p.value[0].slice(0, 4)}<br/>${name}: <b>${fmtN(p.value[1])}</b>` },
       visualMap: {
         min: 0, max, calculable: false, orient: 'horizontal', right: 0, bottom: 0, itemWidth: 10, itemHeight: 80,
-        text: ['Nhiều', 'Ít'], textStyle: { color: v.muted, fontSize: 11 }, inRange: { color: v.seq }, outOfRange: { color: v.empty },
+        text: [t.more, t.less], textStyle: { color: v.muted, fontSize: 11 }, inRange: { color: v.seq }, outOfRange: { color: v.empty },
       },
       calendar: {
         range: [tu, den], top: 22, left: 34, right: 8, bottom: 36, cellSize: ['auto', 15],
         splitLine: { show: false }, itemStyle: { color: v.empty, borderColor: v.surface, borderWidth: 3 },
-        dayLabel: { firstDay: 1, nameMap: WEEKDAY, color: v.muted, fontSize: 10 },
-        monthLabel: { nameMap: ['T1', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'T8', 'T9', 'T10', 'T11', 'T12'], color: v.muted, fontSize: 11 },
+        dayLabel: { firstDay: 1, nameMap: t.weekday, color: v.muted, fontSize: 10 },
+        monthLabel: { nameMap: t.months, color: v.muted, fontSize: 11 },
         yearLabel: { show: false },
       },
       series: [{ type: 'heatmap', coordinateSystem: 'calendar', data: points, itemStyle: { borderRadius: 3 } }],
     };
-  }, [points, name, range, v]);
+  }, [points, name, range, v, t]);
   const total = points.reduce((a, p) => a + p[1], 0);
-  return <EChart option={option} height={190} label={`${title}: tổng ${total}, nhiều nhất ${Math.max(0, ...points.map((p) => p[1]))} một ngày`} />;
+  return <EChart option={option} height={190} label={t.heatmapAria(title, total, Math.max(0, ...points.map((p) => p[1])))} />;
 }

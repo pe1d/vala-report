@@ -1,4 +1,4 @@
-import { Problem } from '../errors.js';
+import { Problem, L, type Text } from '../errors.js';
 import type { GuardedHttpClient } from './http.js';
 import { evaluate } from './jsonpath.js';
 import { assertNoDrift, contentHash, normalizeItem, type Row } from './normalize.js';
@@ -30,8 +30,9 @@ export async function probeSession(spec: AdapterSpec, client: GuardedHttpClient)
     }
     if (!v) {
       const title = /<title[^>]*>([^<]{0,120})/i.exec(res.text)?.[1]?.trim();
-      throw new Problem('session_expired', 'Phiên uỷ quyền đã hết hạn',
-        `session_probe không lấy được ${name} (HTTP ${res.status}${title ? `, trang "${title}"` : ''}, ${res.text.length} byte)`);
+      throw new Problem('session_expired', L('Phiên uỷ quyền đã hết hạn', 'Authorized session has expired'),
+        L(`session_probe không lấy được ${name} (HTTP ${res.status}${title ? `, trang "${title}"` : ''}, ${res.text.length} byte)`,
+          `session_probe could not get ${name} (HTTP ${res.status}${title ? `, page "${title}"` : ''}, ${res.text.length} bytes)`));
     }
     out[name] = v;
   }
@@ -68,7 +69,7 @@ function applyInput(cap: CapabilitySpec, input: Record<string, unknown>): Record
   return out;
 }
 
-const drift = (detail: string) => new Problem('schema_drift', 'Hệ thống nguồn đã đổi cấu trúc dữ liệu', detail);
+const drift = (detail: Text) => new Problem('schema_drift', L('Hệ thống nguồn đã đổi cấu trúc dữ liệu', 'Source system has changed its data structure'), detail);
 
 /** Bước 1: gọi hệ thống nguồn, trả bản ghi thô. Chỉ lỗi cấu trúc ở mức vỏ (mất cả danh sách). */
 export async function fetchCapability(
@@ -98,7 +99,7 @@ export async function fetchCapability(
           // Gốc của danh sách biến mất ("$.documents" không còn) là lệch schema, không phải "rỗng".
           const parent = path.slice(0, path.indexOf('[*]'));
           const container = parent === '$' ? json : evaluate(parent, json);
-          if (!Array.isArray(container)) throw drift(`${cap.id}: ${parent} không còn là danh sách`);
+          if (!Array.isArray(container)) throw drift(L(`${cap.id}: ${parent} không còn là danh sách`, `${cap.id}: ${parent} is no longer a list`));
           items = extracted[name] as unknown[];
         }
       } else {
@@ -131,7 +132,7 @@ export function normalizeCapability(spec: AdapterSpec, fetched: FetchResult): Ca
   if (keyField) assertNoDrift(fetched.items, spec.monitoring.schema_baseline_fields, cap.id);
   const objs = fetched.items.filter((i): i is Record<string, unknown> => !!i && typeof i === 'object');
   const rows = objs.map((i) => normalizeItem(i, cap.output_schema));
-  if (keyField && rows.some((r) => r[keyField.field] === null)) throw drift(`${cap.id}: có bản ghi thiếu khoá ${keyField.source}`);
+  if (keyField && rows.some((r) => r[keyField.field] === null)) throw drift(L(`${cap.id}: có bản ghi thiếu khoá ${keyField.source}`, `${cap.id}: some records are missing key ${keyField.source}`));
   // Trùng khoá trong cùng một lượt gửi ⇒ báo rõ cho người viết spider/adapter (trước đây rơi xuống ràng buộc
   // UNIQUE của CSDL thành lỗi 500 "Lỗi hệ thống"). Thường do chọn nhầm trường không duy nhất làm key.
   if (keyField) {
@@ -139,8 +140,9 @@ export function normalizeCapability(spec: AdapterSpec, fetched: FetchResult): Ca
     for (const r of rows) {
       const k = String(r[keyField.field]);
       if (seen.has(k)) {
-        throw new Problem('invalid_params', 'Bản ghi trùng khoá trong cùng một lượt gửi',
-          `${cap.id}: ${keyField.source}='${k.slice(0, 80)}' xuất hiện nhiều lần — trường có key: true phải duy nhất cho mỗi bản ghi`);
+        throw new Problem('invalid_params', L('Bản ghi trùng khoá trong cùng một lượt gửi', 'Duplicate record key within one submission'),
+          L(`${cap.id}: ${keyField.source}='${k.slice(0, 80)}' xuất hiện nhiều lần — trường có key: true phải duy nhất cho mỗi bản ghi`,
+            `${cap.id}: ${keyField.source}='${k.slice(0, 80)}' appears more than once — a field with key: true must be unique per record`));
       }
       seen.add(k);
     }

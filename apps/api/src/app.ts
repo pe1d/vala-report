@@ -1,5 +1,5 @@
 import Fastify, { type FastifyError } from 'fastify';
-import { Problem } from '@vala/core';
+import { Problem, langOf } from '@vala/core';
 import { authenticate } from './auth.js';
 import type { ApiDeps } from './deps.js';
 import { adminRoutes } from './routes/admin.js';
@@ -29,16 +29,17 @@ export async function buildApp(deps: ApiDeps, opts: { logger?: boolean } = {}) {
 
   // Lỗi theo RFC 7807. Problem ⇒ đúng mã; lỗi validate của Fastify ⇒ 422; còn lại ⇒ 500 không lộ chi tiết.
   app.setErrorHandler((err: FastifyError | Problem, req, reply) => {
+    const lang = langOf(req.headers['accept-language']);
     if (err instanceof Problem) {
-      return reply.status(err.status).type('application/problem+json').send(err.toJSON());
+      return reply.status(err.status).type('application/problem+json').send(err.toJSON(lang));
     }
     if ((err as FastifyError).validation) {
       return reply.status(422).type('application/problem+json').send({
-        type: 'invalid_params', title: 'Yêu cầu không hợp lệ', status: 422, detail: err.message,
+        type: 'invalid_params', title: lang === 'en' ? 'Invalid request' : 'Yêu cầu không hợp lệ', status: 422, detail: err.message,
       });
     }
     req.log?.error({ err }, 'lỗi không xử lý');
-    return reply.status(500).type('application/problem+json').send({ type: 'internal', title: 'Lỗi hệ thống', status: 500 });
+    return reply.status(500).type('application/problem+json').send({ type: 'internal', title: lang === 'en' ? 'System error' : 'Lỗi hệ thống', status: 500 });
   });
 
   app.get('/healthz', async () => ({ ok: true }));

@@ -1,6 +1,6 @@
 import type { Db, Scope, Tx, UserContext } from './db/index.js';
 import { withTenant } from './db/index.js';
-import { Problem } from './errors.js';
+import { Problem, L } from './errors.js';
 
 export interface OrgMembership {
   id: number;
@@ -37,7 +37,7 @@ export async function resolveUserContext(db: Db, userId: number, scope: Scope): 
       (r: { org_unit_id: number }) => r.org_unit_id,
     );
     if (heads.length === 0) {
-      throw new Problem('scope_denied', 'Không có quyền xem phạm vi đơn vị', 'Chỉ trưởng đơn vị được chọn phạm vi này.');
+      throw new Problem('scope_denied', L('Không có quyền xem phạm vi đơn vị', 'Not allowed to view unit scope'), L('Chỉ trưởng đơn vị được chọn phạm vi này.', 'Only unit heads can choose this scope.'));
     }
     const ids = await t.map(
       `SELECT id FROM org_units WHERE path && $1::bigint[] ORDER BY id`,

@@ -1,7 +1,8 @@
 import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
 import { randomUUID } from 'node:crypto';
 import {
-  describeSchedule, launchSpider, nextScheduleRuns, parseSchedule, Problem, withTenant, withUserContext, type Schedule, type UserContext,
+  describeSchedule, L, langOf, launchSpider, localizeStored, nextScheduleRuns, parseSchedule, Problem, withTenant, withUserContext,
+  type Lang, type Schedule, type UserContext,
 } from '@vala/core';
 import { loadAllSpecs } from '@vala/core/adapter';
 import { audit } from '../audit.js';
@@ -26,7 +27,7 @@ interface ScheduleRow extends Target {
 interface RunRow { source_system: string; key: string; status: string; started_at: string; finished_at: string | null; records_seen: number | null; error_detail: string | null }
 
 /** Nguồn dữ liệu của các báo cáo đang bật (+ lịch / tuỳ chọn của người gọi, kể cả nguồn không còn báo cáo nào dùng). */
-export async function listSources(deps: ApiDeps, userId: number) {
+export async function listSources(deps: ApiDeps, userId: number, lang: Lang = 'vi') {
   const { reports, spiders, schedules, grants, runs, okRuns, prefs } = await withUserContext(deps.reader, own(userId), async (t) => ({
     reports: await t.any<Target & { code: string; ten: string }>(
       `SELECT rc.code, rc.ten, rc.source_system, rc.spider_code, CASE WHEN rc.spider_code IS NULL THEN rc.capability END AS capability
@@ -83,10 +84,10 @@ export async function listSources(deps: ApiDeps, userId: number) {
       grant_state: state,
       can_run: state === 'active' && (it.spider_code ? spider?.is_enabled !== false && !!deps.crawlab : true),
       schedule: sc ? {
-        id: sc.id, schedule: sc.schedule, schedule_label: safeLabel(sc.schedule), is_enabled: sc.is_enabled,
+        id: sc.id, schedule: sc.schedule, schedule_label: safeLabel(sc.schedule, lang), is_enabled: sc.is_enabled,
         next_run_at: sc.next_run_at, last_run_at: sc.last_run_at,
       } : null,
-      last_run: run ? { status: run.status, started_at: run.started_at, finished_at: run.finished_at, records_seen: run.records_seen, error: run.error_detail } : null,
+      last_run: run ? { status: run.status, started_at: run.started_at, finished_at: run.finished_at, records_seen: run.records_seen, error: localizeStored(run.error_detail, lang) } : null,
       last_success_at: okOf.get(key) ?? null,
       /** Tự lấy lại khi người dùng mở báo cáo / vừa làm việc trên hệ thống nguồn (mặc định bật). */
       auto_refresh: prefOf.get(key) ?? true,
@@ -99,7 +100,7 @@ export type DataSourceItem = Awaited<ReturnType<typeof listSources>>[number];
 /** Chạy lấy dữ liệu một nguồn cho một người: spider trên Crawlab, hoặc job worker theo cấu hình adapter. */
 async function launchFor(deps: ApiDeps, userId: number, src: DataSourceItem): Promise<{ executor: string; run_key: string | null }> {
   if (src.spider_code) {
-    if (!deps.crawlab) throw new Problem('internal', 'Chưa cấu hình Crawlab', 'Nguồn này lấy dữ liệu bằng script crawl');
+    if (!deps.crawlab) throw new Problem('internal', L('Chưa cấu hình Crawlab', 'Crawlab is not configured'), L('Nguồn này lấy dữ liệu bằng script crawl', 'This data source is fetched by a crawl script'));
     const tasks = await launchSpider(deps.writer, deps.crawlab, { spiderCode: src.spider_code, userId, trigger: 'manual' });
     return { executor: 'crawlab', run_key: tasks[0] ?? null };
   }
@@ -129,7 +130,7 @@ export async function autoRefresh(
   deps: ApiDeps, req: FastifyRequest, userId: number, filter: { reports?: string[]; source_system?: string }, reason: AutoReason,
 ) {
   const minutes = reason === 'extension' ? AUTO_EXT_MINUTES : AUTO_VIEW_MINUTES;
-  const all = await listSources(deps, userId);
+  const all = await listSources(deps, userId, langOf(req.headers['accept-language']));
   const want = all.filter((x) => (filter.reports ? x.reports.some((r) => filter.reports!.includes(r.code)) : true)
     && (filter.source_system ? x.source_system === filter.source_system : true));
   if (!want.length) return [];
@@ -176,22 +177,23 @@ export async function autoRefresh(
  */
 export const dataScheduleRoutes = (deps: ApiDeps): FastifyPluginAsync => async (app) => {
   /** Nguồn dữ liệu người gọi được đặt lịch: phải là nguồn của một báo cáo đang bật (hoặc đã có lịch). */
-  const findSource = async (userId: number, b: Partial<Target>) => {
+  const findSource = async (userId: number, b: Partial<Target>, lang: Lang = 'vi') => {
     const want = keyOf({ source_system: b.source_system ?? '', spider_code: b.spider_code ?? null, capability: b.spider_code ? null : b.capability ?? null });
-    const it = (await listSources(deps, userId)).find((x) => x.key === want);
-    if (!it) throw new Problem('not_found', 'Không có nguồn dữ liệu này', want);
+    const it = (await listSources(deps, userId, lang)).find((x) => x.key === want);
+    if (!it) throw new Problem('not_found', L('Không có nguồn dữ liệu này', 'Data source not found'), want);
     return it;
   };
   const enabledCount = (userId: number, exceptId?: number) => withUserContext(deps.reader, own(userId), (t) => t.one(
     'SELECT count(*)::int AS n FROM data_schedules WHERE app_user_id = $1 AND is_enabled AND ($2::bigint IS NULL OR id <> $2)',
     [userId, exceptId ?? null], (r: { n: number }) => r.n));
-  const tooMany = () => new Problem('invalid_params', 'Đã đủ số lịch', `Mỗi người tối đa ${MAX_ENABLED_PER_USER} lịch đang bật — tắt hoặc xoá bớt lịch cũ`);
+  const tooMany = () => new Problem('invalid_params', L('Đã đủ số lịch', 'Schedule limit reached'),
+    L(`Mỗi người tối đa ${MAX_ENABLED_PER_USER} lịch đang bật — tắt hoặc xoá bớt lịch cũ`, `Each user can have at most ${MAX_ENABLED_PER_USER} active schedules — turn off or delete some old ones`));
 
   const target = { source_system: { type: 'string' }, spider_code: { type: ['string', 'null'] }, capability: { type: ['string', 'null'] } };
 
   /** Nguồn dữ liệu của tôi + lịch + lượt chạy gần nhất + các báo cáo dùng chung. ?report=<mã> ⇒ chỉ nguồn của báo cáo đó. */
   app.get<{ Querystring: { report?: string } }>('/data-sources', async (req) => {
-    const all = await listSources(deps, req.user.id);
+    const all = await listSources(deps, req.user.id, langOf(req.headers['accept-language']));
     return req.query.report ? all.filter((x) => x.reports.some((r) => r.code === req.query.report)) : all;
   });
 
@@ -200,7 +202,7 @@ export const dataScheduleRoutes = (deps: ApiDeps): FastifyPluginAsync => async (
     schema: { body: { type: 'object', required: ['source_system', 'schedule'], properties: { ...target, schedule: { type: 'object' } } } },
   }, async (req) => {
     const schedule = parseSchedule(req.body.schedule);
-    const src = await findSource(req.user.id, req.body);
+    const src = await findSource(req.user.id, req.body, langOf(req.headers['accept-language']));
     const cur = src.schedule;
     if ((!cur || !cur.is_enabled) && (await enabledCount(req.user.id, cur?.id)) >= MAX_ENABLED_PER_USER) throw tooMany();
     await withUserContext(deps.reader, own(req.user.id), async (t) => {
@@ -214,7 +216,7 @@ export const dataScheduleRoutes = (deps: ApiDeps): FastifyPluginAsync => async (
         (r: { id: number }) => r.id);
       await audit(t, req, 'schedule_change', { type: 'data_schedule', id: String(id) }, { op: cur ? 'update' : 'create', source: src.key, schedule });
     });
-    return (await findSource(req.user.id, src));
+    return (await findSource(req.user.id, src, langOf(req.headers['accept-language'])));
   });
 
   /** Bật / tắt lịch. Bật lại lịch một lần đã qua giờ ⇒ báo rõ (parseSchedule), không lặng lẽ không chạy. */
@@ -223,7 +225,7 @@ export const dataScheduleRoutes = (deps: ApiDeps): FastifyPluginAsync => async (
   }, async (req) => {
     const id = Number(req.params.id);
     const t0 = await withUserContext(deps.reader, own(req.user.id), (t) => t.oneOrNone<ScheduleRow>('SELECT * FROM data_schedules WHERE id = $1', [id]));
-    if (!t0) throw new Problem('not_found', 'Không có lịch này');
+    if (!t0) throw new Problem('not_found', L('Không có lịch này', 'Schedule not found'));
     const enabling = req.body.is_enabled && !t0.is_enabled;
     if (enabling && (await enabledCount(req.user.id, id)) >= MAX_ENABLED_PER_USER) throw tooMany();
     const next = enabling ? nextScheduleRuns(parseSchedule(t0.schedule))[0] ?? null : undefined;
@@ -233,14 +235,14 @@ export const dataScheduleRoutes = (deps: ApiDeps): FastifyPluginAsync => async (
         [id, req.body.is_enabled, next !== undefined, next ?? null]);
       await audit(t, req, 'schedule_change', { type: 'data_schedule', id: String(id) }, { op: 'update', is_enabled: req.body.is_enabled });
     });
-    return findSource(req.user.id, t0);
+    return findSource(req.user.id, t0, langOf(req.headers['accept-language']));
   });
 
   app.delete<{ Params: { id: string } }>('/data-schedules/:id', async (req, reply) => {
     const id = Number(req.params.id);
     await withUserContext(deps.reader, own(req.user.id), async (t) => {
       const n = await t.result('DELETE FROM data_schedules WHERE id = $1', [id], (r) => r.rowCount);
-      if (!n) throw new Problem('not_found', 'Không có lịch này');
+      if (!n) throw new Problem('not_found', L('Không có lịch này', 'Schedule not found'));
       await audit(t, req, 'schedule_change', { type: 'data_schedule', id: String(id) }, { op: 'delete' });
     });
     return reply.status(204).send();
@@ -254,17 +256,21 @@ export const dataScheduleRoutes = (deps: ApiDeps): FastifyPluginAsync => async (
   /** Theo dõi lượt đang chạy: lượt lấy dữ liệu của người gọi bắt đầu từ `since` (giao diện chờ xong thì tải lại số liệu). */
   app.get<{ Querystring: { since: string } }>('/data-sources/activity', {
     schema: { querystring: { type: 'object', required: ['since'], properties: { since: { type: 'string', format: 'date-time' } } } },
-  }, async (req) => withUserContext(deps.reader, own(req.user.id), (t) => t.any(
-    `SELECT CASE WHEN spider_code IS NOT NULL THEN 'spider:' || spider_code ELSE 'cap:' || source_system || ':' || capability END AS key,
-            status, started_at, finished_at, records_changed, error_detail AS error
-       FROM crawl_runs WHERE app_user_id = $1 AND started_at >= $2::timestamptz - interval '5 seconds' ORDER BY started_at`,
-    [req.user.id, req.query.since])));
+  }, async (req) => {
+    const lang = langOf(req.headers['accept-language']);
+    const rows = await withUserContext(deps.reader, own(req.user.id), (t) => t.any<{ error: string | null }>(
+      `SELECT CASE WHEN spider_code IS NOT NULL THEN 'spider:' || spider_code ELSE 'cap:' || source_system || ':' || capability END AS key,
+              status, started_at, finished_at, records_changed, error_detail AS error
+         FROM crawl_runs WHERE app_user_id = $1 AND started_at >= $2::timestamptz - interval '5 seconds' ORDER BY started_at`,
+      [req.user.id, req.query.since]));
+    return rows.map((r) => ({ ...r, error: localizeStored(r.error, lang) }));
+  });
 
   /** Bật / tắt tự cập nhật khi mở báo cáo cho một nguồn dữ liệu. */
   app.put<{ Body: Target & { auto_refresh: boolean } }>('/data-sources/prefs', {
     schema: { body: { type: 'object', required: ['source_system', 'auto_refresh'], properties: { ...target, auto_refresh: { type: 'boolean' } } } },
   }, async (req) => {
-    const src = await findSource(req.user.id, req.body);
+    const src = await findSource(req.user.id, req.body, langOf(req.headers['accept-language']));
     await withUserContext(deps.reader, own(req.user.id), async (t) => {
       await t.none(
         `INSERT INTO data_source_prefs (app_user_id, source_system, spider_code, capability, auto_refresh) VALUES ($1, $2, $3, $4, $5)
@@ -273,18 +279,18 @@ export const dataScheduleRoutes = (deps: ApiDeps): FastifyPluginAsync => async (
         [req.user.id, src.source_system, src.spider_code, src.capability, req.body.auto_refresh]);
       await audit(t, req, 'schedule_change', { type: 'data_source', id: src.key }, { auto_refresh: req.body.auto_refresh });
     });
-    return findSource(req.user.id, src);
+    return findSource(req.user.id, src, langOf(req.headers['accept-language']));
   });
 
   /** Cập nhật ngay một nguồn dữ liệu cho chính người gọi (không cần có lịch, không đổi giờ hẹn). */
   app.post<{ Body: Target }>('/data-sources/run-now', {
     schema: { body: { type: 'object', required: ['source_system'], properties: target } },
   }, async (req, reply) => {
-    const src = await findSource(req.user.id, req.body);
-    if (src.grant_state === 'expired' || src.grant_state === 'failed') throw new Problem('session_expired', 'Phiên đã hết hạn', 'Kết nối lại rồi thử lại', { source_system: src.source_system });
-    if (src.grant_state !== 'active') throw new Problem('grant_required', 'Cần kết nối hệ thống này trước', undefined, { source_system: src.source_system });
+    const src = await findSource(req.user.id, req.body, langOf(req.headers['accept-language']));
+    if (src.grant_state === 'expired' || src.grant_state === 'failed') throw new Problem('session_expired', L('Phiên đã hết hạn', 'Session has expired'), L('Kết nối lại rồi thử lại', 'Reconnect and try again'), { source_system: src.source_system });
+    if (src.grant_state !== 'active') throw new Problem('grant_required', L('Cần kết nối hệ thống này trước', 'Connect this system first'), undefined, { source_system: src.source_system });
     if (!(await deps.limiter.take(`run-now:${req.user.id}:${src.key}`, RUN_NOW_WINDOW_S))) {
-      throw new Problem('rate_limited', 'Vừa cập nhật gần đây', 'Mỗi nguồn dữ liệu chỉ cập nhật ngay được một lần trong 5 phút');
+      throw new Problem('rate_limited', L('Vừa cập nhật gần đây', 'Updated recently'), L('Mỗi nguồn dữ liệu chỉ cập nhật ngay được một lần trong 5 phút', 'Each data source can be updated on demand only once every 5 minutes'));
     }
     await withTenant(deps.writer, (t) => audit(t, req, 'run_now', { type: 'data_source', id: src.key }));
     const r = await launchFor(deps, req.user.id, src);
@@ -292,6 +298,6 @@ export const dataScheduleRoutes = (deps: ApiDeps): FastifyPluginAsync => async (
   });
 };
 
-function safeLabel(s: Schedule): string {
-  try { return describeSchedule(s); } catch { return 'Lịch không hợp lệ'; }
+function safeLabel(s: Schedule, lang: Lang = 'vi'): string {
+  try { return describeSchedule(s, lang); } catch { return lang === 'en' ? 'Invalid schedule' : 'Lịch không hợp lệ'; }
 }

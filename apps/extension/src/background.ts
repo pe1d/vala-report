@@ -10,6 +10,61 @@ import {
   ApiError, api, applicableCookies, getCachedSources, getSettings, getStatuses, missingGroups, originPattern, sourcePermissions,
   type ConnectEvent, type Message, type Source, type SyncStatus,
 } from './shared';
+import { LANG_KEY, messages, readLang } from './i18n';
+
+/**
+ * Chữ người dùng thấy (thông báo, trạng thái đồng bộ, câu trả lời cho cổng). Sinh theo ngôn ngữ lúc tạo; đổi ngôn ngữ
+ * ⇒ chạy lại một lượt đồng bộ nhẹ để các trạng thái đã lưu được sinh lại bằng ngôn ngữ mới (xem storage.onChanged).
+ */
+const M = messages({
+  managed: 'Hệ thống tự đăng nhập bằng tài khoản đã cấp, không cần tiện ích',
+  needConsent: (ten: string) => `Chưa xác nhận đồng ý cho Vala dùng tài khoản ${ten} — mở tiện ích hoặc trang Tài khoản nguồn để xác nhận`,
+  noPermission: (domain: string) => `Chưa cho phép đọc phiên ${domain}`,
+  notLoggedIn: (ten: string, missing: string) => `Chưa đăng nhập ${ten} trên trình duyệt này (thiếu ${missing})`,
+  unchanged: 'Phiên không đổi, máy chủ đang dùng phiên này',
+  browserExpired: 'Phiên trên trình duyệt đã hết hạn — đăng nhập lại',
+  serverNotNeeded: 'Máy chủ không cần phiên này',
+  reconnected: (ten: string) => `Đã kết nối lại ${ten}`,
+  connected: (ten: string) => `Đã kết nối ${ten}`,
+  connectedBody: (hint: string) => `Vala đã nhận phiên đăng nhập, dữ liệu sẽ được lấy tiếp theo lịch.${hint}`,
+  sent: 'Đã gửi phiên cho Vala',
+  unknownError: 'Lỗi không xác định',
+  rejectedPending: (ten: string) => `Vala không dùng được phiên ${ten} này (máy chủ báo đã hết hạn)`,
+  rejected: (ten: string, detail: string) => `Vala không dùng được phiên ${ten} này${detail ? ` — ${detail}` : ''}`,
+  passwordHint: ' Mẹo: khi trình duyệt hỏi, bấm "Lưu mật khẩu" — lần sau đăng nhập lại chỉ cần một cú bấm.',
+  expiredTitle: (ten: string) => `Phiên ${ten} đã hết hạn`,
+  expiredBody: 'Vala không lấy được dữ liệu mới. Bấm vào đây để đăng nhập lại — xong tiện ích tự gửi phiên.',
+  unknownSource: 'Tiện ích chưa đăng nhập hoặc không có hệ thống này',
+  needPermission: (ten: string) => `Bấm "Cho phép" trong trang tiện ích vừa mở để tiện ích đọc được phiên ${ten}`,
+  loginOpened: (ten: string) => `Đăng nhập ${ten} trong tab vừa mở — xong tiện ích tự đưa bạn quay lại`,
+  connectFailed: 'Kết nối không thành công',
+  notConnected: (ten: string) => `Chưa kết nối được ${ten}`,
+}, {
+  managed: 'Signed in automatically with the provided account; the extension is not needed',
+  needConsent: (ten: string) => `You have not yet agreed to let Vala use your ${ten} account — open the extension or the Source accounts page to confirm`,
+  noPermission: (domain: string) => `Not allowed to read the ${domain} session yet`,
+  notLoggedIn: (ten: string, missing: string) => `Not signed in to ${ten} in this browser (missing ${missing})`,
+  unchanged: 'Session unchanged; the server is using this session',
+  browserExpired: 'The session in the browser has expired — sign in again',
+  serverNotNeeded: 'The server does not need this session',
+  reconnected: (ten: string) => `Reconnected to ${ten}`,
+  connected: (ten: string) => `Connected to ${ten}`,
+  connectedBody: (hint: string) => `Vala has received your sign-in session; data will keep being fetched on schedule.${hint}`,
+  sent: 'Session sent to Vala',
+  unknownError: 'Unknown error',
+  rejectedPending: (ten: string) => `Vala cannot use this ${ten} session (the server reports it has expired)`,
+  rejected: (ten: string, detail: string) => `Vala cannot use this ${ten} session${detail ? ` — ${detail}` : ''}`,
+  passwordHint: ' Tip: when the browser asks, click "Save password" — next time, signing in again takes just one click.',
+  expiredTitle: (ten: string) => `${ten} session expired`,
+  expiredBody: 'Vala cannot fetch new data. Click here to sign in again — the extension then sends the session automatically.',
+  unknownSource: 'The extension is not signed in or does not have this system',
+  needPermission: (ten: string) => `Click "Allow" in the extension page that just opened so the extension can read the ${ten} session`,
+  loginOpened: (ten: string) => `Sign in to ${ten} in the new tab — the extension will bring you back when done`,
+  connectFailed: 'Connection failed',
+  notConnected: (ten: string) => `Could not connect to ${ten}`,
+});
+/** Chữ theo ngôn ngữ đang chọn — đọc lại từ storage (service worker có thể vừa khởi động lại). */
+const T = async () => M[await readLang()];
 
 const DEBOUNCE_MS = 3000;
 const PENDING_TTL_MS = 15 * 60_000;
@@ -47,7 +102,7 @@ async function refreshSources(): Promise<Source[]> {
 async function readPageCookies(src: Source, names: string[]): Promise<Record<string, string>> {
   if (!names.length) return {};
   const tabs = await chrome.tabs.query({ url: originPattern(src.origin) });
-  console.log(`[vala] ${src.code}: cần đọc từ trang ${names.join(',')}; tìm thấy ${tabs.length} tab ${originPattern(src.origin)}`);
+  console.log(`[vala] ${src.code}: need from page ${names.join(',')}; found ${tabs.length} tab(s) ${originPattern(src.origin)}`);
   for (const tab of tabs) {
     if (tab.id === undefined) continue;
     try {
@@ -66,9 +121,9 @@ async function readPageCookies(src: Source, names: string[]): Promise<Record<str
         args: [names],
       });
       const pairs = (res?.result ?? []) as string[];
-      console.log(`[vala] ${src.code}: tab ${tab.id} đọc được ${pairs.length} cookie JS: ${pairs.map((p) => p.slice(0, p.indexOf('='))).join(',') || '(không có)'}`);
+      console.log(`[vala] ${src.code}: tab ${tab.id} read ${pairs.length} JS cookie(s): ${pairs.map((p) => p.slice(0, p.indexOf('='))).join(',') || '(none)'}`);
       if (pairs.length) return Object.fromEntries(pairs.map((p) => [p.slice(0, p.indexOf('=')), p.slice(p.indexOf('=') + 1)]));
-    } catch (e) { console.log(`[vala] ${src.code}: tab ${tab.id} INJECT LỖI: ${String(e)}`); }
+    } catch (e) { console.log(`[vala] ${src.code}: tab ${tab.id} INJECT FAILED: ${String(e)}`); }
   }
   return {};
 }
@@ -88,10 +143,10 @@ async function readCookies(src: Source): Promise<Record<string, string> | null> 
     }
   }
   cookieExpiry.set(src.code, exp);
-  console.log(`[vala] ${src.code}: cần ${src.cookie_names.join(',')}; chrome.cookies lấy được ${Object.keys(out).join(',') || '(không có)'}`);
+  console.log(`[vala] ${src.code}: need ${src.cookie_names.join(',')}; chrome.cookies got ${Object.keys(out).join(',') || '(none)'}`);
   // Cookie do JS đặt (non-HttpOnly) như companyId/meId của eTask không lộ qua chrome.cookies — đọc bù từ trang.
   Object.assign(out, await readPageCookies(src, src.cookie_names.filter((n) => !(n in out))));
-  console.log(`[vala] ${src.code}: TỔNG lấy được ${Object.keys(out).join(',') || '(không có)'}`);
+  console.log(`[vala] ${src.code}: TOTAL got ${Object.keys(out).join(',') || '(none)'}`);
   return out;
 }
 
@@ -103,17 +158,18 @@ async function syncSource(src: Source, force = false): Promise<SyncStatus['resul
 }
 
 async function pushSource(src: Source, force: boolean): Promise<SyncStatus['result']> {
-  if (src.managed) return setStatus(src.code, { result: 'managed', message: 'Hệ thống tự đăng nhập bằng tài khoản đã cấp, không cần tiện ích' });
+  const t = await T();
+  if (src.managed) return setStatus(src.code, { result: 'managed', message: t.managed });
   // Kết nối LẦN ĐẦU cần người dùng xác nhận đồng ý (trên cổng hoặc trong tiện ích). Kết nối đang có vẫn gửi bình thường.
   if (src.consented === false && (src.state === 'chua_cau_hinh' || src.state === 'revoked')) {
-    return setStatus(src.code, { result: 'need_consent', message: `Chưa xác nhận đồng ý cho Vala dùng tài khoản ${src.ten} — mở tiện ích hoặc trang Tài khoản nguồn để xác nhận` });
+    return setStatus(src.code, { result: 'need_consent', message: t.needConsent(src.ten) });
   }
   const cookies = await readCookies(src);
-  if (!cookies) return setStatus(src.code, { result: 'no_permission', message: `Chưa cho phép đọc phiên ${src.cookie_domain ?? new URL(src.origin).host}` });
+  if (!cookies) return setStatus(src.code, { result: 'no_permission', message: t.noPermission(src.cookie_domain ?? new URL(src.origin).host) });
   // Thiếu cookie định danh (chỉ đọc được khi đang mở trang nguồn) thì vẫn gửi — máy chủ dùng lại giá trị lần trước.
   const stable = new Set(src.stable_cookies ?? []);
   const missing = missingGroups(src, cookies).filter((g) => !g.split('|').every((n) => stable.has(n)));
-  if (missing.length) return setStatus(src.code, { result: 'not_logged_in', message: `Chưa đăng nhập ${src.ten} trên trình duyệt này (thiếu ${missing.join(', ')})` });
+  if (missing.length) return setStatus(src.code, { result: 'not_logged_in', message: t.notLoggedIn(src.ten, missing.join(', ')) });
 
   // Chỉ lưu hash — không bao giờ lưu giá trị cookie. Cùng phiên đã gửi (hoặc đã bị từ chối) thì thôi.
   const hash = await sha256(src.cookie_names.filter((n) => n in cookies).map((n) => `${n}=${cookies[n]}`).join(';'));
@@ -121,35 +177,34 @@ async function pushSource(src: Source, force: boolean): Promise<SyncStatus['resu
   const prev = (await chrome.storage.local.get(key))[key] as { hash: string; ok: boolean } | undefined;
   if (!force && prev?.hash === hash && (!prev.ok || src.state === 'active')) {
     return setStatus(src.code, prev.ok
-      ? { result: 'unchanged', message: 'Phiên không đổi, máy chủ đang dùng phiên này' }
-      : { result: 'rejected', message: 'Phiên trên trình duyệt đã hết hạn — đăng nhập lại' });
+      ? { result: 'unchanged', message: t.unchanged }
+      : { result: 'rejected', message: t.browserExpired });
   }
   try {
     const r = await api<{ status: string; message?: string }>('PUT', `/ext/sources/${src.code}/session`,
       { cookies, expires: cookieExpiry.get(src.code) ?? {} });
     await chrome.storage.local.set({ [key]: { hash, ok: true } });
-    if (r.status !== 'active') return setStatus(src.code, { result: 'managed', message: r.message ?? 'Máy chủ không cần phiên này' });
+    if (r.status !== 'active') return setStatus(src.code, { result: 'managed', message: r.message ?? t.serverNotNeeded });
     // Lần đầu kết nối / nối lại sau khi hết hạn ⇒ báo cho người dùng biết đã xong. Vừa đăng nhập ở tab
     // do tiện ích mở ⇒ kèm lời nhắc lưu mật khẩu (trình duyệt không cho tiện ích tự lưu).
     const pend = (await chrome.storage.session.get(pendingKey(src.code)))[pendingKey(src.code)] as Pending | undefined;
     if (src.state !== 'active') {
       const again = src.state === 'expired' || src.state === 'failed';
       const hint = pend?.loginTabId !== undefined ? await passwordHint(src.code) : '';
-      notify(again ? `Đã kết nối lại ${src.ten}` : `Đã kết nối ${src.ten}`,
-        `Vala đã nhận phiên đăng nhập, dữ liệu sẽ được lấy tiếp theo lịch.${hint}`);
+      notify(again ? t.reconnected(src.ten) : t.connected(src.ten), t.connectedBody(hint));
     }
     src.state = 'active';
     // Cập nhật cả bản cache (không đợi lần làm mới 15 phút) để cookie đổi tiếp theo không báo "đã kết nối" lặp lại.
     const cached = await getCachedSources();
     const c = cached.find((x) => x.code === src.code);
     if (c && c.state !== 'active') { c.state = 'active'; await chrome.storage.local.set({ sources: cached }); }
-    return setStatus(src.code, { result: 'sent', message: 'Đã gửi phiên cho Vala' });
+    return setStatus(src.code, { result: 'sent', message: t.sent });
   } catch (e) {
-    const err = e instanceof ApiError ? e : new ApiError(0, 'internal', 'Lỗi không xác định');
+    const err = e instanceof ApiError ? e : new ApiError(0, 'internal', t.unknownError);
     if (err.type === 'session_expired') {
       await chrome.storage.local.set({ [key]: { hash, ok: false } });
-      await finishPending(src, false, `Vala không dùng được phiên ${src.ten} này (máy chủ báo đã hết hạn)`);
-      return setStatus(src.code, { result: 'rejected', message: `Vala không dùng được phiên ${src.ten} này${err.detail ? ` — ${err.detail}` : ''}` });
+      await finishPending(src, false, t.rejectedPending(src.ten));
+      return setStatus(src.code, { result: 'rejected', message: t.rejected(src.ten, err.detail ?? '') });
     }
     return setStatus(src.code, { result: 'error', message: err.detail ? `${err.message}: ${err.detail}` : err.message });
   }
@@ -168,7 +223,7 @@ async function passwordHint(code: string): Promise<string> {
   const n = ((await chrome.storage.local.get(key))[key] as number | undefined) ?? 0;
   if (n >= 2) return '';
   await chrome.storage.local.set({ [key]: n + 1 });
-  return ' Mẹo: khi trình duyệt hỏi, bấm "Lưu mật khẩu" — lần sau đăng nhập lại chỉ cần một cú bấm.';
+  return (await T()).passwordHint;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -193,8 +248,8 @@ async function checkExpiry(src: Source, result: SyncStatus['result']) {
   const last = (await chrome.storage.local.get(key))[key] as number | undefined;
   if (last && Date.now() - last < EXPIRY_REMIND_MS) return;
   await chrome.storage.local.set({ [key]: Date.now() });
-  notify(`Phiên ${src.ten} đã hết hạn`, 'Vala không lấy được dữ liệu mới. Bấm vào đây để đăng nhập lại — xong tiện ích tự gửi phiên.',
-    { id: reloginId(src.code), sticky: true });
+  const t = await T();
+  notify(t.expiredTitle(src.ten), t.expiredBody, { id: reloginId(src.code), sticky: true });
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -203,10 +258,11 @@ async function checkExpiry(src: Source, result: SyncStatus['result']) {
 const pendingKey = (code: string) => `pending:${code}`;
 
 async function startConnect(code: string, returnTabId?: number, quiet = false): Promise<{ status: string; message?: string }> {
+  const t = await T();
   let sources: Source[];
   try { sources = await refreshSources(); } catch { sources = await getCachedSources(); }
   const src = sources.find((s) => s.code === code);
-  if (!src) return { status: 'unknown_source', message: 'Tiện ích chưa đăng nhập hoặc không có hệ thống này' };
+  if (!src) return { status: 'unknown_source', message: t.unknownSource };
   await chrome.storage.session.set({ [pendingKey(code)]: { returnTabId, at: Date.now(), quiet } satisfies Pending });
 
   const r = await syncSource(src, true);
@@ -215,12 +271,12 @@ async function startConnect(code: string, returnTabId?: number, quiet = false): 
   if (r === 'no_permission') {
     // Hộp thoại xin quyền phải mở từ một cú bấm trong trang của tiện ích.
     await chrome.tabs.create({ url: chrome.runtime.getURL(`options.html#cho-phep=${code}`) });
-    return { status: 'need_permission', message: `Bấm "Cho phép" trong trang tiện ích vừa mở để tiện ích đọc được phiên ${src.ten}` };
+    return { status: 'need_permission', message: t.needPermission(src.ten) };
   }
   // Chưa đăng nhập / phiên hỏng ⇒ mở trang đăng nhập nguồn; cookie đổi sẽ kích hoạt gửi (onChanged).
   const tab = await chrome.tabs.create({ url: src.login_url, active: true });
   await chrome.storage.session.set({ [pendingKey(code)]: { loginTabId: tab.id, returnTabId, at: Date.now(), quiet } satisfies Pending });
-  return { status: 'login_opened', message: `Đăng nhập ${src.ten} trong tab vừa mở — xong tiện ích tự đưa bạn quay lại` };
+  return { status: 'login_opened', message: t.loginOpened(src.ten) };
 }
 
 /** Kết thúc lượt kết nối đang chờ: đóng tab đăng nhập đã mở, quay về trang đã bấm, báo kết quả. */
@@ -230,9 +286,10 @@ async function finishPending(src: Source, ok: boolean, message?: string) {
   if (!p) return;
   await chrome.storage.session.remove(key);
   if (Date.now() - p.at > PENDING_TTL_MS) return;
+  const t = await T();
   const ev: ConnectEvent = ok ? { type: 'connected', code: src.code, ten: src.ten }
-    : { type: 'connect-failed', code: src.code, ten: src.ten, message: message ?? 'Kết nối không thành công' };
-  if (!ok) notify(`Chưa kết nối được ${src.ten}`, ev.type === 'connect-failed' ? ev.message : '');
+    : { type: 'connect-failed', code: src.code, ten: src.ten, message: message ?? t.connectFailed };
+  if (!ok) notify(t.notConnected(src.ten), ev.type === 'connect-failed' ? ev.message : '');
   // Đăng nhập lại từ thông báo: người dùng ở lại trang nguồn đang dùng; kết quả đã báo bằng thông báo.
   if (p.quiet) return;
 
@@ -312,6 +369,8 @@ chrome.runtime.onStartup.addListener(() => { void registerBridge(); void syncAll
 
 chrome.storage.onChanged.addListener((ch, area) => {
   if (area === 'local' && ('token' in ch || 'serverUrl' in ch)) void registerBridge();
+  // Đổi ngôn ngữ ⇒ đồng bộ nhẹ (không ép gửi lại) để các trạng thái đã lưu sinh lại bằng ngôn ngữ mới.
+  if (area === 'local' && LANG_KEY in ch) void syncAll();
 });
 
 chrome.runtime.onMessage.addListener((msg: Message, sender, reply) => {
@@ -353,7 +412,7 @@ const saveVisitState = (v: VisitState) => chrome.storage.session.set({ visit: v 
 /** Các sự kiện tab/cửa sổ đến gần như cùng lúc ⇒ xử lý lần lượt, không ghi đè trạng thái của nhau. */
 let visitChain: Promise<void> = Promise.resolve();
 const serial = (fn: (v: VisitState) => Promise<void>) => {
-  visitChain = visitChain.then(async () => { const v = await visitState(); await fn(v); await saveVisitState(v); }).catch((e) => console.warn('[vala] theo dõi tab', e));
+  visitChain = visitChain.then(async () => { const v = await visitState(); await fn(v); await saveVisitState(v); }).catch((e) => console.warn('[vala] tab tracking', e));
 };
 
 /** Trang thuộc hệ thống nguồn nào (đúng host của origin nguồn). Không có quyền đọc URL ⇒ không phải trang nguồn. */
@@ -373,9 +432,9 @@ async function nudge(code: string, v: VisitState) {
   try {
     await syncSource(src);
     const r = await api<{ sources: Array<{ key: string; state: string }> }>('POST', `/ext/sources/${code}/refresh`);
-    console.log(`[vala] ${code}: rời trang nguồn ⇒ tự cập nhật`, r.sources.map((x) => `${x.key}=${x.state}`).join(', '));
+    console.log(`[vala] ${code}: left source page ⇒ auto refresh`, r.sources.map((x) => `${x.key}=${x.state}`).join(', '));
   } catch (e) {
-    console.warn(`[vala] ${code}: không báo được tự cập nhật`, (e as Error).message);
+    console.warn(`[vala] ${code}: auto refresh request failed`, (e as Error).message);
   }
 }
 

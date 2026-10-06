@@ -11,6 +11,8 @@
         var dark = t === 'dark' || ((!t || t === 'system') && window.matchMedia('(prefers-color-scheme: dark)').matches);
         document.documentElement.classList.toggle('dark', dark);
       })();
+      // Ngôn ngữ đã chọn (vala.lang) — đặt <html lang> trước khi React chạy.
+      try { if (localStorage.getItem('vala.lang') === 'en') document.documentElement.lang = 'en'; } catch (e) {}
       // Nhận diện của đơn vị (màu chủ đạo, tiêu đề) đã lưu từ lần trước — áp trước khi React chạy, khỏi nháy màu mặc định.
       (function () {
         try {

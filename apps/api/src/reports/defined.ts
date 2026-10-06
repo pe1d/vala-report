@@ -6,7 +6,7 @@
  * Chạy bên trong withUserContext trên pool reader ⇒ RLS lọc theo phạm vi như mọi báo cáo khác.
  */
 import { z } from 'zod';
-import { Problem, type Tx } from '@vala/core';
+import { L, Problem, type Lang, type Tx } from '@vala/core';
 import { loadAllSpecs } from '@vala/core/adapter';
 import { resolvePeriod } from '../params.js';
 import type { Column, ReportInput, ReportOutput, Tile } from './index.js';
@@ -23,18 +23,22 @@ const COMMON: FieldDef[] = [
   { name: 'don_vi', label: 'Đơn vị', type: 'string', expr: `coalesce(o.ten, 'Chưa xác định đơn vị')` },
   { name: 'lan_dau_thay', label: 'Lần đầu thấy', type: 'date', expr: '(t.first_seen_at AT TIME ZONE \'Asia/Ho_Chi_Minh\')::date' },
 ];
+/** Nhãn tiếng Anh của các trường chung (nhãn trường lấy từ cấu hình adapter giữ nguyên như quản trị đặt). */
+const COMMON_EN: Record<string, string> = { nguoi_dung: 'User', don_vi: 'Unit', lan_dau_thay: 'First seen' };
+const commonFields = (lang: Lang) => (lang === 'en' ? COMMON.map((f) => ({ ...f, label: COMMON_EN[f.name] ?? f.label })) : COMMON);
+const bad = (vi: string, en: string) => new Problem('invalid_params', L('Định nghĩa báo cáo chưa hợp lệ', 'Invalid report definition'), L(vi, en));
 
 /**
  * Trường của một tập dữ liệu (hệ thống × capability): theo output_schema + sink.extra_schema trong cấu hình adapter,
  * cộng các trường chung. Tên trường chỉ nhận [A-Za-z0-9_] rồi mới đưa vào biểu thức; ngày đọc qua rec_date (khớp
  * chỉ mục của trường khai `index: true`).
  */
-export function datasetFields(_dataset: Dataset, source: string, capability?: string): FieldDef[] {
+export function datasetFields(_dataset: Dataset, source: string, capability?: string, lang: Lang = 'vi'): FieldDef[] {
   const spec = loadAllSpecs().find((s) => s.source_system === source && s.capabilities.some((c) => c.id === capability && c.sink));
   const cap = spec?.capabilities.find((c) => c.id === capability && c.sink);
-  if (!cap) throw new Problem('invalid_params', 'Hệ thống này không có tập dữ liệu với capability đã chọn', `${source}/${capability ?? '?'}`);
+  if (!cap) throw new Problem('invalid_params', L('Hệ thống này không có tập dữ liệu với capability đã chọn', 'This system has no dataset for the selected capability'), `${source}/${capability ?? '?'}`);
   const safe = (name: string) => {
-    if (!/^[A-Za-z][A-Za-z0-9_]{0,60}$/.test(name)) throw new Problem('invalid_params', 'Tên trường không hợp lệ trong cấu hình adapter', name);
+    if (!/^[A-Za-z][A-Za-z0-9_]{0,60}$/.test(name)) throw new Problem('invalid_params', L('Tên trường không hợp lệ trong cấu hình adapter', 'Invalid field name in the adapter config'), name);
     return name;
   };
   const expr = (name: string, type: FieldType) => {
@@ -48,7 +52,7 @@ export function datasetFields(_dataset: Dataset, source: string, capability?: st
     const x = typed.get(e);
     fields.push({ name: e, label: x?.label ?? e, type: x?.type ?? 'string', expr: expr(e, x?.type ?? 'string') });
   }
-  return [...fields, ...COMMON];
+  return [...fields, ...commonFields(lang)];
 }
 
 /** Tập dữ liệu hệ thống nguồn có: mỗi capability có nơi lưu (sink) là một tập, nhãn = tên capability. */
@@ -116,69 +120,71 @@ export type Definition = z.infer<typeof DefinitionSchema>;
  * Kiểm tra định nghĩa với danh mục trường thật của tập dữ liệu; lỗi ⇒ 422 nói rõ chỗ sai.
  * Trả về định nghĩa đã chuẩn hoá + param_schema/default_params sinh ra cho form tham số.
  */
-export function checkDefinition(source: string, raw: unknown) {
+export function checkDefinition(source: string, raw: unknown, lang: Lang = 'vi') {
+  const en = lang === 'en';
   const p = DefinitionSchema.safeParse(raw);
   if (!p.success) {
     const i = p.error.issues[0]!;
-    throw new Problem('invalid_params', 'Định nghĩa báo cáo chưa hợp lệ', `${i.path.join('.')}: ${i.message}`);
+    throw bad(`${i.path.join('.')}: ${i.message}`, `${i.path.join('.')}: ${i.message}`);
   }
   const def = p.data;
-  const fields = new Map(datasetFields(def.dataset, source, def.capability).map((f) => [f.name, f]));
+  const fields = new Map(datasetFields(def.dataset, source, def.capability, lang).map((f) => [f.name, f]));
   const need = (name: string, where: string, type?: FieldType) => {
     const f = fields.get(name);
-    if (!f) throw new Problem('invalid_params', 'Định nghĩa báo cáo chưa hợp lệ', `${where}: không có trường '${name}'`);
-    if (type && f.type !== type) throw new Problem('invalid_params', 'Định nghĩa báo cáo chưa hợp lệ', `${where}: '${name}' phải là trường ${type === 'date' ? 'ngày' : 'số'}`);
+    if (!f) throw bad(`${where}: không có trường '${name}'`, `${where}: no field '${name}'`);
+    if (type && f.type !== type) throw bad(`${where}: '${name}' phải là trường ${type === 'date' ? 'ngày' : 'số'}`, `${where}: '${name}' must be a ${type === 'date' ? 'date' : 'number'} field`);
     return f;
   };
   const checkFilters = (fs: Definition['filters'], where: string) => fs.forEach((f, i) => {
     const fd = need(f.field, `${where}[${i}]`);
-    if ([...TODAY_OPS, ...DAYS_OPS].includes(f.op) && fd.type !== 'date') throw new Problem('invalid_params', 'Định nghĩa báo cáo chưa hợp lệ', `${where}[${i}]: so với hôm nay chỉ dùng cho trường ngày`);
-    if (!['is_null', 'not_null', ...TODAY_OPS].includes(f.op) && f.value === undefined) throw new Problem('invalid_params', 'Định nghĩa báo cáo chưa hợp lệ', `${where}[${i}]: cần giá trị`);
+    if ([...TODAY_OPS, ...DAYS_OPS].includes(f.op) && fd.type !== 'date') throw bad(`${where}[${i}]: so với hôm nay chỉ dùng cho trường ngày`, `${where}[${i}]: comparing with today only works on date fields`);
+    if (!['is_null', 'not_null', ...TODAY_OPS].includes(f.op) && f.value === undefined) throw bad(`${where}[${i}]: cần giá trị`, `${where}[${i}]: a value is required`);
     if (['in', 'not_in'].includes(f.op) && (Array.isArray(f.value) ? f.value : [f.value]).filter((v) => v !== '' && v !== undefined).length === 0) {
-      throw new Problem('invalid_params', 'Định nghĩa báo cáo chưa hợp lệ', `${where}[${i}]: chọn ít nhất một giá trị`);
+      throw bad(`${where}[${i}]: chọn ít nhất một giá trị`, `${where}[${i}]: choose at least one value`);
     }
     if (['contains', 'like', 'not_like'].includes(f.op) && (Array.isArray(f.value) || String(f.value ?? '') === '')) {
-      throw new Problem('invalid_params', 'Định nghĩa báo cáo chưa hợp lệ', `${where}[${i}]: cần một chuỗi${f.op === 'contains' ? '' : ' mẫu (vd %theo dõi%)'}`);
+      throw bad(`${where}[${i}]: cần một chuỗi${f.op === 'contains' ? '' : ' mẫu (vd %theo dõi%)'}`, `${where}[${i}]: a ${f.op === 'contains' ? 'text value' : 'pattern (e.g. %follow-up%)'} is required`);
     }
     if (DAYS_OPS.includes(f.op) && !(Number.isInteger(Number(f.value)) && Number(f.value) >= 1 && Number(f.value) <= 3650)) {
-      throw new Problem('invalid_params', 'Định nghĩa báo cáo chưa hợp lệ', `${where}[${i}]: số ngày phải từ 1 đến 3650`);
+      throw bad(`${where}[${i}]: số ngày phải từ 1 đến 3650`, `${where}[${i}]: number of days must be between 1 and 3650`);
     }
   });
   const checkMeasure = (m: Definition['measures'][number], where: string) => {
-    if (m.fn === 'ty_le' && !m.filters.length) throw new Problem('invalid_params', 'Định nghĩa báo cáo chưa hợp lệ', `${where}: tỉ lệ cần ít nhất một điều kiện (phần được tính)`);
-    if (m.fn !== 'count' && m.fn !== 'ty_le' && !m.field) throw new Problem('invalid_params', 'Định nghĩa báo cáo chưa hợp lệ', `${where}: phép ${m.fn} cần chọn trường`);
+    if (m.fn === 'ty_le' && !m.filters.length) throw bad(`${where}: tỉ lệ cần ít nhất một điều kiện (phần được tính)`, `${where}: a percentage needs at least one condition (the counted part)`);
+    if (m.fn !== 'count' && m.fn !== 'ty_le' && !m.field) throw bad(`${where}: phép ${m.fn} cần chọn trường`, `${where}: ${m.fn} requires a field`);
     if (m.field) need(m.field, where, m.fn === 'sum' || m.fn === 'avg' ? 'int' : undefined);
     checkFilters(m.filters, `${where}.filters`);
   };
   if (def.date_field) need(def.date_field, 'date_field', 'date');
   if (def.keyword_field) need(def.keyword_field, 'keyword_field', 'string');
   checkFilters(def.filters, 'filters');
-  def.param_filters.forEach((f, i) => { if (need(f.field, `param_filters[${i}]`).type === 'date') throw new Problem('invalid_params', 'Định nghĩa báo cáo chưa hợp lệ', `param_filters[${i}]: không lọc chọn-nhiều trên trường ngày`); });
+  def.param_filters.forEach((f, i) => { if (need(f.field, `param_filters[${i}]`).type === 'date') throw bad(`param_filters[${i}]: không lọc chọn-nhiều trên trường ngày`, `param_filters[${i}]: multi-select filters cannot be used on date fields`); });
   def.tiles.forEach((m, i) => {
     checkMeasure(m, `tiles[${i}]`);
     if (m.trend_field) need(m.trend_field, `tiles[${i}].trend_field`, 'date');
-    if (m.trend_field && m.fn === 'ty_le') throw new Problem('invalid_params', 'Định nghĩa báo cáo chưa hợp lệ', `tiles[${i}]: thẻ tỉ lệ không kèm xu hướng theo tháng`);
+    if (m.trend_field && m.fn === 'ty_le') throw bad(`tiles[${i}]: thẻ tỉ lệ không kèm xu hướng theo tháng`, `tiles[${i}]: percentage tiles cannot have a monthly trend`);
   });
   if (def.mode === 'list') {
-    if (!def.columns.length) throw new Problem('invalid_params', 'Định nghĩa báo cáo chưa hợp lệ', 'Danh sách cần ít nhất một cột');
+    if (!def.columns.length) throw bad('Danh sách cần ít nhất một cột', 'A list needs at least one column');
     def.columns.forEach((c, i) => need(c.field, `columns[${i}]`));
-    if (def.sort && !fields.has(def.sort.by)) throw new Problem('invalid_params', 'Định nghĩa báo cáo chưa hợp lệ', `sort: không có trường '${def.sort.by}'`);
-    if (def.chart) throw new Problem('invalid_params', 'Định nghĩa báo cáo chưa hợp lệ', 'Biểu đồ chỉ dùng cho kiểu Thống kê');
+    if (def.sort && !fields.has(def.sort.by)) throw bad(`sort: không có trường '${def.sort.by}'`, `sort: no field '${def.sort.by}'`);
+    if (def.chart) throw bad('Biểu đồ chỉ dùng cho kiểu Thống kê', 'Charts are only available for the Summary type');
   } else {
-    if (!def.group_by.length && !def.tiles.length) throw new Problem('invalid_params', 'Định nghĩa báo cáo chưa hợp lệ', 'Thống kê cần nhóm theo ít nhất một trường (hoặc có thẻ KPI)');
-    if (def.group_by.length && !def.measures.length) def.measures.push({ fn: 'count', label: 'Số lượng', filters: [] });
+    if (!def.group_by.length && !def.tiles.length) throw bad('Thống kê cần nhóm theo ít nhất một trường (hoặc có thẻ KPI)', 'A summary needs to group by at least one field (or have KPI tiles)');
+    if (def.group_by.length && !def.measures.length) def.measures.push({ fn: 'count', label: en ? 'Count' : 'Số lượng', filters: [] });
     def.group_by.forEach((g, i) => { need(g.field, `group_by[${i}]`, g.bucket ? 'date' : undefined); });
     def.measures.forEach((m, i) => checkMeasure(m, `measures[${i}]`));
-    if (def.chart && def.group_by.length !== 1) throw new Problem('invalid_params', 'Định nghĩa báo cáo chưa hợp lệ', 'Biểu đồ cần nhóm theo đúng một trường');
-    if (def.chart?.kind === 'heatmap' && def.group_by[0]?.bucket !== 'day') throw new Problem('invalid_params', 'Định nghĩa báo cáo chưa hợp lệ', 'Lịch nhiệt cần nhóm theo một trường ngày, gộp theo ngày');
-    if (def.sort && !/^(g|m)\d$/.test(def.sort.by)) throw new Problem('invalid_params', 'Định nghĩa báo cáo chưa hợp lệ', 'sort.by của Thống kê là g0/g1 (nhóm) hoặc m0…m3 (phép tính)');
+    if (def.chart && def.group_by.length !== 1) throw bad('Biểu đồ cần nhóm theo đúng một trường', 'A chart needs to group by exactly one field');
+    if (def.chart?.kind === 'heatmap' && def.group_by[0]?.bucket !== 'day') throw bad('Lịch nhiệt cần nhóm theo một trường ngày, gộp theo ngày', 'A heatmap needs to group by a date field, bucketed by day');
+    if (def.sort && !/^(g|m)\d$/.test(def.sort.by)) throw bad('sort.by của Thống kê là g0/g1 (nhóm) hoặc m0…m3 (phép tính)', 'sort.by of a Summary must be g0/g1 (group) or m0…m3 (measure)');
   }
   const properties: Record<string, unknown> = {};
   const defaults: Record<string, unknown> = {};
   if (def.date_field) {
-    properties.khoang_thoi_gian = { type: 'string', title: `Khoảng thời gian (${fields.get(def.date_field)!.label})`, enum: [...PERIODS] };
-    properties.tu_ngay = { type: 'string', title: 'Từ ngày', format: 'date' };
-    properties.den_ngay = { type: 'string', title: 'Đến ngày', format: 'date' };
+    const dl = fields.get(def.date_field)!.label;
+    properties.khoang_thoi_gian = { type: 'string', title: en ? `Time period (${dl})` : `Khoảng thời gian (${dl})`, enum: [...PERIODS] };
+    properties.tu_ngay = { type: 'string', title: en ? 'From date' : 'Từ ngày', format: 'date' };
+    properties.den_ngay = { type: 'string', title: en ? 'To date' : 'Đến ngày', format: 'date' };
     defaults.khoang_thoi_gian = def.default_period;
   }
   for (const f of def.param_filters) {
@@ -186,9 +192,38 @@ export function checkDefinition(source: string, raw: unknown) {
     properties[`loc_${f.field}`] = { type: 'array', title: f.label ?? fd.label, maxItems: 50,
       items: { type: fd.type === 'int' ? 'integer' : 'string' }, 'x-options': { field: f.field } };
   }
-  if (def.keyword_field) properties.tu_khoa = { type: 'string', title: `Từ khoá trong ${fields.get(def.keyword_field)!.label.toLowerCase()}`, maxLength: 200 };
+  if (def.keyword_field) {
+    const kl = fields.get(def.keyword_field)!.label.toLowerCase();
+    properties.tu_khoa = { type: 'string', title: en ? `Keyword in ${kl}` : `Từ khoá trong ${kl}`, maxLength: 200 };
+  }
   const view_template = def.tiles.length ? 'tong_hop' : def.chart ? 'bang_kem_bieu_do' : 'bang';
   return { def, param_schema: { type: 'object', additionalProperties: false, properties }, default_params: defaults, view_template };
+}
+
+/**
+ * param_schema đã lưu (sinh bằng checkDefinition lúc quản trị lưu báo cáo, tiếng Việt) ⇒ dịch tiêu đề các tham số do
+ * máy chủ tự sinh. Tiêu đề bộ lọc do quản trị đặt / nhãn trường từ cấu hình adapter giữ nguyên.
+ */
+export function localizeParamSchema<T>(schema: T, lang: Lang): T {
+  const props = (schema as { properties?: Record<string, { title?: string }> } | null)?.properties;
+  if (lang !== 'en' || !props) return schema;
+  const label = (l: string) => COMMON.find((f) => f.label === l)?.name;
+  const fieldLabel = (l: string) => { const n = label(l); return n ? COMMON_EN[n]! : l; };
+  const out: Record<string, unknown> = {};
+  for (const [k, p] of Object.entries(props)) {
+    let title = p?.title;
+    if (typeof title === 'string') {
+      const m = /^Khoảng thời gian \((.*)\)$/.exec(title);
+      const kw = /^Từ khoá trong (.*)$/.exec(title);
+      if (k === 'khoang_thoi_gian' && m) title = `Time period (${fieldLabel(m[1]!)})`;
+      else if (k === 'tu_ngay' && title === 'Từ ngày') title = 'From date';
+      else if (k === 'den_ngay' && title === 'Đến ngày') title = 'To date';
+      else if (k === 'tu_khoa' && kw) title = `Keyword in ${fieldLabel(kw[1]!).toLowerCase()}`;
+      else if (k.startsWith('loc_')) title = fieldLabel(title);
+    }
+    out[k] = { ...p, title };
+  }
+  return { ...(schema as object), properties: out } as T;
 }
 
 // ---- chạy --------------------------------------------------------------------------------------
@@ -246,9 +281,12 @@ function measureSql(q: Sql, m: Definition['measures'][number], fields: Map<strin
   }
 }
 
-export async function runDefinition(t: Tx, source: string, raw: unknown, input: ReportInput): Promise<ReportOutput> {
-  const { def } = checkDefinition(source, raw);
-  const fields = new Map(datasetFields(def.dataset, source, def.capability).map((f) => [f.name, f]));
+export async function runDefinition(t: Tx, source: string, raw: unknown, input: ReportInput, lang: Lang = 'vi'): Promise<ReportOutput> {
+  const en = lang === 'en';
+  const { def } = checkDefinition(source, raw, lang);
+  // Nhãn mặc định do máy chủ tự thêm ("Số lượng") có thể đã lưu trong định nghĩa ⇒ dịch; nhãn quản trị đặt giữ nguyên.
+  if (en) for (const m of def.measures) if (m.fn === 'count' && !m.field && m.label === 'Số lượng') m.label = 'Count';
+  const fields = new Map(datasetFields(def.dataset, source, def.capability, lang).map((f) => [f.name, f]));
   const q = new Sql();
   const from = `records t LEFT JOIN app_users u ON u.id = t.owner_user_id LEFT JOIN org_units o ON o.id = t.org_unit_id`;
   const where = [`t.valid_to IS NULL`, `t.source_system = ${q.param(source, 'string')}`];
@@ -300,7 +338,7 @@ export async function runDefinition(t: Tx, source: string, raw: unknown, input: 
                          GROUP BY 1) x ON x.m = mm.m
             ORDER BY mm.m`, q.args, (r: { v: number }) => Number(r.v));
         const now = series.at(-1) ?? 0;
-        tiles.push({ key: `k${i}`, label: m.label, value: now, tone: tone(m, now), trend: series, delta: { now, before: series.at(-2) ?? 0, vs: 'tháng trước' } });
+        tiles.push({ key: `k${i}`, label: m.label, value: now, tone: tone(m, now), trend: series, delta: { now, before: series.at(-2) ?? 0, vs: en ? 'last month' : 'tháng trước' } });
         continue;
       }
       const value = Number(k[`k${i}`] ?? 0);
@@ -335,7 +373,7 @@ export async function runDefinition(t: Tx, source: string, raw: unknown, input: 
     const expr = g.bucket === 'month' ? `to_char(date_trunc('month', ${f.expr}), 'MM/YYYY')`
       : g.bucket === 'day' ? `to_char(${f.expr}, 'DD/MM/YYYY')` : f.expr;
     const sortExpr = g.bucket ? `date_trunc('${g.bucket}', ${f.expr})` : f.expr;
-    return { key: `g${i}`, label: g.label ?? f.label + (g.bucket === 'month' ? ' (tháng)' : g.bucket === 'day' ? ' (ngày)' : ''), expr, sortExpr, type: (g.bucket ? 'string' : f.type) as FieldType, bucket: !!g.bucket };
+    return { key: `g${i}`, label: g.label ?? f.label + (g.bucket === 'month' ? (en ? ' (month)' : ' (tháng)') : g.bucket === 'day' ? (en ? ' (day)' : ' (ngày)') : ''), expr, sortExpr, type: (g.bucket ? 'string' : f.type) as FieldType, bucket: !!g.bucket };
   });
   const measures = def.measures.map((m, i) => ({ key: `m${i}`, label: m.label, sql: measureSql(q, m, fields) }));
   const sel = [...groups.map((g) => `${g.expr} AS ${g.key}`), ...measures.map((m) => `${m.sql} AS ${m.key}`),
@@ -374,7 +412,7 @@ export async function runDefinition(t: Tx, source: string, raw: unknown, input: 
   return {
     columns, rows: shown.slice((page - 1) * pageSize, page * pageSize), total_rows: shown.length, tiles, applied,
     charts: chart ? [{
-      kind: chart.kind, title: chart.title ?? `${measures[0]!.label} theo ${groups[0]!.label.toLowerCase()}`, x_field: 'g0',
+      kind: chart.kind, title: chart.title ?? `${measures[0]!.label} ${en ? 'by' : 'theo'} ${groups[0]!.label.toLowerCase()}`, x_field: 'g0',
       series: [{ field: 'm0', label: measures[0]!.label }],
       range: chart.kind === 'heatmap' ? applied ?? dayRange(rows) : undefined,
     }] : undefined,
@@ -412,18 +450,20 @@ function dayRange(rows: Record<string, unknown>[]): { tu_ngay: string; den_ngay:
  * Danh sách lựa chọn cho một tham số lọc (x-options {field}): giá trị có thật trong dữ liệu người xem được
  * phép thấy. Tên trường tra trong danh mục trường của tập dữ liệu.
  */
-export async function paramOptions(t: Tx, source: string, definition: unknown | null, xo: unknown): Promise<Array<{ value: unknown; label: string }>> {
+export async function paramOptions(
+  t: Tx, source: string, definition: unknown | null, xo: unknown, lang: Lang = 'vi',
+): Promise<Array<{ value: unknown; label: string }>> {
   const o = (xo ?? {}) as { field?: string };
-  if (!definition) throw new Problem('not_found', 'Không có báo cáo này');
-  const { def } = checkDefinition(source, definition);
+  if (!definition) throw new Problem('not_found', L('Không có báo cáo này', 'Report not found'));
+  const { def } = checkDefinition(source, definition, lang);
   const dataset: Dataset = def.dataset;
   const capability = def.capability;
   const valueF = o.field ?? '';
   const labelF = valueF;
-  const fields = new Map(datasetFields(dataset, source, capability).map((f) => [f.name, f]));
+  const fields = new Map(datasetFields(dataset, source, capability, lang).map((f) => [f.name, f]));
   const v = fields.get(valueF);
   const l = fields.get(labelF);
-  if (!v || !l) throw new Problem('invalid_params', 'x-options không hợp lệ', `${valueF}/${labelF}`);
+  if (!v || !l) throw new Problem('invalid_params', L('x-options không hợp lệ', 'Invalid x-options'), `${valueF}/${labelF}`);
   const q = new Sql();
   const where = [`t.valid_to IS NULL`, `t.source_system = ${q.param(source, 'string')}`, `${v.expr} IS NOT NULL`];
   where.push(`t.capability = ${q.param(capability, 'string')}`);
@@ -439,7 +479,7 @@ export async function paramOptions(t: Tx, source: string, definition: unknown | 
  */
 export async function fieldValues(t: Tx, source: string, capability: string, field: string): Promise<Array<{ value: unknown; n: number }>> {
   const f = datasetFields('records', source, capability).find((x) => x.name === field);
-  if (!f) throw new Problem('invalid_params', 'Không có trường này', field);
+  if (!f) throw new Problem('invalid_params', L('Không có trường này', 'Field not found'), field);
   const q = new Sql();
   return t.any(
     `SELECT ${f.expr} AS value, count(*)::int AS n

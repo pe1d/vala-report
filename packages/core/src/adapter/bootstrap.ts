@@ -10,7 +10,7 @@
  *  - tối đa max_redirects bước;
  *  - kết thúc phải có đủ cookies_required, nếu không coi là SSO không cấp phiên.
  */
-import { Problem } from '../errors.js';
+import { Problem, L } from '../errors.js';
 import type { FetchLike } from './http.js';
 import type { AdapterSpec } from './spec.js';
 
@@ -84,7 +84,7 @@ export class RedirectWalker {
     let req = first;
     for (let hop = 0; hop <= this.maxHops; hop++) {
       if (!this.allowedHosts.has(url.host)) {
-        throw new Problem('forbidden', 'Chuyển hướng ra ngoài các host được phép', url.host);
+        throw new Problem('forbidden', L('Chuyển hướng ra ngoài các host được phép', 'Redirected outside the allowed hosts'), url.host);
       }
       const headers: Record<string, string> = { Accept: 'text/html,application/xhtml+xml,application/json' };
       const cookies = this.jar.forHost(url.hostname);
@@ -165,11 +165,11 @@ export async function bootstrapAppSession(o: BootstrapOptions): Promise<Bootstra
     (host) => (host === ssoHost ? `Bearer ${o.accessToken}` : undefined));
 
   const end = await walker.go(new URL(cfg.start.path, o.baseUrl));
-  if (end.status === 401 || end.status === 403) throw new Problem('session_expired', 'Phiên SSO không còn hiệu lực', `${end.url.host} → ${end.status}`);
+  if (end.status === 401 || end.status === 403) throw new Problem('session_expired', L('Phiên SSO không còn hiệu lực', 'SSO session is no longer valid'), `${end.url.host} → ${end.status}`);
   if (end.status >= 400) throw new Error(`Lấy phiên: ${end.url.host}${end.url.pathname} → HTTP ${end.status}`);
   // Dừng ở SSO với 200 = SSO hiện trang đăng nhập (không nhận access token) ⇒ phải đăng nhập lại.
-  if (end.url.host !== appHost) throw new Problem('session_expired', 'SSO yêu cầu đăng nhập lại');
+  if (end.url.host !== appHost) throw new Problem('session_expired', L('SSO yêu cầu đăng nhập lại', 'SSO requires signing in again'));
   const cookies = pickRequiredCookies(o.spec, walker.cookiesFor(o.baseUrl));
-  if (!cookies) throw new Problem('session_expired', 'Hệ thống nguồn không cấp đủ cookie phiên');
+  if (!cookies) throw new Problem('session_expired', L('Hệ thống nguồn không cấp đủ cookie phiên', 'Source system did not issue all session cookies'));
   return { cookies, expires_at: new Date(Date.now() + cfg.session_ttl_minutes * 60_000).toISOString() };
 }

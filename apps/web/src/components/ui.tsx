@@ -7,8 +7,19 @@ import { createPortal } from 'react-dom';
 import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, SelectHTMLAttributes } from 'react';
 import { Link, type LinkProps } from 'react-router-dom';
 import { useTheme, type ThemeMode } from '../theme';
+import { LANGS, messages, setLang, useLang, useT } from '../i18n';
 
 const cx = (...c: Array<string | false | null | undefined>) => c.filter(Boolean).join(' ');
+
+const M = messages({
+  moreActions: 'Thêm thao tác', help: 'Hướng dẫn', close: 'Đóng',
+  themeGroup: 'Chế độ giao diện', light: 'Sáng', dark: 'Tối', system: 'Theo hệ thống',
+  langGroup: 'Ngôn ngữ',
+}, {
+  moreActions: 'More actions', help: 'Help', close: 'Close',
+  themeGroup: 'Theme', light: 'Light', dark: 'Dark', system: 'System',
+  langGroup: 'Language',
+});
 
 type Variant = 'default' | 'primary' | 'danger';
 const BTN_BASE =
@@ -26,7 +37,9 @@ export interface MenuItem { label: string; onClick: () => void; danger?: boolean
  * Menu "…" gộp các hành động ít dùng. Hộp chọn vẽ nổi ra ngoài (portal, position fixed) ⇒ không bị khung cuộn của bảng
  * cắt mất, không mờ theo dòng đang tắt; mở lên trên khi phía dưới không đủ chỗ. Bấm ra ngoài / Esc / cuộn trang để đóng.
  */
-export function Menu({ items, label = 'Thêm thao tác', disabled }: { items: MenuItem[]; label?: string; disabled?: boolean }) {
+export function Menu({ items, label, disabled }: { items: MenuItem[]; label?: string; disabled?: boolean }) {
+  const t = useT(M);
+  label ??= t.moreActions;
   const [open, setOpen] = useState(false);
   const btn = useRef<HTMLButtonElement>(null);
   const box = useRef<HTMLDivElement>(null);
@@ -79,7 +92,9 @@ export function Menu({ items, label = 'Thêm thao tác', disabled }: { items: Me
  * Hộp vẽ nổi ra ngoài (portal, position fixed) để không bị khung cuộn của hộp thoại cắt; tự mở lên trên khi
  * phía dưới không đủ chỗ, và luôn nằm trong màn hình.
  */
-export function HelpTip({ title, children, label = 'Hướng dẫn' }: { title?: string; children: ReactNode; label?: string }) {
+export function HelpTip({ title, children, label }: { title?: string; children: ReactNode; label?: string }) {
+  const t = useT(M);
+  label ??= t.help;
   const [open, setOpen] = useState(false);
   const btn = useRef<HTMLButtonElement>(null);
   const box = useRef<HTMLDivElement>(null);
@@ -287,18 +302,19 @@ export function Skeleton({ width }: { width: string }) {
 }
 
 // ---- nút chuyển sáng/tối ----
-const MODES: Array<[ThemeMode, string, string]> = [
-  ['light', 'Sáng', 'M12 4V2m0 20v-2m8-8h2M2 12h2m13.66 5.66 1.41 1.41M4.93 4.93l1.41 1.41m11.32 0 1.41-1.41M4.93 19.07l1.41-1.41M12 17a5 5 0 1 0 0-10 5 5 0 0 0 0 10Z'],
-  ['dark', 'Tối', 'M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z'],
-  ['system', 'Theo hệ thống', 'M3 5h18v11H3zM8 21h8m-4-5v5'],
+const MODES: Array<[ThemeMode, 'light' | 'dark' | 'system', string]> = [
+  ['light', 'light', 'M12 4V2m0 20v-2m8-8h2M2 12h2m13.66 5.66 1.41 1.41M4.93 4.93l1.41 1.41m11.32 0 1.41-1.41M4.93 19.07l1.41-1.41M12 17a5 5 0 1 0 0-10 5 5 0 0 0 0 10Z'],
+  ['dark', 'dark', 'M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z'],
+  ['system', 'system', 'M3 5h18v11H3zM8 21h8m-4-5v5'],
 ];
 
 export function ThemeToggle() {
   const [mode, setMode] = useTheme();
+  const t = useT(M);
   return (
-    <div role="radiogroup" aria-label="Chế độ giao diện"
+    <div role="radiogroup" aria-label={t.themeGroup}
       className="inline-flex self-start rounded-md border border-slate-300 bg-white p-0.5 dark:border-slate-700 dark:bg-slate-900">
-      {MODES.map(([m, label, path]) => (
+      {MODES.map(([m, key, path]) => { const label = t[key]; return (
         <button key={m} type="button" role="radio" aria-checked={mode === m} title={label} onClick={() => setMode(m)}
           className={cx('inline-flex h-7 w-8 items-center justify-center rounded transition-colors',
             mode === m
@@ -308,6 +324,26 @@ export function ThemeToggle() {
             <path d={path} />
           </svg>
           <span className="sr-only">{label}</span>
+        </button>
+      ); })}
+    </div>
+  );
+}
+
+/** Chọn ngôn ngữ giao diện (VI / EN), mặc định tiếng Việt. Đổi là áp ngay, nhớ trên trình duyệt. */
+export function LangToggle() {
+  const lang = useLang();
+  const t = useT(M);
+  return (
+    <div role="radiogroup" aria-label={t.langGroup}
+      className="inline-flex self-start rounded-md border border-slate-300 bg-white p-0.5 dark:border-slate-700 dark:bg-slate-900">
+      {LANGS.map(([l, short, name]) => (
+        <button key={l} type="button" role="radio" aria-checked={lang === l} title={name} lang={l} onClick={() => setLang(l)}
+          className={cx('inline-flex h-7 min-w-8 items-center justify-center rounded px-1.5 text-xs font-semibold transition-colors',
+            lang === l
+              ? 'bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-300'
+              : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100')}>
+          {short}
         </button>
       ))}
     </div>
@@ -319,6 +355,7 @@ export function ThemeToggle() {
 export function ResultDialog({ ok, title, children, onClose, action }: {
   ok: boolean; title: string; children: ReactNode; onClose: () => void; action?: { label: string; onClick: () => void };
 }) {
+  const t = useT(M);
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 dark:bg-black/60" role="dialog" aria-modal="true" aria-labelledby="kq-title">
       <div className="w-full max-w-sm rounded-lg border border-slate-200 bg-white p-6 text-center shadow-xl dark:border-slate-800 dark:bg-slate-900">
@@ -332,7 +369,7 @@ export function ResultDialog({ ok, title, children, onClose, action }: {
         <p className="mt-1 text-slate-600 dark:text-slate-400">{children}</p>
         <div className="mt-5 flex justify-center gap-2">
           {action && <Button variant="primary" onClick={action.onClick}>{action.label}</Button>}
-          <Button onClick={onClose}>Đóng</Button>
+          <Button onClick={onClose}>{t.close}</Button>
         </div>
       </div>
     </div>

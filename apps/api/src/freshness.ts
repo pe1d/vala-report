@@ -1,4 +1,4 @@
-import type { Tx } from '@vala/core';
+import type { Lang, Tx } from '@vala/core';
 
 export interface Freshness {
   source_system: string;
@@ -12,24 +12,29 @@ export interface Freshness {
 
 const STALE_HOURS = Number(process.env.FRESHNESS_STALE_HOURS ?? 48);
 
-export function formatAsOf(d: Date): string {
+export function formatAsOf(d: Date, lang: Lang = 'vi'): string {
   const time = d.toLocaleTimeString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', hour: '2-digit', minute: '2-digit', hour12: false });
   const date = d.toLocaleDateString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', day: '2-digit', month: '2-digit', year: 'numeric' });
-  return `${time} ngày ${date}`;
+  return lang === 'en' ? `${time} on ${date}` : `${time} ngày ${date}`;
 }
 
 /** Chạy bên trong withUserContext — mọi bảng đọc ở đây đều chịu RLS hoặc là hàm chỉ trả số đếm. */
-export async function computeFreshness(t: Tx, userId: number, source: string, scope: 'ca_nhan' | 'don_vi'): Promise<Freshness> {
+export async function computeFreshness(
+  t: Tx, userId: number, source: string, scope: 'ca_nhan' | 'don_vi', lang: Lang = 'vi',
+): Promise<Freshness> {
+  const en = lang === 'en';
+  const asOf = (d: Date) => (en ? `Data as of ${formatAsOf(d, lang)}` : `Số liệu tính đến ${formatAsOf(d)}`);
   if (scope === 'don_vi') {
     const c = await t.one<{ members: number; granted: number; oldest_success: Date | null }>(
       'SELECT members, granted, oldest_success FROM org_coverage($1)', [source]);
     const coverage = {
       members: c.members,
       granted: c.granted,
-      message: `Đang tổng hợp từ ${c.granted}/${c.members} thành viên đã uỷ quyền`,
+      message: en ? `Aggregated from ${c.granted}/${c.members} members who have authorized`
+        : `Đang tổng hợp từ ${c.granted}/${c.members} thành viên đã uỷ quyền`,
     };
     if (!c.oldest_success) {
-      return { source_system: source, status: c.granted ? 'stale' : 'no_grant', last_success_at: null, message: 'Chưa có lần lấy dữ liệu thành công nào', coverage };
+      return { source_system: source, status: c.granted ? 'stale' : 'no_grant', last_success_at: null, message: en ? 'No successful data fetch yet' : 'Chưa có lần lấy dữ liệu thành công nào', coverage };
     }
     const stale = Date.now() - c.oldest_success.getTime() > STALE_HOURS * 3_600_000;
     return {
@@ -37,7 +42,7 @@ export async function computeFreshness(t: Tx, userId: number, source: string, sc
       status: stale ? 'stale' : 'ok',
       last_success_at: c.oldest_success.toISOString(),
       // Lấy mốc CŨ NHẤT trong các thành viên: số liệu đơn vị chỉ "tính đến" lúc người chậm nhất.
-      message: `Số liệu tính đến ${formatAsOf(c.oldest_success)}`,
+      message: asOf(c.oldest_success),
       coverage,
     };
   }
@@ -53,11 +58,15 @@ export async function computeFreshness(t: Tx, userId: number, source: string, sc
 
   if (!grantState || grantState === 'revoked' || grantState === 'pending') {
     return { source_system: source, status: 'no_grant', last_success_at: lastOk?.toISOString() ?? null, grant_state: grantState,
-      message: lastOk ? `Chưa uỷ quyền — số liệu cũ tính đến ${formatAsOf(lastOk)}` : 'Chưa uỷ quyền lấy dữ liệu' };
+      message: en
+        ? (lastOk ? `Not authorized — old data as of ${formatAsOf(lastOk, lang)}` : 'Data fetching is not authorized')
+        : (lastOk ? `Chưa uỷ quyền — số liệu cũ tính đến ${formatAsOf(lastOk)}` : 'Chưa uỷ quyền lấy dữ liệu') };
   }
   if (!lastOk) {
     return { source_system: source, status: runs?.last_failed ? 'failed' : 'stale', last_success_at: null, grant_state: grantState,
-      message: runs?.last_failed ? 'Lần lấy dữ liệu gần nhất bị lỗi' : 'Đang chờ lần lấy dữ liệu đầu tiên' };
+      message: runs?.last_failed
+        ? (en ? 'The last data fetch failed' : 'Lần lấy dữ liệu gần nhất bị lỗi')
+        : (en ? 'Waiting for the first data fetch' : 'Đang chờ lần lấy dữ liệu đầu tiên') };
   }
   const failedAfter = !!runs?.last_failed && runs.last_failed > lastOk;
   const stale = Date.now() - lastOk.getTime() > STALE_HOURS * 3_600_000;
@@ -66,6 +75,6 @@ export async function computeFreshness(t: Tx, userId: number, source: string, sc
     status: grantState === 'expired' || failedAfter ? 'failed' : stale ? 'stale' : 'ok',
     last_success_at: lastOk.toISOString(),
     grant_state: grantState,
-    message: `Số liệu tính đến ${formatAsOf(lastOk)}`,
+    message: asOf(lastOk),
   };
 }

@@ -1,6 +1,6 @@
 import { timingSafeEqual } from 'node:crypto';
 import type { FastifyPluginAsync } from 'fastify';
-import { Problem, fanOut, isPreset, withTenant } from '@vala/core';
+import { L, Problem, fanOut, isPreset, withTenant } from '@vala/core';
 import type { ApiDeps } from '../deps.js';
 import { spiderInternalRoutes } from './spider.js';
 
@@ -10,7 +10,7 @@ export const internalRoutes = (deps: ApiDeps) => {
     app.addHook('onRequest', async (req) => {
       const got = Buffer.from(/^Bearer (.+)$/.exec(req.headers.authorization ?? '')?.[1] ?? '');
       const want = Buffer.from(deps.config.internalToken);
-      if (got.length !== want.length || !timingSafeEqual(got, want)) throw new Problem('unauthenticated', 'Sai internal token');
+      if (got.length !== want.length || !timingSafeEqual(got, want)) throw new Problem('unauthenticated', L('Sai internal token', 'Invalid internal token'));
     });
 
     await app.register(spiderInternalRoutes(deps), { prefix: '/spider' });
@@ -22,7 +22,7 @@ export const internalRoutes = (deps: ApiDeps) => {
           crawlab_task_id: { type: 'string' }, crawlab_run_id: { type: 'string' } } } },
       }, async (req) => {
         const b = req.body;
-        if (!isPreset(b.preset)) throw new Problem('invalid_params', 'Preset không hợp lệ');
+        if (!isPreset(b.preset)) throw new Problem('invalid_params', L('Preset không hợp lệ', 'Invalid preset'));
         const res = await fanOut(deps.writer, deps.queue as never, {
           source: b.source, capability: b.capability, preset: b.preset,
           crawlabTaskId: b.crawlab_task_id, crawlabRunId: b.crawlab_run_id, trigger: 'schedule',

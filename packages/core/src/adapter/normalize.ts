@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { Problem } from '../errors.js';
+import { Problem, L } from '../errors.js';
 import type { OutputFieldSpec } from './spec.js';
 
 export type Row = Record<string, string | number | null>;
@@ -63,7 +63,7 @@ export function detectDrift(items: unknown[], baseline: string[]): string[] {
 export function assertNoDrift(items: unknown[], baseline: string[], where: string): void {
   const missing = detectDrift(items, baseline);
   if (missing.length) {
-    throw new Problem('schema_drift', 'Hệ thống nguồn đã đổi cấu trúc dữ liệu', `${where}: thiếu ${missing.join(', ')}`, { missing });
+    throw new Problem('schema_drift', L('Hệ thống nguồn đã đổi cấu trúc dữ liệu', 'Source system has changed its data structure'), L(`${where}: thiếu ${missing.join(', ')}`, `${where}: missing ${missing.join(', ')}`), { missing });
   }
 }
 

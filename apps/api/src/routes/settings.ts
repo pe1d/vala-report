@@ -6,7 +6,7 @@
  *   PUT  /admin/settings    quản trị (có audit)
  */
 import type { FastifyPluginAsync } from 'fastify';
-import { Problem, withTenant } from '@vala/core';
+import { L, Problem, withTenant } from '@vala/core';
 import { audit } from '../audit.js';
 import type { ApiDeps } from '../deps.js';
 
@@ -44,7 +44,7 @@ export const adminSettingsRoutes = (deps: ApiDeps): FastifyPluginAsync => async 
     } } },
   }, async (req) => {
     const b = req.body;
-    if (b.logo && !LOGO.test(b.logo)) throw new Problem('invalid_params', 'Logo không hợp lệ', 'Chỉ nhận ảnh PNG, JPEG, SVG hoặc WebP');
+    if (b.logo && !LOGO.test(b.logo)) throw new Problem('invalid_params', L('Logo không hợp lệ', 'Invalid logo'), L('Chỉ nhận ảnh PNG, JPEG, SVG hoặc WebP', 'Only PNG, JPEG, SVG or WebP images are accepted'));
     const trim = (v: string | null | undefined) => (v === undefined ? undefined : v === null ? null : v.trim() || null);
     const sets: string[] = [];
     const vals: unknown[] = [];

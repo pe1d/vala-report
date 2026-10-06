@@ -6,7 +6,7 @@
  * Không xoá hệ thống: dữ liệu, lịch sử chạy và kết nối tham chiếu tới; tắt thay cho xoá.
  */
 import type { FastifyPluginAsync } from 'fastify';
-import { Problem, ensureRecordIndexes, withTenant, type AuthMethod, type SourceRow } from '@vala/core';
+import { L, Problem, ensureRecordIndexes, langOf, localizeStored, withTenant, type AuthMethod, type Lang, type SourceRow } from '@vala/core';
 import { AuthProfileSchema, parseSpec, registerSpecs, type AdapterSpec } from '@vala/core/adapter';
 import { audit } from '../audit.js';
 import type { ApiDeps } from '../deps.js';
@@ -36,10 +36,12 @@ function parseAdapter(code: string, yaml: string): AdapterSpec {
     const detail = err.issues?.length
       ? err.issues.slice(0, 5).map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')
       : err.message.split('\n').slice(0, 6).join(' ');
-    throw new Problem('invalid_params', 'Cấu hình adapter chưa hợp lệ', detail.slice(0, 800));
+    const d = detail.slice(0, 800);
+    throw new Problem('invalid_params', L('Cấu hình adapter chưa hợp lệ', 'Invalid adapter config'), L(d, localizeStored(d, 'en')));
   }
   if (spec.source_system !== code) {
-    throw new Problem('invalid_params', 'Cấu hình adapter chưa hợp lệ', `adapter.source_system phải là '${code}' (đang là '${spec.source_system}')`);
+    throw new Problem('invalid_params', L('Cấu hình adapter chưa hợp lệ', 'Invalid adapter config'),
+      L(`adapter.source_system phải là '${code}' (đang là '${spec.source_system}')`, `adapter.source_system must be '${code}' (currently '${spec.source_system}')`));
   }
   return spec;
 }
@@ -68,9 +70,9 @@ const bodySchema = {
 /** Chỉ https (http cho localhost và tên miền .test dành riêng cho thử nghiệm). Trả origin + path gốc, bỏ query/fragment. */
 function normalizeBaseUrl(raw: string): string {
   let u: URL;
-  try { u = new URL(raw.trim()); } catch { throw new Problem('invalid_params', 'Địa chỉ không hợp lệ', raw); }
+  try { u = new URL(raw.trim()); } catch { throw new Problem('invalid_params', L('Địa chỉ không hợp lệ', 'Invalid address'), raw); }
   const local = u.hostname === 'localhost' || u.hostname === '127.0.0.1' || u.hostname.endsWith('.test');
-  if (u.protocol !== 'https:' && !(local && u.protocol === 'http:')) throw new Problem('invalid_params', 'Địa chỉ phải dùng https://');
+  if (u.protocol !== 'https:' && !(local && u.protocol === 'http:')) throw new Problem('invalid_params', L('Địa chỉ phải dùng https://', 'The address must use https://'));
   return `${u.origin}${u.pathname.replace(/\/+$/, '')}`;
 }
 
@@ -78,7 +80,8 @@ function parseProfile(raw: unknown) {
   const p = AuthProfileSchema.safeParse(raw);
   if (!p.success) {
     const i = p.error.issues[0]!;
-    throw new Problem('invalid_params', 'Cấu hình phiên chưa hợp lệ', `${i.path.join('.') || 'auth_profile'}: ${i.message}`);
+    const d = `${i.path.join('.') || 'auth_profile'}: ${i.message}`;
+    throw new Problem('invalid_params', L('Cấu hình phiên chưa hợp lệ', 'Invalid session config'), L(d, localizeStored(d, 'en')));
   }
   return p.data;
 }
@@ -96,7 +99,7 @@ export const adminSourceRoutes = (deps: ApiDeps): FastifyPluginAsync => async (a
     return out;
   };
 
-  const view = async (r: SourceRow, counts: Record<string, { conns: number; spiders: number; reports: number; password_conns: number }>) => {
+  const view = async (r: SourceRow, counts: Record<string, { conns: number; spiders: number; reports: number; password_conns: number }>, lang: Lang = 'vi') => {
     const portal = !r.adapter_yaml && !!r.auth_profile;
     let adapter: ReturnType<typeof summarize> | null = null;
     try { if (r.adapter_yaml) adapter = summarize(deps.connections.spec(r.code)); } catch { /* lỗi đã nằm trong registry.errors */ }
@@ -112,7 +115,7 @@ export const adminSourceRoutes = (deps: ApiDeps): FastifyPluginAsync => async (a
       connection_methods: r.connection_methods, supported_methods: supported(r.code, portal, r.mfa),
       mfa: r.mfa, mfa_detected_at: r.mfa_detected_at,
       managed_by: portal ? 'portal' : 'adapter', auth_profile: portal ? r.auth_profile : null, auth, updated_at: r.updated_at,
-      adapter, adapter_updated_at: r.adapter_updated_at, adapter_error: deps.sources.errors.get(r.code) ?? null,
+      adapter, adapter_updated_at: r.adapter_updated_at, adapter_error: localizeStored(deps.sources.errors.get(r.code) ?? null, lang),
       // password_conns: kết nối mật khẩu đang có — trên hệ thống có OTP sẽ lỗi khi hết phiên, quản trị cần đổi cách.
       ...(counts[r.code] ?? { conns: 0, spiders: 0, reports: 0, password_conns: 0 }),
     };
@@ -129,16 +132,16 @@ export const adminSourceRoutes = (deps: ApiDeps): FastifyPluginAsync => async (a
     return Object.fromEntries(rows.map((r) => [r.code, r]));
   });
 
-  app.get('/admin/sources', async () => {
+  app.get('/admin/sources', async (req) => {
     const c = await counts();
-    return Promise.all(deps.sources.list().map((r) => view(r, c)));
+    return Promise.all(deps.sources.list().map((r) => view(r, c, langOf(req.headers['accept-language']))));
   });
 
   app.post<{ Body: SourceBody }>('/admin/sources', { schema: { body: { ...bodySchema, required: ['code', 'ten', 'base_url'] } } }, async (req, reply) => {
     const b = req.body;
     const code = b.code!;
-    if (deps.sources.get(code)) throw new Problem('invalid_params', 'Mã hệ thống đã tồn tại', code);
-    if (!b.auth_profile === !b.adapter_yaml) throw new Problem('invalid_params', 'Cần đúng một trong hai: cấu hình nhanh (phiên đăng nhập) hoặc cấu hình adapter đầy đủ');
+    if (deps.sources.get(code)) throw new Problem('invalid_params', L('Mã hệ thống đã tồn tại', 'System code already exists'), code);
+    if (!b.auth_profile === !b.adapter_yaml) throw new Problem('invalid_params', L('Cần đúng một trong hai: cấu hình nhanh (phiên đăng nhập) hoặc cấu hình adapter đầy đủ', 'Provide exactly one of: quick config (sign-in session) or a full adapter config'));
     const profile = b.auth_profile ? parseProfile(b.auth_profile) : null;
     const spec = b.adapter_yaml ? parseAdapter(code, b.adapter_yaml) : null;
     const mfa = b.mfa ?? 'chua_ro';
@@ -147,8 +150,8 @@ export const adminSourceRoutes = (deps: ApiDeps): FastifyPluginAsync => async (a
       : ['extension', 'cookie'];
     const methods = b.connection_methods ?? ok.filter((m) => m !== 'sso');
     const bad = methods.filter((m) => !ok.includes(m));
-    if (bad.length) throw new Problem('invalid_params', 'Hệ thống này không hỗ trợ cách kết nối đã chọn',
-      `${bad.join(', ')} cần adapter có cách tự đăng nhập (password_login / bootstrap)`);
+    if (bad.length) throw new Problem('invalid_params', L('Hệ thống này không hỗ trợ cách kết nối đã chọn', 'This system does not support the selected connection method'),
+      L(`${bad.join(', ')} cần adapter có cách tự đăng nhập (password_login / bootstrap)`, `${bad.join(', ')} requires an adapter that can sign in automatically (password_login / bootstrap)`));
     const baseUrl = normalizeBaseUrl(b.base_url!);
     await withTenant(deps.writer, async (t) => {
       await t.none(
@@ -160,25 +163,26 @@ export const adminSourceRoutes = (deps: ApiDeps): FastifyPluginAsync => async (a
       await audit(t, req, 'source_change', { type: 'source_system', id: code }, { op: 'create', base_url: baseUrl, kind: spec ? 'adapter' : 'profile' });
     });
     await deps.sources.reload();
-    return reply.status(201).send(await view(deps.sources.get(code)!, await counts()));
+    return reply.status(201).send(await view(deps.sources.get(code)!, await counts(), langOf(req.headers['accept-language'])));
   });
 
   app.patch<{ Params: { code: string }; Body: SourceBody }>('/admin/sources/:code', { schema: { body: bodySchema } }, async (req) => {
     const cur = deps.sources.get(req.params.code);
-    if (!cur) throw new Problem('not_found', 'Không có hệ thống nguồn này');
+    if (!cur) throw new Problem('not_found', L('Không có hệ thống nguồn này', 'Source system not found'));
     const b = req.body;
-    if (b.code && b.code !== cur.code) throw new Problem('invalid_params', 'Không đổi được mã hệ thống');
-    if (b.adapter_yaml !== undefined) throw new Problem('invalid_params', 'Sửa cấu hình adapter qua PUT /admin/sources/:code/adapter');
+    if (b.code && b.code !== cur.code) throw new Problem('invalid_params', L('Không đổi được mã hệ thống', 'The system code cannot be changed'));
+    if (b.adapter_yaml !== undefined) throw new Problem('invalid_params', L('Sửa cấu hình adapter qua PUT /admin/sources/:code/adapter', 'Edit the adapter config via PUT /admin/sources/:code/adapter'));
     const portal = !cur.adapter_yaml && !!cur.auth_profile;
     if (b.auth_profile !== undefined && !portal) {
-      throw new Problem('invalid_params', 'Hệ thống này dùng cấu hình adapter đầy đủ', 'Sửa phần auth trong cấu hình adapter');
+      throw new Problem('invalid_params', L('Hệ thống này dùng cấu hình adapter đầy đủ', 'This system uses a full adapter config'), L('Sửa phần auth trong cấu hình adapter', 'Edit the auth section of the adapter config'));
     }
     const profile = b.auth_profile !== undefined ? parseProfile(b.auth_profile) : undefined;
     const mfa = b.mfa ?? cur.mfa;
     if (b.connection_methods) {
       const ok = supported(cur.code, portal, mfa);
       const bad = b.connection_methods.filter((m) => !ok.includes(m));
-      if (bad.length) throw new Problem('invalid_params', 'Hệ thống này không hỗ trợ cách kết nối đã chọn', `không hỗ trợ: ${bad.join(', ')}`);
+      if (bad.length) throw new Problem('invalid_params', L('Hệ thống này không hỗ trợ cách kết nối đã chọn', 'This system does not support the selected connection method'),
+        L(`không hỗ trợ: ${bad.join(', ')}`, `not supported: ${bad.join(', ')}`));
     }
     const baseUrl = b.base_url !== undefined ? normalizeBaseUrl(b.base_url) : undefined;
     await withTenant(deps.writer, async (t) => {
@@ -200,21 +204,21 @@ export const adminSourceRoutes = (deps: ApiDeps): FastifyPluginAsync => async (a
         { op: 'update', fields: Object.keys(b) });
     });
     await deps.sources.reload();
-    return view(deps.sources.get(cur.code)!, await counts());
+    return view(deps.sources.get(cur.code)!, await counts(), langOf(req.headers['accept-language']));
   });
 
   // ---- cấu hình adapter đầy đủ (YAML) ----
   app.get<{ Params: { code: string } }>('/admin/sources/:code/adapter', async (req) => {
     const cur = deps.sources.get(req.params.code);
-    if (!cur) throw new Problem('not_found', 'Không có hệ thống nguồn này');
-    return { code: cur.code, yaml: cur.adapter_yaml, updated_at: cur.adapter_updated_at, error: deps.sources.errors.get(cur.code) ?? null };
+    if (!cur) throw new Problem('not_found', L('Không có hệ thống nguồn này', 'Source system not found'));
+    return { code: cur.code, yaml: cur.adapter_yaml, updated_at: cur.adapter_updated_at, error: localizeStored(deps.sources.errors.get(cur.code) ?? null, langOf(req.headers['accept-language'])) };
   });
 
   /** Kiểm tra mà không lưu — nút "Kiểm tra" trên trang. */
   app.post<{ Params: { code: string }; Body: { yaml: string } }>('/admin/sources/:code/adapter/validate', {
     schema: { body: { type: 'object', required: ['yaml'], properties: { yaml: { type: 'string', maxLength: 200_000 } } } },
   }, async (req) => {
-    if (!deps.sources.get(req.params.code)) throw new Problem('not_found', 'Không có hệ thống nguồn này');
+    if (!deps.sources.get(req.params.code)) throw new Problem('not_found', L('Không có hệ thống nguồn này', 'Source system not found'));
     return { ok: true, summary: summarize(parseAdapter(req.params.code, req.body.yaml)) };
   });
 
@@ -226,7 +230,7 @@ export const adminSourceRoutes = (deps: ApiDeps): FastifyPluginAsync => async (a
     schema: { body: { type: 'object', required: ['yaml'], properties: { yaml: { type: 'string', minLength: 20, maxLength: 200_000 } } } },
   }, async (req) => {
     const cur = deps.sources.get(req.params.code);
-    if (!cur) throw new Problem('not_found', 'Không có hệ thống nguồn này');
+    if (!cur) throw new Problem('not_found', L('Không có hệ thống nguồn này', 'Source system not found'));
     const spec = parseAdapter(cur.code, req.body.yaml);
     const ok: AuthMethod[] = ['extension', 'cookie', ...(spec.auth.password_login ? ['password' as const] : []), ...(spec.auth.bootstrap ? ['sso' as const] : [])];
     const methods = cur.connection_methods.filter((m) => ok.includes(m));
@@ -241,6 +245,6 @@ export const adminSourceRoutes = (deps: ApiDeps): FastifyPluginAsync => async (a
     await deps.sources.reload();
     // Trường mới khai `index: true` ⇒ tạo chỉ mục ngay (hàm CSDL tự kiểm định danh, gọi lại nhiều lần an toàn).
     await ensureRecordIndexes(deps.writer, [spec]);
-    return view(deps.sources.get(cur.code)!, await counts());
+    return view(deps.sources.get(cur.code)!, await counts(), langOf(req.headers['accept-language']));
   });
 };

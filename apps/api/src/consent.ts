@@ -4,7 +4,7 @@
  * phiên bản nội dung (đổi nội dung ⇒ tăng CONSENT_VERSION ⇒ người dùng xác nhận lại). Không chặn việc lấy dữ liệu của
  * kết nối đã có — giao diện nhắc xác nhận.
  */
-import { Problem, withTenant, withUserContext, type Tx, type UserContext } from '@vala/core';
+import { L, Problem, withTenant, withUserContext, type Tx, type UserContext } from '@vala/core';
 import type { FastifyRequest } from 'fastify';
 import { audit } from './audit.js';
 import type { ApiDeps } from './deps.js';
@@ -20,7 +20,7 @@ export async function consentsOf(t: Tx, userId: number): Promise<Map<string, str
 }
 
 export async function giveConsent(deps: ApiDeps, req: FastifyRequest, userId: number, source: string, via: 'portal' | 'extension') {
-  if (!deps.sources.get(source)) throw new Problem('not_found', 'Không có hệ thống nguồn này');
+  if (!deps.sources.get(source)) throw new Problem('not_found', L('Không có hệ thống nguồn này', 'Source system not found'));
   return withUserContext(deps.reader, own(userId), async (t) => {
     const r = await t.one<{ consented_at: string }>(
       `INSERT INTO source_consents (app_user_id, source_system, version, via) VALUES ($1, $2, $3, $4)

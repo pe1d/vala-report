@@ -11,7 +11,8 @@
 import { loadAllSpecs } from './adapter/index.js';
 import { spiderFiles, syncCrawlab, type CrawlabClient, type SyncOptions } from './crawlab.js';
 import { withTenant, type Db } from './db/index.js';
-import { Problem } from './errors.js';
+import { L, Problem } from './errors.js';
+import { localizeStored } from './localize.js';
 import { getSpider, type SpiderRow } from './ingest/spider.js';
 
 /** Sau khoảng này mà spider chưa gọi Vala (và task Crawlab không còn chạy) ⇒ coi là không khởi chạy được. */
@@ -61,7 +62,7 @@ export async function launchSpider(db: Db, client: CrawlabClient, opts: { spider
   const row = await getSpider(db, opts.spiderCode);
   if (!row.crawlab_spider_id) {
     await recordSpiderFailure(db, row, opts.userId, opts.trigger, 'spider_not_synced', 'Spider chưa được đồng bộ lên Crawlab — quản trị bấm "Đồng bộ Crawlab"');
-    throw new Problem('internal', 'Spider chưa được đồng bộ lên Crawlab', 'Quản trị cần bấm "Đồng bộ Crawlab"');
+    throw new Problem('internal', L('Spider chưa được đồng bộ lên Crawlab', 'Spider has not been synced to Crawlab'), L('Quản trị cần bấm "Đồng bộ Crawlab"', 'An admin needs to click "Sync Crawlab"'));
   }
   await ensureSpiderFiles(client, row).catch(() => []);     // không liên lạc được sẽ lộ ra ở bước chạy ngay dưới
   let tasks: string[];
@@ -70,7 +71,8 @@ export async function launchSpider(db: Db, client: CrawlabClient, opts: { spider
   } catch (e) {
     const msg = `Crawlab không chạy được spider: ${(e as Error).message}`;
     await recordSpiderFailure(db, row, opts.userId, opts.trigger, 'spider_launch_failed', msg);
-    throw new Problem('internal', 'Không chạy được spider trên Crawlab', msg.slice(0, 300));
+    throw new Problem('internal', L('Không chạy được spider trên Crawlab', 'Could not run the spider on Crawlab'),
+      L(msg.slice(0, 300), `Crawlab could not run the spider: ${localizeStored((e as Error).message, 'en')}`.slice(0, 300)));
   }
   await withTenant(db, async (t) => {
     for (const id of tasks.length ? tasks : [null]) {

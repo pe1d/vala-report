@@ -6,7 +6,7 @@
  */
 import type { FastifyPluginAsync } from 'fastify';
 import {
-  getSpider, launchSpider, Problem, spiderMainPy, syncCrawlab, withTenant,
+  getSpider, L, langOf, launchSpider, localizeStored, Problem, spiderMainPy, syncCrawlab, withTenant,
 } from '@vala/core';
 import { audit } from '../audit.js';
 import { configureConnection, connectionBodySchema, deleteConnection, listConnections, testConnection, type ConnectionBody } from '../connections.js';
@@ -34,16 +34,16 @@ const spiderBodySchema = {
 
 /** Lỗi ràng buộc CSDL ⇒ thông báo dễ hiểu cho quản trị (trùng mã, sai hệ thống nguồn, sai loại dữ liệu). */
 function spiderDbError(e: { code?: string; constraint?: string }): never {
-  if (e.code === '23505') throw new Problem('invalid_params', 'Mã spider đã tồn tại');
-  if (e.code === '23503') throw new Problem('invalid_params', 'Không có hệ thống nguồn này');
-  if (e.code === '23514') throw new Problem('invalid_params', 'Dữ liệu spider không hợp lệ', e.constraint);
+  if (e.code === '23505') throw new Problem('invalid_params', L('Mã spider đã tồn tại', 'Spider code already exists'));
+  if (e.code === '23503') throw new Problem('invalid_params', L('Không có hệ thống nguồn này', 'Source system not found'));
+  if (e.code === '23514') throw new Problem('invalid_params', L('Dữ liệu spider không hợp lệ', 'Invalid spider data'), e.constraint);
   throw e;
 }
 
 export const adminRoutes = (deps: ApiDeps): FastifyPluginAsync => async (app) => {
   app.addHook('onRequest', async (req) => {
     if (!req.url.startsWith('/api/v1/admin/')) return;
-    if (!req.user?.is_ops_admin) throw new Problem('forbidden', 'Chỉ dành cho quản trị');
+    if (!req.user?.is_ops_admin) throw new Problem('forbidden', L('Chỉ dành cho quản trị', 'Admins only'));
   });
 
   await app.register(adminSourceRoutes(deps));                 // hệ thống nguồn (thêm/sửa)
@@ -52,20 +52,20 @@ export const adminRoutes = (deps: ApiDeps): FastifyPluginAsync => async (app) =>
   await app.register(adminSettingsRoutes(deps));               // cấu hình chung: tên, logo, màu, tên SSO
 
   // ---- kết nối dữ liệu ----
-  app.get('/admin/connections', async () => listConnections(deps));
+  app.get('/admin/connections', async (req) => listConnections(deps, undefined, langOf(req.headers['accept-language'])));
 
   app.put<{ Params: { userId: string; source: string }; Body: ConnectionBody }>('/admin/connections/:userId/:source', {
     schema: { body: connectionBodySchema },
   }, async (req) => {
     const userId = Number(req.params.userId);
     const u = await withTenant(deps.writer, (t) => t.oneOrNone('SELECT 1 FROM app_users WHERE id = $1 AND is_active', [userId]));
-    if (!u) throw new Problem('not_found', 'Không có người dùng này');
+    if (!u) throw new Problem('not_found', L('Không có người dùng này', 'User not found'));
     const r = await configureConnection(deps, req, userId, req.params.source, req.body);
     return { app_user_id: userId, source_system: req.params.source, auth_method: req.body.auth_method, ...r };
   });
 
   app.post<{ Params: { userId: string; source: string } }>('/admin/connections/:userId/:source/test',
-    async (req) => testConnection(deps, Number(req.params.userId), req.params.source));
+    async (req) => testConnection(deps, Number(req.params.userId), req.params.source, langOf(req.headers['accept-language'])));
 
   app.delete<{ Params: { userId: string; source: string } }>('/admin/connections/:userId/:source', async (req, reply) => {
     await deleteConnection(deps, req, Number(req.params.userId), req.params.source);
@@ -87,12 +87,13 @@ export const adminRoutes = (deps: ApiDeps): FastifyPluginAsync => async (app) =>
   });
 
   app.post('/admin/spiders/sync', async () => {
-    if (!deps.crawlab) throw new Problem('internal', 'Chưa cấu hình Crawlab', 'Đặt CRAWLAB_URL trong .env');
+    if (!deps.crawlab) throw new Problem('internal', L('Chưa cấu hình Crawlab', 'Crawlab is not configured'), L('Đặt CRAWLAB_URL trong .env', 'Set CRAWLAB_URL in .env'));
     try {
       return await syncCrawlab(deps.writer, deps.crawlab, { apiUrlForSpiders: deps.config.spiderApiUrl, internalToken: deps.config.internalToken });
     } catch (e) {
       // Hiện đúng nguyên nhân cho quản trị (vd dịch vụ file của Crawlab chưa sẵn sàng sau khi khởi động).
-      throw new Problem('internal', 'Đồng bộ Crawlab không thành công', (e as Error).message.slice(0, 400));
+      const m = (e as Error).message.slice(0, 400);
+      throw new Problem('internal', L('Đồng bộ Crawlab không thành công', 'Crawlab sync failed'), L(m, localizeStored(m, 'en')));
     }
   });
 
@@ -117,7 +118,9 @@ export const adminRoutes = (deps: ApiDeps): FastifyPluginAsync => async (app) =>
         [b.code, b.ten, b.mo_ta ?? null, b.source_system, 'records', b.is_enabled ?? true, b.main_py, req.user.id]).catch(spiderDbError);
       await audit(t, req, 'source_change', { type: 'spider', id: b.code }, { op: 'create', source_system: b.source_system });
     });
-    return reply.status(201).send({ code: b.code, note: 'Bấm "Đồng bộ Crawlab" để đẩy spider lên Crawlab và tạo lịch.' });
+    return reply.status(201).send({ code: b.code, note: langOf(req.headers['accept-language']) === 'en'
+      ? 'Click "Sync Crawlab" to push the spider to Crawlab and create its schedules.'
+      : 'Bấm "Đồng bộ Crawlab" để đẩy spider lên Crawlab và tạo lịch.' });
   });
 
   app.patch<{ Params: { code: string }; Body: Partial<SpiderBody> }>('/admin/spiders/:code', {
@@ -133,16 +136,18 @@ export const adminRoutes = (deps: ApiDeps): FastifyPluginAsync => async (app) =>
          b.is_enabled ?? cur.is_enabled, b.main_py !== undefined ? b.main_py : cur.main_py ?? null, req.user.id]).catch(spiderDbError);
       if (b.main_py !== undefined) await audit(t, req, 'source_change', { type: 'spider', id: cur.code }, { op: 'edit_code', bytes: b.main_py.length });
     });
-    return { code: cur.code, note: 'Đã lưu. Bấm "Đồng bộ Crawlab" để áp dụng lên Crawlab.' };
+    return { code: cur.code, note: langOf(req.headers['accept-language']) === 'en'
+      ? 'Saved. Click "Sync Crawlab" to apply it on Crawlab.'
+      : 'Đã lưu. Bấm "Đồng bộ Crawlab" để áp dụng lên Crawlab.' };
   });
 
   /** Chạy thử spider cho một người dùng ngay bây giờ (không cần người đó đặt lịch). */
   app.post<{ Params: { code: string }; Body: { user_id: number } }>('/admin/spiders/:code/run', {
     schema: { body: { type: 'object', required: ['user_id'], properties: { user_id: { type: 'integer' } } } },
   }, async (req, reply) => {
-    if (!deps.crawlab) throw new Problem('internal', 'Chưa cấu hình Crawlab');
+    if (!deps.crawlab) throw new Problem('internal', L('Chưa cấu hình Crawlab', 'Crawlab is not configured'));
     const sp = await getSpider(deps.writer, req.params.code);
-    if (!sp.crawlab_spider_id) throw new Problem('invalid_params', 'Spider chưa đồng bộ lên Crawlab', 'Bấm "Đồng bộ Crawlab" trước');
+    if (!sp.crawlab_spider_id) throw new Problem('invalid_params', L('Spider chưa đồng bộ lên Crawlab', 'Spider has not been synced to Crawlab'), L('Bấm "Đồng bộ Crawlab" trước', 'Click "Sync Crawlab" first'));
     const tasks = await launchSpider(deps.writer, deps.crawlab, { spiderCode: sp.code, userId: req.body.user_id, trigger: 'manual' });
     return reply.status(202).send({ crawlab_task_ids: tasks });
   });

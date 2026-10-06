@@ -4,7 +4,7 @@
  * sửa được toàn bộ định nghĩa, và xoá được (kèm lịch chạy của nó).
  */
 import type { FastifyPluginAsync } from 'fastify';
-import { Problem, resolveUserContext, withTenant, withUserContext, type Scope } from '@vala/core';
+import { L, Problem, langOf, resolveUserContext, withTenant, withUserContext, type Scope } from '@vala/core';
 import { audit } from '../audit.js';
 import type { ApiDeps } from '../deps.js';
 import { checkDefinition, datasetFields, fieldValues, runDefinition, sourceDatasets, type Dataset } from '../reports/defined.js';
@@ -55,7 +55,7 @@ export const adminReportRoutes = (deps: ApiDeps): FastifyPluginAsync => async (a
   /** Capability ghi vào kho cho tập dữ liệu + spider tương ứng (nếu có) — để lịch chạy và "lấy ngay" biết đường. */
   const wiring = async (source: string, dataset: Dataset, capability?: string) => {
     const ds = sourceDatasets(source).filter((d) => d.dataset === dataset && (!capability || d.capability === capability));
-    if (!ds.length) throw new Problem('invalid_params', 'Hệ thống này không có tập dữ liệu đã chọn', `${source}: ${dataset}${capability ? `/${capability}` : ''}`);
+    if (!ds.length) throw new Problem('invalid_params', L('Hệ thống này không có tập dữ liệu đã chọn', 'This system does not have the selected dataset'), `${source}: ${dataset}${capability ? `/${capability}` : ''}`);
     // Spider lấy dữ liệu cho hệ thống này (nếu có) — để "Chạy ngay"/lịch chạy biết đường chạy spider trên Crawlab.
     // Không có spider ⇒ worker chạy các bước lấy dữ liệu khai trong cấu hình adapter.
     const spider = await withTenant(deps.writer, (t) => t.oneOrNone(
@@ -79,10 +79,10 @@ export const adminReportRoutes = (deps: ApiDeps): FastifyPluginAsync => async (a
 
   /** Tập dữ liệu của một hệ thống + trường của tập đang chọn — cho form dựng báo cáo. */
   app.get<{ Querystring: { source: string; dataset?: Dataset; capability?: string } }>('/admin/report-fields', async (req) => {
-    if (!deps.sources.get(req.query.source)) throw new Problem('not_found', 'Không có hệ thống nguồn này');
+    if (!deps.sources.get(req.query.source)) throw new Problem('not_found', L('Không có hệ thống nguồn này', 'Source system not found'));
     const datasets = sourceDatasets(req.query.source);
     const pick = req.query.dataset ? datasets.find((d) => d.dataset === req.query.dataset && (!req.query.capability || d.capability === req.query.capability)) : datasets[0];
-    const fields = pick ? datasetFields(pick.dataset, req.query.source, pick.capability).map(({ name, label, type }) => ({ name, label, type })) : [];
+    const fields = pick ? datasetFields(pick.dataset, req.query.source, pick.capability, langOf(req.headers['accept-language'])).map(({ name, label, type }) => ({ name, label, type })) : [];
     return { datasets, selected: pick ?? null, fields };
   });
 
@@ -91,7 +91,7 @@ export const adminReportRoutes = (deps: ApiDeps): FastifyPluginAsync => async (a
     schema: { querystring: { type: 'object', required: ['source', 'capability', 'field'], properties: {
       source: { type: 'string' }, capability: { type: 'string' }, field: { type: 'string' } } } },
   }, async (req) => {
-    if (!deps.sources.get(req.query.source)) throw new Problem('not_found', 'Không có hệ thống nguồn này');
+    if (!deps.sources.get(req.query.source)) throw new Problem('not_found', L('Không có hệ thống nguồn này', 'Source system not found'));
     const ctx = await resolveUserContext(deps.reader, req.user.id, 'ca_nhan');
     return withUserContext(deps.reader, ctx, (t) => fieldValues(t, req.query.source, req.query.capability, req.query.field));
   });
@@ -101,11 +101,12 @@ export const adminReportRoutes = (deps: ApiDeps): FastifyPluginAsync => async (a
     schema: { body: { type: 'object', required: ['source_system', 'definition'], properties: {
       source_system: { type: 'string' }, definition: { type: 'object' }, scope: { type: 'string', enum: ['ca_nhan', 'don_vi'] }, params: { type: 'object' } } } },
   }, async (req) => {
-    const { def, default_params } = checkDefinition(req.body.source_system, req.body.definition);
+    const lang = langOf(req.headers['accept-language']);
+    const { def, default_params } = checkDefinition(req.body.source_system, req.body.definition, lang);
     const ctx = await resolveUserContext(deps.reader, req.user.id, req.body.scope ?? 'ca_nhan');
     return withUserContext(deps.reader, ctx, async (t) => {
       await audit(t, req, 'view_report', { type: 'report_preview', id: req.body.source_system }, { scope: ctx.scope });
-      return runDefinition(t, req.body.source_system, def, { params: { ...default_params, ...req.body.params }, scope: ctx.scope, page: 1, pageSize: 50 });
+      return runDefinition(t, req.body.source_system, def, { params: { ...default_params, ...req.body.params }, scope: ctx.scope, page: 1, pageSize: 50 }, lang);
     });
   });
 
@@ -113,16 +114,16 @@ export const adminReportRoutes = (deps: ApiDeps): FastifyPluginAsync => async (a
   const checkTab = async (id: number | null | undefined) => {
     if (id === null || id === undefined) return;
     const ok = await withTenant(deps.writer, (t) => t.oneOrNone('SELECT 1 FROM dashboard_tabs WHERE id = $1', [id]));
-    if (!ok) throw new Problem('invalid_params', 'Không có tab Tổng quan này', String(id));
+    if (!ok) throw new Problem('invalid_params', L('Không có tab Tổng quan này', 'Overview tab not found'), String(id));
   };
 
   app.post<{ Body: ReportBody }>('/admin/reports', {
     schema: { body: { ...bodySchema, required: ['code', 'ten', 'source_system', 'definition'] } },
   }, async (req, reply) => {
     const b = req.body;
-    if (!deps.sources.get(b.source_system!)) throw new Problem('not_found', 'Không có hệ thống nguồn này');
+    if (!deps.sources.get(b.source_system!)) throw new Problem('not_found', L('Không có hệ thống nguồn này', 'Source system not found'));
     const exists = await withTenant(deps.writer, (t) => t.oneOrNone('SELECT 1 FROM report_catalog WHERE code = $1', [b.code]));
-    if (exists) throw new Problem('invalid_params', 'Mã báo cáo đã tồn tại', b.code);
+    if (exists) throw new Problem('invalid_params', L('Mã báo cáo đã tồn tại', 'Report code already exists'), b.code);
     const c = checkDefinition(b.source_system!, b.definition);
     const w = await wiring(b.source_system!, c.def.dataset, c.def.capability);
     await checkTab(b.dashboard_tab);
@@ -142,11 +143,11 @@ export const adminReportRoutes = (deps: ApiDeps): FastifyPluginAsync => async (a
   app.patch<{ Params: { code: string }; Body: ReportBody }>('/admin/reports/:code', { schema: { body: bodySchema } }, async (req) => {
     const cur = await withTenant(deps.writer, (t) => t.oneOrNone<{ source_system: string; definition: unknown }>(
       'SELECT source_system, definition FROM report_catalog WHERE code = $1', [req.params.code]));
-    if (!cur) throw new Problem('not_found', 'Không có báo cáo này');
+    if (!cur) throw new Problem('not_found', L('Không có báo cáo này', 'Report not found'));
     const b = req.body;
-    if (b.code && b.code !== req.params.code) throw new Problem('invalid_params', 'Không đổi được mã báo cáo');
+    if (b.code && b.code !== req.params.code) throw new Problem('invalid_params', L('Không đổi được mã báo cáo', 'The report code cannot be changed'));
     const source = b.source_system ?? cur.source_system;
-    if (!deps.sources.get(source)) throw new Problem('not_found', 'Không có hệ thống nguồn này');
+    if (!deps.sources.get(source)) throw new Problem('not_found', L('Không có hệ thống nguồn này', 'Source system not found'));
     const c = b.definition !== undefined || b.source_system !== undefined ? checkDefinition(source, b.definition ?? cur.definition) : null;
     const w = c ? await wiring(source, c.def.dataset, c.def.capability) : null;
     await checkTab(b.dashboard_tab);
@@ -178,7 +179,7 @@ export const adminReportRoutes = (deps: ApiDeps): FastifyPluginAsync => async (a
   app.delete<{ Params: { code: string } }>('/admin/reports/:code', async (req) => {
     return withTenant(deps.writer, async (t) => {
       const cur = await t.oneOrNone<{ ten: string }>('SELECT ten FROM report_catalog WHERE code = $1', [req.params.code]);
-      if (!cur) throw new Problem('not_found', 'Không có báo cáo này');
+      if (!cur) throw new Problem('not_found', L('Không có báo cáo này', 'Report not found'));
       const subs = await t.result('DELETE FROM report_subscriptions WHERE report_code = $1', [req.params.code], (r) => r.rowCount);
       await t.none('DELETE FROM report_catalog WHERE code = $1', [req.params.code]);
       await audit(t, req, 'source_change', { type: 'report', id: req.params.code }, { op: 'delete', ten: cur.ten, legacy_subscriptions_deleted: subs });
@@ -194,7 +195,7 @@ export const adminReportRoutes = (deps: ApiDeps): FastifyPluginAsync => async (a
       ORDER BY dt.thu_tu, dt.id`)));
 
   const checkTabSource = (source: string | null | undefined) => {
-    if (source && !deps.sources.get(source)) throw new Problem('not_found', 'Không có hệ thống nguồn này', source);
+    if (source && !deps.sources.get(source)) throw new Problem('not_found', L('Không có hệ thống nguồn này', 'Source system not found'), source);
   };
 
   app.post<{ Body: TabBody }>('/admin/dashboard-tabs', { schema: { body: { ...tabSchema, required: ['ten'] } } }, async (req, reply) => {
@@ -220,7 +221,7 @@ export const adminReportRoutes = (deps: ApiDeps): FastifyPluginAsync => async (a
           WHERE id = $1`,
         [Number(req.params.id), b.ten?.trim() ?? null, b.source_system !== undefined, b.source_system ?? null, b.thu_tu ?? null, b.is_active ?? null, req.user.id],
         (r) => r.rowCount);
-      if (!n) throw new Problem('not_found', 'Không có tab này');
+      if (!n) throw new Problem('not_found', L('Không có tab này', 'Tab not found'));
       await audit(t, req, 'source_change', { type: 'dashboard_tab', id: req.params.id }, { op: 'update', fields: Object.keys(b) });
       return { id: Number(req.params.id), updated: true };
     });
@@ -230,7 +231,7 @@ export const adminReportRoutes = (deps: ApiDeps): FastifyPluginAsync => async (a
   app.delete<{ Params: { id: string } }>('/admin/dashboard-tabs/:id', async (req) => withTenant(deps.writer, async (t) => {
     const moved = await t.result('UPDATE report_catalog SET dashboard_tab = NULL WHERE dashboard_tab = $1', [Number(req.params.id)], (r) => r.rowCount);
     const n = await t.result('DELETE FROM dashboard_tabs WHERE id = $1', [Number(req.params.id)], (r) => r.rowCount);
-    if (!n) throw new Problem('not_found', 'Không có tab này');
+    if (!n) throw new Problem('not_found', L('Không có tab này', 'Tab not found'));
     await audit(t, req, 'source_change', { type: 'dashboard_tab', id: req.params.id }, { op: 'delete', reports_moved: moved });
     return { id: Number(req.params.id), deleted: true, reports_moved: moved };
   }));

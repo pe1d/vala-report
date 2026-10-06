@@ -1,5 +1,5 @@
 import type { FastifyPluginAsync } from 'fastify';
-import { Problem, vaultRef, withUserContext, type UserContext } from '@vala/core';
+import { L, Problem, langOf, localizeStored, vaultRef, withUserContext, type UserContext } from '@vala/core';
 import { loadAllSpecs } from '@vala/core/adapter';
 import { audit } from '../audit.js';
 import type { ApiDeps } from '../deps.js';
@@ -9,7 +9,7 @@ const own = (userId: number): UserContext => ({ userId, scope: 'ca_nhan', orgUni
 
 function sourceCapabilities(source: string): string[] {
   const caps = loadAllSpecs().filter((s) => s.source_system === source).flatMap((s) => s.capabilities.map((c) => c.id));
-  if (!caps.length) throw new Problem('not_found', 'Không hỗ trợ hệ thống này');
+  if (!caps.length) throw new Problem('not_found', L('Không hỗ trợ hệ thống này', 'This system is not supported'));
   return caps;
 }
 
@@ -19,7 +19,7 @@ function sourceCapabilities(source: string): string[] {
  */
 export const grantRoutes = (deps: ApiDeps): FastifyPluginAsync => async (app) => {
   app.get('/grants', async (req) => withUserContext(deps.reader, own(req.user.id), async (t) => {
-    const rows = await t.any(
+    const rows = await t.any<{ source_system: string; last_error: string | null }>(
       `SELECT ss.code AS source_system, ss.ten,
               coalesce(CASE WHEN g.revoked_at IS NOT NULL THEN 'revoked' ELSE g.session_state END, 'pending') AS session_state,
               g.granted_at, g.session_expires_at, coalesce(g.scope_capabilities, '{}') AS scope_capabilities,
@@ -30,7 +30,8 @@ export const grantRoutes = (deps: ApiDeps): FastifyPluginAsync => async (app) =>
          FROM core.source_systems ss
          LEFT JOIN source_grants g ON g.source_system = ss.code AND g.app_user_id = $1
         WHERE ss.enabled ORDER BY ss.code`, [req.user.id]);
-    return rows.map((r) => ({ ...r, available_capabilities: safeCaps(r.source_system) }));
+    const lang = langOf(req.headers['accept-language']);
+    return rows.map((r) => ({ ...r, last_error: localizeStored(r.last_error, lang), available_capabilities: safeCaps(r.source_system) }));
   }));
 
   app.post<{ Params: { source: string }; Body: { scope_capabilities?: string[] } | undefined }>('/grants/:source', async (req) => {
@@ -38,10 +39,10 @@ export const grantRoutes = (deps: ApiDeps): FastifyPluginAsync => async (app) =>
     const available = sourceCapabilities(source);
     const caps = req.body?.scope_capabilities?.length ? req.body.scope_capabilities : available;
     const unknown = caps.filter((c) => !available.includes(c));
-    if (unknown.length) throw new Problem('invalid_params', 'Capability không hợp lệ', unknown.join(', '));
+    if (unknown.length) throw new Problem('invalid_params', L('Capability không hợp lệ', 'Invalid capability'), unknown.join(', '));
 
     if (!deps.config.loginMethods.includes('sso')) {
-      throw new Problem('forbidden', 'Uỷ quyền qua SSO đang tắt', 'Kết nối dữ liệu do quản trị cấu hình');
+      throw new Problem('forbidden', L('Uỷ quyền qua SSO đang tắt', 'Authorization via SSO is disabled'), L('Kết nối dữ liệu do quản trị cấu hình', 'Data connections are configured by an admin'));
     }
 
     await withUserContext(deps.reader, own(req.user.id), (t) => t.none(

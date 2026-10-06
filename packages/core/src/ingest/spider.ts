@@ -13,7 +13,8 @@
 import { findSpec, loadAllSpecs, normalizeCapability, type AdapterSpec, type FetchResult } from '../adapter/index.js';
 import { canAutoRenew, isPermanentLoginError, type AuthMethod, type ConnectionSessions, type SourceInfo } from '../connections.js';
 import { withTenant, type Db } from '../db/index.js';
-import { Problem } from '../errors.js';
+import { L, Problem, type Bilingual } from '../errors.js';
+import { localizeStored } from '../localize.js';
 import { isPreset, nextRuns } from '../presets.js';
 import { markSpiderLaunchReported } from '../spiderOps.js';
 import type { SecretStore } from '../secrets.js';
@@ -49,7 +50,7 @@ interface RunRow {
 
 export async function getSpider(db: Db, code: string): Promise<SpiderRow> {
   const s = await withTenant(db, (t) => t.oneOrNone<SpiderRow>('SELECT * FROM core.crawl_spiders WHERE code = $1', [code]));
-  if (!s) throw new Problem('not_found', 'Không có spider này', code);
+  if (!s) throw new Problem('not_found', L('Không có spider này', 'Spider not found'), code);
   return s;
 }
 
@@ -64,8 +65,8 @@ function specFor(deps: SpiderDeps, source: string, capability?: string): Adapter
 async function loadRun(db: Db, runId: number): Promise<RunRow> {
   const r = await withTenant(db, (t) => t.oneOrNone<RunRow>(
     'SELECT id, app_user_id, source_system, spider_code, status FROM crawl_runs WHERE id = $1', [runId]));
-  if (!r || !r.spider_code) throw new Problem('not_found', 'Không có lượt chạy này');
-  if (r.status !== 'running') throw new Problem('invalid_params', 'Lượt chạy đã kết thúc', `trạng thái ${r.status}`);
+  if (!r || !r.spider_code) throw new Problem('not_found', L('Không có lượt chạy này', 'Run not found'));
+  if (r.status !== 'running') throw new Problem('invalid_params', L('Lượt chạy đã kết thúc', 'Run has already finished'), L(`trạng thái ${r.status}`, `status ${r.status}`));
   return r;
 }
 
@@ -91,8 +92,8 @@ export interface SpiderTarget {
 
 export async function startSpiderRun(deps: SpiderDeps, req: StartRequest) {
   const spider = await getSpider(deps.writer, req.spider);
-  if (!spider.is_enabled) throw new Problem('forbidden', 'Spider đang tắt', spider.code);
-  if (req.preset !== undefined && !isPreset(req.preset)) throw new Problem('invalid_params', 'Preset không hợp lệ');
+  if (!spider.is_enabled) throw new Problem('forbidden', L('Spider đang tắt', 'Spider is disabled'), spider.code);
+  if (req.preset !== undefined && !isPreset(req.preset)) throw new Problem('invalid_params', L('Preset không hợp lệ', 'Invalid preset'));
   const spec = specFor(deps, spider.source_system);
 
   // Có --user: chạy riêng một người (chạy ngay / quản trị chạy thử), chỉ cần kết nối còn hiệu lực.
@@ -141,46 +142,53 @@ export async function spiderSession(deps: SpiderDeps, runId: number, opts: { ref
     [run.app_user_id, run.source_system]));
   if (!grant) {
     await failRun(deps.writer, runId, 'grant_required', 'kết nối không còn hiệu lực');
-    throw new Problem('grant_required', 'Kết nối không còn hiệu lực');
+    throw new Problem('grant_required', L('Kết nối không còn hiệu lực', 'The connection is no longer valid'));
   }
   const info = await deps.sourceInfo(run.source_system);
   const canRenew = canAutoRenew(grant.auth_method);
   const why = opts.reason?.status ? `${opts.reason.path ?? '?'} → HTTP ${opts.reason.status}` : '';
 
   /** Kết nối cần phiên mới từ người dùng (tiện ích tự gửi lại khi thấy kết nối không còn "đang dùng"). */
-  const needNewSession = async (type: 'session_expired' | 'session_missing', title: string, detail: string): Promise<never> => {
+  // CSDL lưu bản tiếng Việt (giao diện dịch lại bằng localizeStored); Problem ném ra mang đủ hai ngôn ngữ.
+  const needNewSession = async (type: 'session_expired' | 'session_missing', title: Bilingual, detail: Bilingual): Promise<never> => {
     await withTenant(deps.writer, (t) => t.none(
       `UPDATE source_grants SET session_state = 'expired', refresh_fail_count = refresh_fail_count + 1, last_error = $2 WHERE id = $1`,
-      [grant.id, `${title}: ${detail}`.slice(0, 300)]));
-    await failRun(deps.writer, runId, type, detail);
+      [grant.id, `${title.vi}: ${detail.vi}`.slice(0, 300)]));
+    await failRun(deps.writer, runId, type, detail.vi);
     throw new Problem(type, title, detail);
   };
   /** Lỗi không do phiên: ghi lượt lỗi, giữ nguyên kết nối. */
-  const notSession = async (type: 'source_denied' | 'source_unavailable', title: string, detail: string): Promise<never> => {
-    await failRun(deps.writer, runId, type, detail);
+  const notSession = async (type: 'source_denied' | 'source_unavailable', title: Bilingual, detail: Bilingual): Promise<never> => {
+    await failRun(deps.writer, runId, type, detail.vi);
     throw new Problem(type, title, detail);
   };
-  const missingMsg = `Kho bí mật không còn phiên ${run.source_system} (vd máy chủ khởi động lại) — mở ${run.source_system} trên trình duyệt có tiện ích Vala, tiện ích tự gửi lại`;
+  const src = run.source_system;
+  const missingMsg = L(`Kho bí mật không còn phiên ${src} (vd máy chủ khởi động lại) — mở ${src} trên trình duyệt có tiện ích Vala, tiện ích tự gửi lại`,
+    `The secret store no longer has the ${src} session (e.g. the server restarted) — open ${src} in a browser with the Vala extension, it will resend the session automatically`);
+  const lostTitle = L('Phiên đã lưu bị mất', 'Saved session was lost');
 
   if (!opts.refresh) {
     const cur = await deps.secrets.get(grant.vault_ref);
     if (cur && (!cur.expires_at || new Date(cur.expires_at).getTime() > Date.now() + 60_000)) {
       return { cookies: cur.cookies, base_url: info.baseUrl, expires_at: cur.expires_at ?? null, renewed: false };
     }
-    if (!cur && !canRenew) return needNewSession('session_missing', 'Phiên đã lưu bị mất', missingMsg);
+    if (!cur && !canRenew) return needNewSession('session_missing', lostTitle, missingMsg);
   }
   if (opts.refresh && !canRenew) {
     const st = await deps.connections.checkStoredSession(run.app_user_id, run.source_system);
     if (st.state === 'alive') {
-      return notSession('source_denied', 'Nguồn từ chối request',
-        `${why || 'Một request'} bị từ chối nhưng phiên vẫn còn hiệu lực (kiểm tra lại phiên: OK) — không phải hết hạn`);
+      return notSession('source_denied', L('Nguồn từ chối request', 'Source rejected the request'),
+        L(`${why || 'Một request'} bị từ chối nhưng phiên vẫn còn hiệu lực (kiểm tra lại phiên: OK) — không phải hết hạn`,
+          `${why || 'A request'} was rejected but the session is still valid (session re-check: OK) — not expired`));
     }
     if (st.state === 'unavailable') {
-      return notSession('source_unavailable', 'Hệ thống nguồn đang lỗi', `${why ? `${why}; ` : ''}kiểm tra phiên: ${st.detail ?? 'không phản hồi'}`);
+      return notSession('source_unavailable', L('Hệ thống nguồn đang lỗi', 'Source system is failing'),
+        L(`${why ? `${why}; ` : ''}kiểm tra phiên: ${st.detail ?? 'không phản hồi'}`, `${why ? `${why}; ` : ''}session check: ${localizeStored(st.detail, 'en') ?? 'no response'}`));
     }
-    if (st.state === 'missing') return needNewSession('session_missing', 'Phiên đã lưu bị mất', missingMsg);
-    return needNewSession('session_expired', 'Phiên đã hết hạn',
-      `${run.source_system} từ chối phiên (${st.detail ?? why}) — đăng nhập lại ${run.source_system} trên trình duyệt, tiện ích tự gửi phiên mới`);
+    if (st.state === 'missing') return needNewSession('session_missing', lostTitle, missingMsg);
+    return needNewSession('session_expired', L('Phiên đã hết hạn', 'Session has expired'),
+      L(`${src} từ chối phiên (${st.detail ?? why}) — đăng nhập lại ${src} trên trình duyệt, tiện ích tự gửi phiên mới`,
+        `${src} rejected the session (${localizeStored(st.detail, 'en') ?? why}) — sign in to ${src} again in the browser, the extension will send a new session automatically`));
   }
   try {
     const s = await deps.connections.renew(run.app_user_id, run.source_system, grant.auth_method);
@@ -204,7 +212,7 @@ export async function spiderSession(deps: SpiderDeps, runId: number, opts: { ref
 
 export async function spiderAccount(deps: SpiderDeps, runId: number, sourceUserId: string) {
   const run = await loadRun(deps.writer, runId);
-  if (!/^[\w.@-]{1,100}$/.test(sourceUserId)) throw new Problem('invalid_params', 'source_user_id không hợp lệ');
+  if (!/^[\w.@-]{1,100}$/.test(sourceUserId)) throw new Problem('invalid_params', L('source_user_id không hợp lệ', 'Invalid source_user_id'));
   try {
     await saveSourceAccount(deps.writer, { source: run.source_system, userId: run.app_user_id }, { puid: sourceUserId });
   } catch (e) {
@@ -224,8 +232,8 @@ export async function spiderRecords(deps: SpiderDeps, runId: number, req: Record
   const run = await loadRun(deps.writer, runId);
   const job = { source: run.source_system, capability: req.capability, userId: run.app_user_id };
   const sink = sinkOf(job.source, job.capability, deps.specs);
-  if (!sink) throw new Problem('invalid_params', 'Capability không có bảng đích (sink) trong cấu hình adapter', `${job.source}:${job.capability}`);
-  if (!Array.isArray(req.items) || req.items.length > 5000) throw new Problem('invalid_params', 'items phải là mảng ≤ 5000 phần tử');
+  if (!sink) throw new Problem('invalid_params', L('Capability không có bảng đích (sink) trong cấu hình adapter', 'Capability has no target table (sink) in the adapter config'), `${job.source}:${job.capability}`);
+  if (!Array.isArray(req.items) || req.items.length > 5000) throw new Problem('invalid_params', L('items phải là mảng ≤ 5000 phần tử', 'items must be an array of ≤ 5000 elements'));
   const spec = specFor(deps, run.source_system, req.capability);
   const cap = spec.capabilities.find((c) => c.id === req.capability)!;
   const keyField = cap.output_schema.find((f) => f.key);
@@ -272,7 +280,7 @@ export interface FinishRequest {
 export async function finishSpiderRun(deps: SpiderDeps, runId: number, req: FinishRequest) {
   const r = await withTenant(deps.writer, (t) => t.oneOrNone<RunRow & { records_changed: number | null; preset: string | null; error_code: string | null }>(
     `SELECT id, app_user_id, source_system, spider_code, status, records_changed, error_code FROM crawl_runs WHERE id = $1`, [runId]));
-  if (!r || !r.spider_code) throw new Problem('not_found', 'Không có lượt chạy này');
+  if (!r || !r.spider_code) throw new Problem('not_found', L('Không có lượt chạy này', 'Run not found'));
   if (r.status !== 'running') return { status: r.status };   // đã đóng (vd backend đã đánh dấu lỗi) — idempotent
   const status = req.status === 'ok' ? 'ok' : 'failed';
   // Spider báo xong, thành công, không có cảnh báo có thể thiếu trang ⇒ với mỗi capability đã lưu trong lượt này, đóng

@@ -1,4 +1,4 @@
-import { Problem } from '../errors.js';
+import { Problem, L } from '../errors.js';
 import type { AdapterSpec, RequestSpec } from './spec.js';
 import { render } from './template.js';
 
@@ -64,7 +64,7 @@ export class GuardedHttpClient {
 
   assertAllowed(method: string, path: string): void {
     if (!this.allowed.has(`${method} ${path}`)) {
-      throw new Problem('endpoint_not_allowed', 'Endpoint không nằm trong allowed_endpoints', `${method} ${path}`);
+      throw new Problem('endpoint_not_allowed', L('Endpoint không nằm trong allowed_endpoints', 'Endpoint is not in allowed_endpoints'), `${method} ${path}`);
     }
   }
 
@@ -113,7 +113,7 @@ export class GuardedHttpClient {
       });
     } catch (e) {
       // Chỉ ghi method + path: URL có thể mang puid, header mang cookie.
-      throw new Problem('source_unavailable', 'Hệ thống nguồn không phản hồi', `${req.method} ${req.path}: ${(e as Error).name}`);
+      throw new Problem('source_unavailable', L('Hệ thống nguồn không phản hồi', 'Source system is not responding'), `${req.method} ${req.path}: ${(e as Error).name}`);
     }
 
     // Phiên hết hạn trên hệ thống dùng SSO thường biểu hiện bằng chuyển hướng sang trang đăng nhập.
@@ -121,11 +121,11 @@ export class GuardedHttpClient {
       let to = '';
       const loc = res.headers.get('location');
       if (loc) { try { const u = new URL(loc, url); to = ` (chuyển tới ${u.host === url.host ? '' : u.host}${u.pathname})`; } catch { /* bỏ qua */ } }
-      throw new Problem('session_expired', 'Phiên uỷ quyền đã hết hạn', `${req.method} ${req.path} → ${res.status}${to}`);
+      throw new Problem('session_expired', L('Phiên uỷ quyền đã hết hạn', 'Authorized session has expired'), `${req.method} ${req.path} → ${res.status}${to}`);
     }
     const text = await res.text();
     // 5xx: nguồn đang lỗi — không phải do phiên, không được đánh dấu hết hạn.
-    if (res.status >= 500) throw new Problem('source_unavailable', 'Hệ thống nguồn đang lỗi', `${req.method} ${req.path} → HTTP ${res.status}`);
+    if (res.status >= 500) throw new Problem('source_unavailable', L('Hệ thống nguồn đang lỗi', 'Source system is failing'), `${req.method} ${req.path} → HTTP ${res.status}`);
     if (res.status >= 400) throw new Error(`${req.method} ${req.path} → HTTP ${res.status}`);
     return {
       status: res.status,
@@ -134,7 +134,7 @@ export class GuardedHttpClient {
         try {
           return JSON.parse(text);
         } catch {
-          throw new Problem('schema_drift', 'Phản hồi không phải JSON', `${req.method} ${req.path}`);
+          throw new Problem('schema_drift', L('Phản hồi không phải JSON', 'Response is not JSON'), `${req.method} ${req.path}`);
         }
       },
     };

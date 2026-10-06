@@ -1,6 +1,20 @@
 /** Component cơ sở của tiện ích — cùng hệ thiết kế với cổng (apps/web/src/components/ui.tsx), có dark:. */
-import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode } from 'react';
+import { useSyncExternalStore, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode } from 'react';
+import { LANGS, getLang, messages, setLang, subscribeLang, type Lang } from './i18n';
 import { useTheme, type ThemeMode } from './theme';
+
+/** Ngôn ngữ hiện tại, tự vẽ lại khi người dùng đổi (ở trang này hay trang khác của tiện ích). */
+export const useLang = (): Lang => useSyncExternalStore(subscribeLang, getLang);
+/** Chữ theo ngôn ngữ hiện tại, tự đổi khi người dùng chuyển ngôn ngữ. */
+export function useT<T>(m: Record<Lang, T>): T {
+  return m[useLang()];
+}
+
+const M = messages({
+  light: 'Sáng', dark: 'Tối', system: 'Theo hệ thống', themeGroup: 'Chế độ giao diện', langGroup: 'Ngôn ngữ', close: 'Đóng',
+}, {
+  light: 'Light', dark: 'Dark', system: 'System', themeGroup: 'Theme', langGroup: 'Language', close: 'Close',
+});
 
 export const cx = (...c: Array<string | false | null | undefined>) => c.filter(Boolean).join(' ');
 
@@ -62,18 +76,19 @@ export function Banner({ tone, children }: { tone: 'ok' | 'err' | 'info'; childr
 export const Muted = ({ children, className }: { children: ReactNode; className?: string }) =>
   <p className={cx('text-slate-500 dark:text-slate-400', className)}>{children}</p>;
 
-const MODES: Array<[ThemeMode, string, string]> = [
-  ['light', 'Sáng', 'M12 4V2m0 20v-2m8-8h2M2 12h2m13.66 5.66 1.41 1.41M4.93 4.93l1.41 1.41m11.32 0 1.41-1.41M4.93 19.07l1.41-1.41M12 17a5 5 0 1 0 0-10 5 5 0 0 0 0 10Z'],
-  ['dark', 'Tối', 'M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z'],
-  ['system', 'Theo hệ thống', 'M3 5h18v11H3zM8 21h8m-4-5v5'],
+const MODES: Array<[ThemeMode, 'light' | 'dark' | 'system', string]> = [
+  ['light', 'light', 'M12 4V2m0 20v-2m8-8h2M2 12h2m13.66 5.66 1.41 1.41M4.93 4.93l1.41 1.41m11.32 0 1.41-1.41M4.93 19.07l1.41-1.41M12 17a5 5 0 1 0 0-10 5 5 0 0 0 0 10Z'],
+  ['dark', 'dark', 'M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z'],
+  ['system', 'system', 'M3 5h18v11H3zM8 21h8m-4-5v5'],
 ];
 
 export function ThemeToggle() {
   const [mode, setMode] = useTheme();
+  const t = useT(M);
   return (
-    <div role="radiogroup" aria-label="Chế độ giao diện"
+    <div role="radiogroup" aria-label={t.themeGroup}
       className="inline-flex rounded-md border border-slate-300 bg-white p-0.5 dark:border-slate-700 dark:bg-slate-900">
-      {MODES.map(([m, label, path]) => (
+      {MODES.map(([m, key, path]) => { const label = t[key]; return (
         <button key={m} type="button" role="radio" aria-checked={mode === m} title={label} onClick={() => setMode(m)}
           className={cx('inline-flex h-7 w-8 items-center justify-center rounded transition-colors',
             mode === m ? 'bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-300'
@@ -82,6 +97,25 @@ export function ThemeToggle() {
             <path d={path} />
           </svg>
           <span className="sr-only">{label}</span>
+        </button>
+      ); })}
+    </div>
+  );
+}
+
+/** Chọn ngôn ngữ VI | EN — lưu ở chrome.storage.local, mọi trang của tiện ích và service worker đổi theo. */
+export function LangToggle() {
+  const lang = useLang();
+  const t = useT(M);
+  return (
+    <div role="radiogroup" aria-label={t.langGroup}
+      className="inline-flex rounded-md border border-slate-300 bg-white p-0.5 dark:border-slate-700 dark:bg-slate-900">
+      {LANGS.map(([l, short, name]) => (
+        <button key={l} type="button" role="radio" aria-checked={lang === l} title={name} lang={l} onClick={() => void setLang(l)}
+          className={cx('inline-flex h-7 min-w-8 items-center justify-center rounded px-1.5 text-xs font-semibold transition-colors',
+            lang === l ? 'bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-300'
+              : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100')}>
+          {short}
         </button>
       ))}
     </div>
@@ -92,6 +126,7 @@ export function ThemeToggle() {
 export function SuccessDialog({ ok, title, children, onClose, action }: {
   ok: boolean; title: string; children: ReactNode; onClose: () => void; action?: { label: string; onClick: () => void };
 }) {
+  const t = useT(M);
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 dark:bg-black/60" role="dialog" aria-modal="true" aria-labelledby="kq-title">
       <div className="w-full max-w-sm rounded-lg border border-slate-200 bg-white p-5 text-center shadow-xl dark:border-slate-800 dark:bg-slate-900">
@@ -105,7 +140,7 @@ export function SuccessDialog({ ok, title, children, onClose, action }: {
         <p className="mt-1 text-slate-600 dark:text-slate-400">{children}</p>
         <div className="mt-4 flex justify-center gap-2">
           {action && <Button variant="primary" onClick={action.onClick}>{action.label}</Button>}
-          <Button onClick={onClose}>Đóng</Button>
+          <Button onClick={onClose}>{t.close}</Button>
         </div>
       </div>
     </div>

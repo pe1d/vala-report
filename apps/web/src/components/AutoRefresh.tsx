@@ -5,6 +5,7 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import { api, fmtDateTime } from '../api';
+import { messages, tr, useT } from '../i18n';
 
 type AutoState = 'bat_dau' | 'dang_cap_nhat' | 'con_moi' | 'tat' | 'can_ket_noi' | 'khong_the';
 interface AutoItem { key: string; ten: string; source_ten: string; state: AutoState; last_success_at: string | null; since: string | null }
@@ -16,6 +17,22 @@ export interface AutoRefreshState {
   at?: string;
   message?: string;
 }
+
+const M = messages({
+  timeout: 'Chưa thấy kết quả sau 3 phút — số liệu sẽ mới ở lần sau.',
+  running: (names: string) => `Đang cập nhật dữ liệu mới nhất: ${names}…`,
+  showingAt: (at: string) => `(đang hiện số liệu lúc ${at})`,
+  done: (names: string, at: string) => `✓ Đã cập nhật ${names} lúc ${at}.`,
+  failed: (names: string, msg: string | undefined) =>
+    `Chưa cập nhật được ${names}${msg ? `: ${msg}` : '.'} Đang hiện số liệu của lần lấy trước.`,
+}, {
+  timeout: 'No result after 3 minutes — data will be refreshed next time.',
+  running: (names: string) => `Fetching the latest data: ${names}…`,
+  showingAt: (at: string) => `(showing data as of ${at})`,
+  done: (names: string, at: string) => `✓ Updated ${names} at ${at}.`,
+  failed: (names: string, msg: string | undefined) =>
+    `Couldn't update ${names}${msg ? `: ${msg}` : '.'} Showing data from the previous fetch.`,
+});
 
 const POLL_MS = 3000;
 const GIVE_UP_MS = 3 * 60_000;
@@ -55,7 +72,7 @@ export function useAutoRefresh(reports: string[] | undefined, onUpdated: () => v
         if (cancelled) return;
         setSt({
           phase: failed.length || !finished ? 'error' : 'done', items: waiting, at: new Date().toISOString(),
-          message: !finished ? 'Chưa thấy kết quả sau 3 phút — số liệu sẽ mới ở lần sau.' : failed[0]?.error ?? undefined,
+          message: !finished ? tr(M).timeout : failed[0]?.error ?? undefined,
         });
         if (mine.some((r) => r.status === 'ok')) cb.current();
       };
@@ -78,6 +95,7 @@ export function useAutoRefresh(reports: string[] | undefined, onUpdated: () => v
 
 /** Dòng trạng thái nhỏ: đang cập nhật / vừa cập nhật / không cập nhật được. Không có gì để báo thì không hiện. */
 export function AutoRefreshBar({ st, className = '' }: { st: AutoRefreshState; className?: string }) {
+  const t = useT(M);
   if (st.phase === 'idle') return null;
   const names = st.items.map((x) => x.ten).join(', ');
   const oldest = st.items.map((x) => x.last_success_at).filter((x): x is string => !!x).sort()[0];
@@ -85,17 +103,17 @@ export function AutoRefreshBar({ st, className = '' }: { st: AutoRefreshState; c
     return (
       <div role="status" className={`flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300 ${className}`}>
         <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-blue-600 border-t-transparent dark:border-blue-400 dark:border-t-transparent" aria-hidden />
-        Đang cập nhật dữ liệu mới nhất: {names}…
-        {oldest && <span className="text-slate-400 dark:text-slate-500">(đang hiện số liệu lúc {fmtDateTime(oldest)})</span>}
+        {t.running(names)}
+        {oldest && <span className="text-slate-400 dark:text-slate-500">{t.showingAt(fmtDateTime(oldest))}</span>}
       </div>
     );
   }
   if (st.phase === 'done') {
-    return <div role="status" className={`text-sm text-emerald-700 dark:text-emerald-400 ${className}`}>✓ Đã cập nhật {names} lúc {fmtDateTime(st.at)}.</div>;
+    return <div role="status" className={`text-sm text-emerald-700 dark:text-emerald-400 ${className}`}>{t.done(names, fmtDateTime(st.at))}</div>;
   }
   return (
     <div role="status" className={`text-sm text-amber-700 dark:text-amber-400 ${className}`}>
-      Chưa cập nhật được {names}{st.message ? `: ${st.message}` : '.'} Đang hiện số liệu của lần lấy trước.
+      {t.failed(names, st.message)}
     </div>
   );
 }

@@ -8,7 +8,7 @@
  *  - Sai mật khẩu / cần OTP ⇒ ném lỗi riêng để phía gọi DỪNG hẳn, không thử lại (tránh khoá tài khoản).
  *  - Chỉ đi tới base_url và login_hosts của nguồn.
  */
-import { Problem } from '../errors.js';
+import { Problem, L } from '../errors.js';
 import { missingCookieGroups, pickRequiredCookies, RedirectWalker, type BootstrapResult } from './bootstrap.js';
 import type { FetchLike } from './http.js';
 import type { AdapterSpec } from './spec.js';
@@ -50,7 +50,7 @@ export async function passwordLogin(o: PasswordLoginOptions): Promise<BootstrapR
   if (page.url.host === appHost) {
     const already = pickRequiredCookies(o.spec, walker.cookiesFor(o.baseUrl));
     if (already) return { cookies: already, expires_at: ttl(cfg.session_ttl_minutes) };
-    throw new Problem('schema_drift', 'Không thấy trang đăng nhập', `dừng ở ${page.url.host}${page.url.pathname} (${page.status})`);
+    throw new Problem('schema_drift', L('Không thấy trang đăng nhập', 'Login page not found'), L(`dừng ở ${page.url.host}${page.url.pathname} (${page.status})`, `stopped at ${page.url.host}${page.url.pathname} (${page.status})`));
   }
   if (page.status !== 200) throw new Error(`Trang đăng nhập trả HTTP ${page.status}`);
 
@@ -63,22 +63,22 @@ export async function passwordLogin(o: PasswordLoginOptions): Promise<BootstrapR
     fields = Object.fromEntries(Object.entries(render(cfg.form.fields, ctx) as Record<string, unknown>).map(([k, v]) => [k, String(v)]));
   } catch {
     // Thường là thiếu sessionDataKey ⇒ trang đăng nhập đã đổi cấu trúc.
-    throw new Problem('schema_drift', 'Trang đăng nhập đã thay đổi', 'không đủ trường để điền form đăng nhập');
+    throw new Problem('schema_drift', L('Trang đăng nhập đã thay đổi', 'Login page has changed'), L('không đủ trường để điền form đăng nhập', 'not enough fields to fill in the login form'));
   }
 
   const end = await walker.go(new URL(cfg.form.action, page.url), { method: 'POST', form: fields });
   const where = `${end.url.pathname}${end.url.search}`;
   if (new RegExp(cfg.failure.invalid_credentials).test(where)) {
-    throw new Problem('invalid_credentials', 'Sai tên đăng nhập hoặc mật khẩu hệ thống nguồn');
+    throw new Problem('invalid_credentials', L('Sai tên đăng nhập hoặc mật khẩu hệ thống nguồn', 'Incorrect source system username or password'));
   }
   if (new RegExp(cfg.failure.otp_required, 'i').test(where)) {
-    throw new Problem('otp_required', 'Tài khoản bật xác thực hai lớp (OTP)', 'Không thể tự đăng nhập bằng mật khẩu');
+    throw new Problem('otp_required', L('Tài khoản bật xác thực hai lớp (OTP)', 'Account has two-factor authentication (OTP) enabled'), L('Không thể tự đăng nhập bằng mật khẩu', 'Cannot sign in automatically with a password'));
   }
   if (end.url.host !== appHost || end.status >= 400) {
-    throw new Problem('invalid_credentials', 'Đăng nhập không thành công', `dừng ở ${end.url.host}${end.url.pathname} (${end.status})`);
+    throw new Problem('invalid_credentials', L('Đăng nhập không thành công', 'Sign-in failed'), L(`dừng ở ${end.url.host}${end.url.pathname} (${end.status})`, `stopped at ${end.url.host}${end.url.pathname} (${end.status})`));
   }
   const cookies = pickRequiredCookies(o.spec, walker.cookiesFor(o.baseUrl));
-  if (!cookies) throw new Problem('schema_drift', 'Đăng nhập xong nhưng thiếu cookie phiên', missingCookieGroups(o.spec, walker.cookiesFor(o.baseUrl)).join(', '));
+  if (!cookies) throw new Problem('schema_drift', L('Đăng nhập xong nhưng thiếu cookie phiên', 'Signed in but session cookies are missing'), missingCookieGroups(o.spec, walker.cookiesFor(o.baseUrl)).join(', '));
   return { cookies, expires_at: ttl(cfg.session_ttl_minutes) };
 }
 
@@ -96,7 +96,7 @@ export function parseCookieInput(spec: AdapterSpec, raw: string): Record<string,
   const cookies = pickRequiredCookies(spec, map);
   if (!cookies) {
     const missing = missingCookieGroups(spec, map);
-    throw new Problem('invalid_params', 'Cookie thiếu trường bắt buộc', `thiếu: ${missing.join(', ')}`);
+    throw new Problem('invalid_params', L('Cookie thiếu trường bắt buộc', 'Cookie is missing required fields'), L(`thiếu: ${missing.join(', ')}`, `missing: ${missing.join(', ')}`));
   }
   return cookies;
 }

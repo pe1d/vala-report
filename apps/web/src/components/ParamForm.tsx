@@ -1,11 +1,15 @@
 import { api, periodLabel, type JsonProp } from '../api';
 import { useAsync } from '../hooks';
 import { Field, Input, Select } from './ui';
+import { messages, useT } from '../i18n';
+
+const M = messages({ all: 'Tất cả' }, { all: 'All' });
 
 /** Form sinh từ param_schema của báo cáo. Chỉ hỗ trợ các kiểu mà danh mục bản 1 dùng. */
 export function ParamForm({ code, props, value, onChange }: {
   code: string; props: Record<string, JsonProp>; value: Record<string, unknown>; onChange: (v: Record<string, unknown>) => void;
 }) {
+  useT(M);   // đăng ký đổi ngôn ngữ để nhãn khoảng thời gian (periodLabel) vẽ lại
   const set = (k: string, v: unknown) => onChange({ ...value, [k]: v === '' || v === undefined ? undefined : v });
   const custom = value.khoang_thoi_gian === 'tuy_chon';
   return (
@@ -43,13 +47,14 @@ export function ParamForm({ code, props, value, onChange }: {
 function OptionsField({ code, name, label, numeric, value, onChange }: {
   code: string; name: string; label: string; numeric: boolean; value: unknown[] | undefined; onChange: (v: unknown[] | undefined) => void;
 }) {
+  const t = useT(M);
   const opts = useAsync(() => api.get<Array<{ value: unknown; label: string }>>(`/reports/${code}/options/${name}`), [code, name]);
   const cur = value?.[0];
   return (
     <Field label={label}>
       <Select value={cur === undefined ? '' : String(cur)} disabled={opts.loading}
         onChange={(e) => onChange(e.target.value ? [numeric ? Number(e.target.value) : e.target.value] : undefined)}>
-        <option value="">Tất cả</option>
+        <option value="">{t.all}</option>
         {opts.data?.map((o) => <option key={String(o.value)} value={String(o.value)}>{o.label}</option>)}
       </Select>
     </Field>
