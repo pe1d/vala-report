@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:" />
+  <title>Vala Desktop</title>
+  <link rel="stylesheet" href="../dist/renderer/settings.css" />
+</head>
+<body class="min-h-screen bg-slate-50 text-slate-900 antialiased dark:bg-slate-950 dark:text-slate-100">
+  <main class="mx-auto max-w-md px-5 py-5">
+    <header class="flex items-center gap-2">
+      <img src="icon.png" alt="" class="h-8 w-8 rounded" />
+      <h1 class="flex-1 text-lg font-semibold" data-t="title">Cài đặt Vala Desktop</h1>
+      <div class="flex overflow-hidden rounded-md border border-slate-300 text-xs dark:border-slate-700">
+        <button type="button" data-lang="vi" class="px-2 py-1 aria-pressed:bg-slate-900 aria-pressed:text-white dark:aria-pressed:bg-slate-100 dark:aria-pressed:text-slate-900">VI</button>
+        <button type="button" data-lang="en" class="px-2 py-1 aria-pressed:bg-slate-900 aria-pressed:text-white dark:aria-pressed:bg-slate-100 dark:aria-pressed:text-slate-900">EN</button>
+      </div>
+      <button type="button" id="theme" class="rounded-md border border-slate-300 px-2 py-1 text-sm dark:border-slate-700">☾</button>
+    </header>
+
+    <section class="mt-5 rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+      <h2 class="text-base font-semibold" data-t="homeTitle"></h2>
+      <p class="mt-1 text-sm text-slate-600 dark:text-slate-400" data-t="homeHint"></p>
+      <form id="home-form" class="mt-3">
+        <label for="home" class="text-sm font-medium" data-t="homeLabel"></label>
+        <div class="mt-1 flex gap-2">
+          <input id="home" type="url" required spellcheck="false"
+            class="min-w-0 flex-1 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-950" />
+          <button type="submit" class="rounded-md bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-700 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-slate-300" data-t="save"></button>
+        </div>
+        <p id="home-note" class="mt-2 text-sm" role="status"></p>
+      </form>
+    </section>
+
+    <section class="mt-4 rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+      <h2 class="text-base font-semibold" data-t="accountTitle"></h2>
+      <p class="mt-1 text-sm text-slate-600 dark:text-slate-400" data-t="accountHint"></p>
+
+      <div id="signed-in" class="mt-3" hidden>
+        <dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
+          <dt class="text-slate-500 dark:text-slate-400" data-t="signedInAs"></dt><dd id="user-name" class="break-all"></dd>
+          <dt class="text-slate-500 dark:text-slate-400" data-t="serverIs"></dt><dd id="user-server" class="break-all"></dd>
+        </dl>
+        <div class="mt-4 flex gap-2">
+          <button type="button" id="open-portal" class="rounded-md bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-700 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-slate-300" data-t="openPortal"></button>
+          <button type="button" id="logout" class="rounded-md border border-red-300 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-950" data-t="logout"></button>
+        </div>
+      </div>
+
+      <form id="login-form" class="mt-3 space-y-3">
+        <div>
+          <label for="server" class="text-sm font-medium" data-t="serverLabel"></label>
+          <input id="server" type="url" required spellcheck="false"
+            class="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-950" />
+        </div>
+        <div>
+          <label for="username" class="text-sm font-medium" data-t="usernameLabel"></label>
+          <input id="username" autocomplete="username" required
+            class="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-950" />
+        </div>
+        <div>
+          <label for="password" class="text-sm font-medium" data-t="passwordLabel"></label>
+          <input id="password" type="password" autocomplete="current-password" required
+            class="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-950" />
+        </div>
+        <button id="login-btn" type="submit" class="w-full rounded-md bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-60 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-slate-300" data-t="login"></button>
+        <p id="login-note" class="mt-2 text-sm" role="alert"></p>
+      </form>
+    </section>
+  </main>
+  <script src="../dist/renderer/settings.js"></script>
+</body>
+</html>

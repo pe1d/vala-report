@@ -1,4 +1,8 @@
-/** Gọi API Vala (/api/v1/ext/*) bằng token thiết bị — cùng giao thức với tiện ích (apps/extension/src/shared.ts api()). */
+/**
+ * Gọi API Vala (/api/v1/ext/*) bằng token thiết bị — cùng giao thức với tiện ích (apps/extension/src/shared.ts api()).
+ * Dùng net.fetch (mạng của Chromium) chứ không dùng fetch của Node: theo đúng proxy hệ thống và chứng chỉ của máy.
+ */
+import { net } from 'electron';
 import { messages } from './i18n';
 import { getSettings, setSettings, type Settings } from './settings';
 
@@ -27,7 +31,7 @@ export async function api<T>(method: string, path: string, body?: unknown, s?: S
   if (body !== undefined) headers['Content-Type'] = 'application/json';
   let res: Response;
   try {
-    res = await fetch(`${st.serverUrl}/api/v1${path}`, {
+    res = await net.fetch(`${st.serverUrl}/api/v1${path}`, {
       method, headers, body: body === undefined ? undefined : JSON.stringify(body),
     });
   } catch {
