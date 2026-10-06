@@ -7,6 +7,7 @@
 import { join } from 'node:path';
 import { BrowserWindow, ipcMain, type IpcMainInvokeEvent } from 'electron';
 import { loginDevice, logoutDevice } from './account';
+import { APP_NAME, ICON } from './channel';
 import { ApiError } from './api';
 import { messages, normLang } from './i18n';
 import { DEFAULT_SERVER, getSettings, normalizeServer, setSettings } from './settings';
@@ -48,7 +49,8 @@ let win: BrowserWindow | null = null;
 
 function state() {
   const s = getSettings();
-  return { t: M[s.lang], lang: s.lang, serverUrl: s.serverUrl || DEFAULT_SERVER, user: s.deviceToken ? s.user : null };
+  const t = M[s.lang];
+  return { t: { ...t, title: APP_NAME === 'Vala Desktop' ? t.title : `${t.title} (dev)` }, lang: s.lang, serverUrl: s.serverUrl || DEFAULT_SERVER, user: s.deviceToken ? s.user : null };
 }
 
 const errText = (e: unknown) => {
@@ -60,7 +62,7 @@ export function openSettingsWindow(hooks: SettingsHooks): void {
   if (win && !win.isDestroyed()) { win.show(); win.focus(); return; }
   const w = new BrowserWindow({
     width: 520, height: 800, minWidth: 420, minHeight: 600, autoHideMenuBar: true, show: false,
-    icon: join(__dirname, '../resources/icon.png'),
+    icon: ICON,
     webPreferences: { preload: join(__dirname, 'settings-preload.js') },
   });
   win = w;

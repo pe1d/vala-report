@@ -4,6 +4,8 @@
  * cho Vala Reporting mỗi khi đổi + định kỳ 15 phút (thay tiện ích trình duyệt).
  */
 import { app } from 'electron';
+import { setupChannel } from './channel';
+import { cleanUserAgent } from './ua';
 import { closeSettingsWindow, openSettingsWindow } from './settings-window';
 import { getSettings } from './settings';
 import { syncAll } from './sync';
@@ -44,9 +46,9 @@ function openSettings() {
   });
 }
 
-// User-Agent như Chrome thường: bỏ "Electron/x" và tên ứng dụng. Có trang (vd vala.bkav.com) thấy "Electron" là trả về
-// thông báo "đã dừng phát triển bản Vala Desktop" (của bản desktop cũ) thay cho trang thật.
-app.userAgentFallback = app.userAgentFallback.replace(/ (Electron|[\w@./-]*desktop)\/\S+/gi, '');
+// Bản dev ⇒ tên, thư mục dữ liệu riêng (channel.ts). Phải chạy trước khi đọc cấu hình / xin khoá "chỉ một bản".
+setupChannel();
+app.userAgentFallback = cleanUserAgent(app.userAgentFallback);
 
 if (!app.requestSingleInstanceLock()) {
   app.quit();

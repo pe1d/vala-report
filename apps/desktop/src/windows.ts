@@ -14,6 +14,7 @@ import { app, ipcMain, Notification, session, shell, type IpcMainInvokeEvent, ty
 import { api } from './api';
 import { showSourceTab, showTab, showWebContents, sourceTabKey } from './browser';
 import { matchesSessionDomain, sessionDomain } from './cookies';
+import { ICON } from './channel';
 import { messages } from './i18n';
 import { getSettings } from './settings';
 import { cachedSources, events, refreshSources, statusOf, syncSource, type SourceFull } from './sync';
@@ -41,7 +42,6 @@ const M = messages({
 });
 const T = () => M[getSettings().lang];
 
-const ICON = join(__dirname, '../resources/icon.png');
 
 /** Tab Vala: trang chính của đơn vị. */
 export const showMain = (): void => { showTab('home'); };

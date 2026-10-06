@@ -12,6 +12,7 @@ import { app, Notification } from 'electron';
 import { autoUpdater } from 'electron-updater';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { ICON } from './channel';
 import { messages } from './i18n';
 import { getSettings, updateFeedUrl } from './settings';
 
@@ -32,7 +33,6 @@ const M = messages({
 });
 
 const CHECK_EVERY_MS = 4 * 3600_000;
-const ICON = join(__dirname, '../resources/icon.png');
 
 let ready: { version: string } | null = null;
 /** Người dùng tự bấm "Kiểm tra cập nhật" ⇒ báo cả khi không có bản mới / lỗi. */

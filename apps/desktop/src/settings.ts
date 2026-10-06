@@ -24,7 +24,11 @@ export interface Settings {
  */
 const BUILT: { homeUrl?: string; serverUrl?: string; updateUrl?: string } = (() => { try { return require('./defaults.json'); } catch { return {}; } })();
 export const DEFAULT_HOME = BUILT.homeUrl || 'https://vala.bkav.com/';
-export const DEFAULT_SERVER = BUILT.serverUrl || 'https://qtttboard-demo.demozone.vn:5443/vala-report';
+/** Đang chạy từ mã nguồn (bản dev). An toàn khi chạy test ngoài Electron (app không có). */
+const isDevRun = () => { try { return !app.isPackaged; } catch { return false; } };
+/** Bản dev mặc định trỏ stack dev (pnpm dev:up); đổi được bằng VALA_URL=… pnpm dev. */
+export const DEFAULT_SERVER = BUILT.serverUrl || process.env.VALA_URL
+  || (isDevRun() ? 'http://localhost:5173' : 'https://qtttboard-demo.demozone.vn:5443/vala-report');
 
 /**
  * Kênh cập nhật Vala Desktop (thư mục chứa latest.yml + file cài): mặc định /desktop/ trên máy chủ Vala Reporting của

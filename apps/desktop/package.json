@@ -9,7 +9,7 @@
   "main": "dist/main.js",
   "scripts": {
     "build": "tsc -p . && node scripts/write-defaults.cjs && tailwindcss -i resources/ui.src.css -o dist/renderer/ui.css --minify",
-    "dev": "pnpm build && electron .",
+    "dev": "pnpm build && electron . --no-sandbox",
     "package": "pnpm build && electron-builder --win -p never",
     "package:zip": "pnpm build && electron-builder --win zip -p never",
     "package:linux": "pnpm build && electron-builder --linux deb -p never",

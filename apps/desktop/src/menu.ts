@@ -6,6 +6,7 @@
  */
 import { join } from 'node:path';
 import { app, BrowserWindow, Menu, nativeImage, Tray, type BaseWindow, type MenuItemConstructorOptions } from 'electron';
+import { APP_NAME, ICON } from './channel';
 import { messages } from './i18n';
 import { getSettings } from './settings';
 import { cachedSources, events, statusOf, syncAll, type SyncResult } from './sync';
@@ -13,7 +14,6 @@ import { checkNow, installNow, pendingUpdate } from './updater';
 import { openSourceTab } from './windows';
 
 const M = messages({
-  tooltip: 'Vala Desktop',
   vala: 'Vala', openMain: 'Trang chính',
   reports: 'Báo cáo', openPortal: 'Mở cổng báo cáo',
   sources: 'Hệ thống nguồn', noSources: '(chưa có hệ thống nào)', signInFirst: '(đăng nhập Vala Reporting trong Cài đặt trước)',
@@ -26,7 +26,6 @@ const M = messages({
     need_consent: 'cần xác nhận đồng ý', rejected: 'phiên hết hạn', error: 'lỗi',
   } as Record<SyncResult, string>,
 }, {
-  tooltip: 'Vala Desktop',
   vala: 'Vala', openMain: 'Home page',
   reports: 'Reports', openPortal: 'Open reporting portal',
   sources: 'Source systems', noSources: '(no systems yet)', signInFirst: '(sign in to Vala Reporting in Settings first)',
@@ -118,14 +117,14 @@ export function refreshMenus(): void {
   Menu.setApplicationMenu(appMenu());
   if (tray) {
     const s = getSettings();
-    tray.setToolTip(s.deviceToken && s.user ? `${M[s.lang].tooltip} — ${s.user.email}` : M[s.lang].tooltip);
+    tray.setToolTip(s.deviceToken && s.user ? `${APP_NAME} — ${s.user.email}` : APP_NAME);
     tray.setContextMenu(trayMenu());
   }
 }
 
 export function createMenus(a: MenuActions): void {
   actions = a;
-  tray = new Tray(nativeImage.createFromPath(join(__dirname, '../resources/icon.png')).resize({ width: 16, height: 16 }));
+  tray = new Tray(nativeImage.createFromPath(ICON).resize({ width: 16, height: 16 }));
   tray.on('click', actions.showMain);
   refreshMenus();
   events.on('status', refreshMenus);

@@ -19,6 +19,8 @@ interface TabsState {
   t: Record<string, string> & { status: Record<'ok' | 'warn' | 'off', string> };
   active: string | null;
   tabs: TabView[];
+  /** Bản chạy từ mã nguồn ("Vala Desktop (dev)") ⇒ hiện nhãn DEV. */
+  dev: boolean;
   /** Bản mới đã tải xong, chờ cài. */
   update: { label: string; title: string } | null;
 }
@@ -160,6 +162,7 @@ interface ValaTabsApi {
       list.querySelector('[aria-selected=true]')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
     }
 
+    display($('dev'), s.dev);
     const up = $('update');
     display(up, !!s.update);
     if (s.update) { if (up.textContent !== s.update.label) up.textContent = s.update.label; up.title = s.update.title; }
@@ -180,6 +183,7 @@ interface ValaTabsApi {
 
   // Ẩn bằng JS: CSP của trang chặn thuộc tính style viết trong HTML.
   display($('update'), false);
+  display($('dev'), false);
   $('update').addEventListener('click', () => void api.installUpdate());
   api.onState(render);
   // Trang thanh tab phủ cả cửa sổ: khung nhìn đổi cỡ = cửa sổ đổi cỡ ⇒ báo tiến trình chính canh lại nội dung tab.

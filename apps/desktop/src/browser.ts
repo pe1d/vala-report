@@ -12,6 +12,7 @@
  */
 import { join } from 'node:path';
 import { app, BrowserWindow, ipcMain, shell, WebContentsView, type HandlerDetails, type Input, type IpcMainInvokeEvent, type Menu, type WebContents } from 'electron';
+import { APP_NAME, ICON, IS_DEV } from './channel';
 import { messages, normLang } from './i18n';
 import { getSettings, setSettings } from './settings';
 import { cachedSources, events, statusOf, type SourceFull } from './sync';
@@ -36,7 +37,6 @@ const M = messages({
 
 /** Chiều cao thanh tab — phải khớp resources/tabs.html (40px). */
 const TOOLBAR_H = 40;
-const ICON = join(__dirname, '../resources/icon.png');
 const TAB_PRELOAD = join(__dirname, 'portal-preload.js');
 
 interface PinnedDef { key: string; label: string; url: string }
@@ -107,11 +107,13 @@ function syncPinned(): void {
 function ensureWindow(): BrowserWindow {
   if (win && !win.isDestroyed()) return win;
   const w = new BrowserWindow({
-    width: 1280, height: 860, minWidth: 720, minHeight: 480, icon: ICON, title: 'Vala Desktop', show: false,
+    width: 1280, height: 860, minWidth: 720, minHeight: 480, icon: ICON, title: APP_NAME, show: false,
     autoHideMenuBar: true,
     webPreferences: { preload: join(__dirname, 'tabs-preload.js') },
   });
   win = w;
+  // Tiêu đề cửa sổ luôn là tên ứng dụng (bản dev: "Vala Desktop (dev)"), không theo tiêu đề trang thanh tab.
+  w.on('page-title-updated', (e) => e.preventDefault());
   w.once('ready-to-show', () => w.show());
   // Đóng cửa sổ chỉ ẩn xuống khay hệ thống (các tab, phiên vẫn giữ); "Thoát" mới đóng thật.
   w.on('close', (e) => { if (!quitting) { e.preventDefault(); w.hide(); } });
@@ -289,7 +291,7 @@ function pushState(): void {
   const { updateLabel, ...plain } = t;
   const up = pendingUpdate();
   win.webContents.send('tabs:state', {
-    lang: s.lang, t: plain, active, tabs: list,
+    lang: s.lang, t: plain, active, tabs: list, dev: IS_DEV,
     update: up ? { label: updateLabel(up.version), title: t.updateTitle } : null,
   });
 }
