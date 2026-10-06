@@ -9,5 +9,5 @@ export async function startGrant(source: string): Promise<void> {
 
 /** Chuyển sang trang đăng nhập SSO để vào cổng, quay về đúng trang đang xem. */
 export function startLogin(next = appPath() + window.location.search): void {
-  window.location.assign(`${BASE}/api/v1/auth/login?next=${encodeURIComponent(next)}`);
+  window.location.assign(`${BASE}/api/v1/auth/sso/login?next=${encodeURIComponent(next)}`);
 }
