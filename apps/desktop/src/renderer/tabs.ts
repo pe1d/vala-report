@@ -3,13 +3,14 @@
  * Chỉ có thanh tab (không ô địa chỉ, không nút điều hướng — đây là ứng dụng, không phải trình duyệt).
  * Trạng thái (danh sách tab, tab đang chọn, chữ theo ngôn ngữ) do tiến trình chính gửi sang qua 'tabs:state'.
  * Dựng DOM bằng textContent, không dùng innerHTML (tiêu đề tab là chữ của trang web bất kỳ).
+ * Mỗi tab giữ nguyên phần tử giữa các lần vẽ, chỉ cập nhật chỗ đổi — dựng lại toàn bộ làm favicon tải lại, thanh tab giật.
+ * Không có biểu tượng "đang tải": trang như vala.bkav.com tải ngầm liên tục, tab sẽ xoay mãi.
  */
 interface TabView {
   key: string;
   pinned: boolean;
   label: string;
   title: string;
-  loading: boolean;
   favicon: string | null;
   status: 'ok' | 'warn' | 'off' | null;
 }
@@ -51,74 +52,98 @@ interface ValaTabsApi {
     ok: 'bg-emerald-500', warn: 'bg-amber-500', off: 'bg-slate-400 dark:bg-slate-500',
   };
 
-  function tabEl(tab: TabView, isActive: boolean, s: TabsState): HTMLElement {
+  /** Phần tử của một tab: tạo một lần, cập nhật tại chỗ. Ô biểu tượng cố định 16px để tên tab không xê dịch. */
+  interface TabNode { el: HTMLElement; icon: HTMLImageElement; label: HTMLElement; dot: HTMLElement; close: HTMLButtonElement | null }
+  const nodes = new Map<string, TabNode>();
+  const separator = document.createElement('span');
+  separator.className = 'mx-1 mb-2 h-4 w-px shrink-0 bg-slate-400 dark:bg-slate-700';
+
+  function createNode(tab: TabView): TabNode {
     const el = document.createElement('div');
     el.setAttribute('role', 'tab');
-    el.setAttribute('aria-selected', String(isActive));
-    el.title = tab.status ? `${tab.title} — ${s.t.status[tab.status]}` : tab.title;
-    el.className = [
+    el.addEventListener('mousedown', (e) => { if (e.button === 0) void api.activate(tab.key); });
+    // Bấm chuột giữa ⇒ đóng tab (tab đóng được).
+    el.addEventListener('auxclick', (e) => { if (e.button === 1 && !tab.pinned) void api.close(tab.key); });
+    const box = document.createElement('span');
+    box.className = 'flex h-4 w-4 shrink-0 items-center justify-center';
+    const icon = document.createElement('img');
+    icon.alt = '';
+    icon.className = 'h-4 w-4';
+    icon.hidden = true;
+    icon.addEventListener('error', () => { icon.hidden = true; });
+    icon.addEventListener('load', () => { icon.hidden = false; });
+    box.append(icon);
+    const label = document.createElement('span');
+    label.className = 'min-w-0 flex-1 truncate';
+    const dot = document.createElement('span');
+    dot.hidden = true;
+    el.append(box, label, dot);
+    let close: HTMLButtonElement | null = null;
+    if (!tab.pinned) {
+      close = document.createElement('button');
+      close.type = 'button';
+      close.textContent = '×';
+      close.className = 'flex h-5 w-5 shrink-0 items-center justify-center rounded text-base leading-none text-slate-500 hover:bg-slate-200 dark:text-slate-400 dark:hover:bg-slate-700';
+      close.addEventListener('mousedown', (e) => e.stopPropagation());
+      close.addEventListener('click', () => void api.close(tab.key));
+      el.append(close);
+    }
+    return { el, icon, label, dot, close };
+  }
+
+  const setIf = (el: HTMLElement, attr: string, v: string) => { if (el.getAttribute(attr) !== v) el.setAttribute(attr, v); };
+
+  function updateNode(n: TabNode, tab: TabView, isActive: boolean, s: TabsState) {
+    setIf(n.el, 'aria-selected', String(isActive));
+    setIf(n.el, 'title', tab.status ? `${tab.title} — ${s.t.status[tab.status]}` : tab.title);
+    setIf(n.el, 'class', [
       'group flex h-[32px] shrink-0 cursor-default items-center gap-2 rounded-t-lg px-3 text-[13px]',
       tab.pinned ? 'max-w-[180px]' : 'w-[200px] min-w-[90px] shrink',
       isActive
         ? 'bg-white text-slate-900 dark:bg-slate-900 dark:text-slate-100'
         : 'text-slate-600 hover:bg-slate-300/70 dark:text-slate-400 dark:hover:bg-slate-800/70',
-    ].join(' ');
-    el.addEventListener('mousedown', (e) => { if (e.button === 0) void api.activate(tab.key); });
-    // Bấm chuột giữa ⇒ đóng tab (như Edge).
-    el.addEventListener('auxclick', (e) => { if (e.button === 1 && !tab.pinned) void api.close(tab.key); });
-
-    if (tab.loading) {
-      const spin = document.createElement('span');
-      spin.className = 'h-3.5 w-3.5 shrink-0 animate-spin rounded-full border-2 border-slate-300 border-t-blue-600 dark:border-slate-600 dark:border-t-blue-400';
-      el.append(spin);
-    } else if (tab.favicon) {
-      const img = document.createElement('img');
-      img.src = tab.favicon;
-      img.alt = '';
-      img.className = 'h-4 w-4 shrink-0';
-      img.addEventListener('error', () => img.remove());
-      el.append(img);
+    ].join(' '));
+    // Chỉ đổi ảnh khi địa chỉ favicon đổi — gán lại cùng địa chỉ cũng làm ảnh nháy.
+    const fav = tab.favicon ?? '';
+    if ((n.icon.dataset.src ?? '') !== fav) {
+      n.icon.dataset.src = fav;
+      n.icon.hidden = true;
+      if (fav) n.icon.src = fav; else n.icon.removeAttribute('src');
     }
-    const label = document.createElement('span');
-    label.className = 'min-w-0 flex-1 truncate';
-    label.textContent = tab.label;
-    el.append(label);
+    if (n.label.textContent !== tab.label) n.label.textContent = tab.label;
+    n.dot.hidden = !tab.status;
     if (tab.status) {
-      const dot = document.createElement('span');
-      dot.className = `h-2 w-2 shrink-0 rounded-full ${DOT[tab.status]}`;
-      dot.setAttribute('aria-label', s.t.status[tab.status]);
-      el.append(dot);
+      setIf(n.dot, 'class', `h-2 w-2 shrink-0 rounded-full ${DOT[tab.status]}`);
+      setIf(n.dot, 'aria-label', s.t.status[tab.status]);
     }
-    if (!tab.pinned) {
-      const x = document.createElement('button');
-      x.type = 'button';
-      x.textContent = '×';
-      x.title = s.t.close;
-      x.setAttribute('aria-label', s.t.close);
-      x.className = 'flex h-5 w-5 shrink-0 items-center justify-center rounded text-base leading-none text-slate-500 hover:bg-slate-200 dark:text-slate-400 dark:hover:bg-slate-700';
-      x.addEventListener('mousedown', (e) => e.stopPropagation());
-      x.addEventListener('click', () => void api.close(tab.key));
-      el.append(x);
-    }
-    return el;
+    if (n.close) { setIf(n.close, 'title', s.t.close); setIf(n.close, 'aria-label', s.t.close); }
   }
+
+  let lastActive: string | null = null;
 
   function render(s: TabsState) {
     st = s;
     document.documentElement.lang = s.lang;
     const list = $('tabs');
-    list.replaceChildren(...s.tabs.flatMap((tab, i) => {
-      const el = tabEl(tab, tab.key === s.active, s);
-      // Vạch ngăn giữa nhóm tab ghim và tab thường.
+    const keys = new Set(s.tabs.map((t) => t.key));
+    for (const [k] of nodes) if (!keys.has(k)) nodes.delete(k);
+    const wanted: HTMLElement[] = [];
+    s.tabs.forEach((tab, i) => {
+      let n = nodes.get(tab.key);
+      if (!n) { n = createNode(tab); nodes.set(tab.key, n); }
+      updateNode(n, tab, tab.key === s.active, s);
+      wanted.push(n.el);
+      // Vạch ngăn giữa nhóm tab cố định và tab đóng được.
       const next = s.tabs[i + 1];
-      if (tab.pinned && next && !next.pinned) {
-        const sep = document.createElement('span');
-        sep.className = 'mx-1 mb-2 h-4 w-px shrink-0 bg-slate-400 dark:bg-slate-700';
-        return [el, sep];
-      }
-      return [el];
-    }));
-    list.querySelector('[aria-selected=true]')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+      if (tab.pinned && next && !next.pinned) wanted.push(separator);
+    });
+    // Chỉ sắp lại khi thứ tự đổi (thêm/bớt tab) — giữ nguyên phần tử nên không nháy.
+    const current = Array.from(list.children);
+    if (current.length !== wanted.length || current.some((c, i) => c !== wanted[i])) list.replaceChildren(...wanted);
+    if (s.active !== lastActive) {
+      lastActive = s.active;
+      list.querySelector('[aria-selected=true]')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    }
 
     $('menu').title = s.t.menu;
     $('menu').setAttribute('aria-label', s.t.menu);

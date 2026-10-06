@@ -18,12 +18,12 @@ import { cachedSources, events, statusOf, type SourceFull } from './sync';
 import { openTarget, tabStatus, type TabStatus } from './tabs-model';
 
 const M = messages({
-  home: 'Vala', reports: 'Báo cáo', newTab: 'Trang', loading: 'Đang tải…',
+  home: 'Vala', reports: 'Báo cáo', newTab: 'Trang',
   close: 'Đóng tab (Ctrl+W)', menu: 'Menu',
   lightMode: 'Chế độ sáng', darkMode: 'Chế độ tối',
   status: { ok: 'Đã kết nối', warn: 'Cần đăng nhập lại', off: 'Chưa kết nối' } as Record<TabStatus, string>,
 }, {
-  home: 'Vala', reports: 'Reports', newTab: 'Page', loading: 'Loading…',
+  home: 'Vala', reports: 'Reports', newTab: 'Page',
   close: 'Close tab (Ctrl+W)', menu: 'Menu',
   lightMode: 'Light mode', darkMode: 'Dark mode',
   status: { ok: 'Connected', warn: 'Needs signing in again', off: 'Not connected' } as Record<TabStatus, string>,
@@ -139,7 +139,9 @@ function createView(t: Tab): WebContentsView {
     return { action: 'deny' };
   });
   const push = () => pushState();
-  for (const ev of ['page-title-updated', 'did-start-loading', 'did-stop-loading', 'did-navigate', 'did-navigate-in-page'] as const) wc.on(ev as 'did-stop-loading', push);
+  // Chỉ vẽ lại thanh tab khi tiêu đề đổi / trang chính điều hướng — không theo sự kiện tải khung con (trang như vala.bkav.com,
+  // eGov tải ngầm liên tục).
+  for (const ev of ['page-title-updated', 'did-navigate'] as const) wc.on(ev as 'did-navigate', push);
   wc.on('page-favicon-updated', (_e, favicons) => { t.favicon = favicons.find((f) => /^https?:/.test(f)); push(); });
   wc.on('before-input-event', (e, input) => { if (shortcut(input)) e.preventDefault(); });
   void wc.loadURL(t.url);
@@ -159,10 +161,11 @@ function destroyTab(key: string): void {
   if (active === key) active = null;
 }
 
+/** Đưa cửa sổ lên — chỉ khi đang ẩn/thu nhỏ/không được chọn (gọi show/focus thừa làm cửa sổ giật trên vài trình quản lý cửa sổ). */
 function reveal(w: BrowserWindow) {
   if (w.isMinimized()) w.restore();
-  w.show();
-  w.focus();
+  if (!w.isVisible()) w.show();
+  if (!w.isFocused()) w.focus();
 }
 
 /** Chọn một tab (tạo cửa sổ / nạp trang nếu cần) và đưa cửa sổ lên trước. */
@@ -172,17 +175,17 @@ export function showTab(key: string, opts: { reloadTo?: string } = {}): boolean 
   const t = tabs.get(key);
   if (!t) return false;
   const prev = active ? tabs.get(active) : undefined;
+  if (!t.view) createView(t);
+  else if (opts.reloadTo) void t.view.webContents.loadURL(opts.reloadTo);
+  // Hiện tab mới TRƯỚC rồi mới ẩn tab cũ: làm ngược lại sẽ lộ nền cửa sổ trong một khung hình (nháy khi chuyển tab).
+  t.view!.setVisible(true);
   if (prev && prev.key !== key) {
     prev.view?.setVisible(false);
     if (prev.since) hooks.onLeave(prev.key, Date.now() - prev.since);
     prev.since = undefined;
   }
-  if (!t.view) createView(t);
-  else if (opts.reloadTo) void t.view.webContents.loadURL(opts.reloadTo);
-  t.view!.setVisible(true);
   t.since = t.since ?? Date.now();
   active = key;
-  layout();
   reveal(w);
   t.view!.webContents.focus();
   pushState();
@@ -263,9 +266,8 @@ function pushState(): void {
     return {
       key,
       pinned: tab.pinned,
-      label: def?.label ?? src?.ten ?? (title || (wc?.isLoading() ? t.loading : t.newTab)),
+      label: def?.label ?? src?.ten ?? (title || t.newTab),
       title: title || def?.label || src?.ten || '',
-      loading: !!wc?.isLoading(),
       favicon: tab.favicon ?? null,
       status: src ? tabStatus(statusOf(src.code)?.result, src.state) : null,
     };
