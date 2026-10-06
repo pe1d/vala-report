@@ -1,10 +1,11 @@
 /**
- * Cửa sổ tab kiểu Edge: một BrowserWindow, phần trên là thanh tab + thanh điều hướng (resources/tabs.html), mỗi tab là
- * một WebContentsView đặt bên dưới, chỉ tab đang chọn hiện.
+ * Cửa sổ tab: một BrowserWindow, phần trên chỉ là thanh tab (resources/tabs.html), mỗi tab là một WebContentsView đặt bên
+ * dưới, chỉ tab đang chọn hiện. Cố ý KHÔNG có ô địa chỉ, nút điều hướng, nút tab mới: đây là ứng dụng làm việc, không phải
+ * trình duyệt — người dùng không thấy và không gõ địa chỉ trang.
  *
  * Tab ghim (không đóng được): Vala (trang chính) · Báo cáo (cổng Vala Reporting) · mỗi hệ thống nguồn. Tab ghim chỉ nạp
- * trang khi được bấm lần đầu, để lúc khởi động không mở eGov/eTask vô ích. Tab thường: link target=_blank, window.open,
- * Ctrl+T. Popup có kích thước và form POST vẫn mở cửa sổ thật (xem tabs-model.ts openTarget).
+ * trang khi được bấm lần đầu, để lúc khởi động không mở eGov/eTask vô ích. Tab thường: link target=_blank, window.open
+ * trong trang. Popup có kích thước và form POST vẫn mở cửa sổ thật (xem tabs-model.ts openTarget).
  *
  * Mọi tab dùng portal-preload.js (cầu nối với cổng) — tiến trình chính tự kiểm origin trước khi trả lời, nên tab của
  * trang khác không gọi được gì.
@@ -14,24 +15,22 @@ import { app, BrowserWindow, ipcMain, shell, WebContentsView, type HandlerDetail
 import { messages, normLang } from './i18n';
 import { getSettings, setSettings } from './settings';
 import { cachedSources, events, statusOf, type SourceFull } from './sync';
-import { addressToUrl, openTarget, tabStatus, type TabStatus } from './tabs-model';
+import { openTarget, tabStatus, type TabStatus } from './tabs-model';
 
 const M = messages({
-  home: 'Vala', reports: 'Báo cáo', newTab: 'Tab mới', loading: 'Đang tải…',
-  back: 'Quay lại (Alt+←)', forward: 'Tiến tới (Alt+→)', reload: 'Tải lại (F5)', stop: 'Dừng tải',
-  close: 'Đóng tab (Ctrl+W)', add: 'Tab mới (Ctrl+T)', menu: 'Menu', address: 'Nhập địa chỉ trang',
+  home: 'Vala', reports: 'Báo cáo', newTab: 'Trang', loading: 'Đang tải…',
+  close: 'Đóng tab (Ctrl+W)', menu: 'Menu',
   lightMode: 'Chế độ sáng', darkMode: 'Chế độ tối',
   status: { ok: 'Đã kết nối', warn: 'Cần đăng nhập lại', off: 'Chưa kết nối' } as Record<TabStatus, string>,
 }, {
-  home: 'Vala', reports: 'Reports', newTab: 'New tab', loading: 'Loading…',
-  back: 'Back (Alt+←)', forward: 'Forward (Alt+→)', reload: 'Reload (F5)', stop: 'Stop loading',
-  close: 'Close tab (Ctrl+W)', add: 'New tab (Ctrl+T)', menu: 'Menu', address: 'Enter a page address',
+  home: 'Vala', reports: 'Reports', newTab: 'Page', loading: 'Loading…',
+  close: 'Close tab (Ctrl+W)', menu: 'Menu',
   lightMode: 'Light mode', darkMode: 'Dark mode',
   status: { ok: 'Connected', warn: 'Needs signing in again', off: 'Not connected' } as Record<TabStatus, string>,
 });
 
-/** Chiều cao thanh tab + thanh điều hướng — phải khớp resources/tabs.html (38px + 42px). */
-const TOOLBAR_H = 80;
+/** Chiều cao thanh tab — phải khớp resources/tabs.html (40px). */
+const TOOLBAR_H = 40;
 const ICON = join(__dirname, '../resources/icon.png');
 const TAB_PRELOAD = join(__dirname, 'portal-preload.js');
 
@@ -240,34 +239,21 @@ function pushState(): void {
       key,
       pinned: tab.pinned,
       label: def?.label ?? (title || (wc?.isLoading() ? t.loading : t.newTab)),
-      title: title || def?.label || tab.url,
+      title: title || def?.label || '',
       loading: !!wc?.isLoading(),
       favicon: tab.favicon ?? null,
       status: def?.src ? tabStatus(statusOf(def.src.code)?.result, def.src.state) : null,
     };
   });
-  const wc = activeWc();
-  win.webContents.send('tabs:state', {
-    lang: s.lang,
-    t,
-    active,
-    tabs: list,
-    nav: {
-      url: wc?.getURL() ?? '',
-      canBack: !!wc?.navigationHistory.canGoBack(),
-      canForward: !!wc?.navigationHistory.canGoForward(),
-      loading: !!wc?.isLoading(),
-    },
-  });
+  win.webContents.send('tabs:state', { lang: s.lang, t, active, tabs: list });
 }
 
-/** Phím tắt như trình duyệt, bắt ở cả thanh tab lẫn trong trang. Trả true nếu đã xử lý. */
+/** Phím tắt chuyển/đóng tab, tải lại, quay lại — bắt ở cả thanh tab lẫn trong trang. Trả true nếu đã xử lý. */
 function shortcut(input: Input): boolean {
   if (input.type !== 'keyDown') return false;
   const ctrl = input.control || input.meta;
   const key = input.key;
   const keys = visibleKeys();
-  if (ctrl && !input.shift && key.toLowerCase() === 't') { openTab(getSettings().homeUrl); return true; }
   if (ctrl && key.toLowerCase() === 'w') { if (active) closeTab(active); return true; }
   if (ctrl && key === 'Tab') {
     const i = active ? keys.indexOf(active) : 0;
@@ -280,7 +266,6 @@ function shortcut(input: Input): boolean {
     if (k) showTab(k);
     return true;
   }
-  if (ctrl && key.toLowerCase() === 'l') { win?.webContents.focus(); win?.webContents.send('tabs:focus-address'); return true; }
   if (key === 'F5' || (ctrl && key.toLowerCase() === 'r')) { activeWc()?.reload(); return true; }
   if (input.alt && key === 'ArrowLeft') { const h = activeWc()?.navigationHistory; if (h?.canGoBack()) h.goBack(); return true; }
   if (input.alt && key === 'ArrowRight') { const h = activeWc()?.navigationHistory; if (h?.canGoForward()) h.goForward(); return true; }
@@ -293,24 +278,6 @@ function registerIpc(): void {
   ipcMain.handle('tabs:ready', (e) => { own(e); if (!active) showTab('home'); else pushState(); });
   ipcMain.handle('tabs:activate', (e, key: unknown) => { own(e); if (typeof key === 'string') showTab(key); });
   ipcMain.handle('tabs:close', (e, key: unknown) => { own(e); if (typeof key === 'string') closeTab(key); });
-  ipcMain.handle('tabs:new', (e) => { own(e); openTab(getSettings().homeUrl); });
-  ipcMain.handle('tabs:nav', (e, action: unknown) => {
-    own(e);
-    const wc = activeWc();
-    if (!wc) return;
-    if (action === 'back' && wc.navigationHistory.canGoBack()) wc.navigationHistory.goBack();
-    if (action === 'forward' && wc.navigationHistory.canGoForward()) wc.navigationHistory.goForward();
-    if (action === 'reload') wc.reload();
-    if (action === 'stop') wc.stop();
-  });
-  ipcMain.handle('tabs:go', (e, raw: unknown) => {
-    own(e);
-    const url = typeof raw === 'string' ? addressToUrl(raw) : null;
-    if (!url) return false;
-    const wc = activeWc();
-    if (wc) void wc.loadURL(url); else openTab(url);
-    return true;
-  });
   ipcMain.handle('tabs:menu', (e, pos: { x?: unknown; y?: unknown }) => {
     own(e);
     hooks.menu().popup({ window: win!, x: Math.round(Number(pos?.x) || 0), y: Math.round(Number(pos?.y) || 0) });

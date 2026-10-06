@@ -1,6 +1,7 @@
 /**
  * Script thanh tab (chạy trong trang, không có Node). Không import gì: build ra script thường.
- * Trạng thái (danh sách tab, tab đang chọn, địa chỉ, chữ theo ngôn ngữ) do tiến trình chính gửi sang qua 'tabs:state'.
+ * Chỉ có thanh tab (không ô địa chỉ, không nút điều hướng — đây là ứng dụng, không phải trình duyệt).
+ * Trạng thái (danh sách tab, tab đang chọn, chữ theo ngôn ngữ) do tiến trình chính gửi sang qua 'tabs:state'.
  * Dựng DOM bằng textContent, không dùng innerHTML (tiêu đề tab là chữ của trang web bất kỳ).
  */
 interface TabView {
@@ -17,27 +18,20 @@ interface TabsState {
   t: Record<string, string> & { status: Record<'ok' | 'warn' | 'off', string> };
   active: string | null;
   tabs: TabView[];
-  nav: { url: string; canBack: boolean; canForward: boolean; loading: boolean };
 }
 interface ValaTabsApi {
   ready(): Promise<void>;
   activate(key: string): Promise<void>;
   close(key: string): Promise<void>;
-  newTab(): Promise<void>;
-  nav(action: 'back' | 'forward' | 'reload' | 'stop'): Promise<void>;
-  go(address: string): Promise<boolean>;
   menu(x: number, y: number): Promise<void>;
   setLang(lang: string): Promise<void>;
   onState(cb: (s: TabsState) => void): void;
-  onFocusAddress(cb: () => void): void;
 }
 
 (() => {
   const api = (window as unknown as { valaTabs: ValaTabsApi }).valaTabs;
   const $ = <E extends HTMLElement>(id: string) => document.getElementById(id) as E;
-  const address = $('address') as HTMLInputElement;
   let st: TabsState | null = null;
-  let editing = false;
 
   // ---- sáng / tối: dùng chung lựa chọn với trang Cài đặt (cùng localStorage), mặc định theo hệ điều hành ----
   const THEME_KEY = 'vala.theme';
@@ -63,7 +57,7 @@ interface ValaTabsApi {
     el.setAttribute('aria-selected', String(isActive));
     el.title = tab.status ? `${tab.title} — ${s.t.status[tab.status]}` : tab.title;
     el.className = [
-      'group flex h-[33px] shrink-0 cursor-default items-center gap-2 rounded-t-lg px-3 text-[13px]',
+      'group flex h-[32px] shrink-0 cursor-default items-center gap-2 rounded-t-lg px-3 text-[13px]',
       tab.pinned ? 'max-w-[180px]' : 'w-[200px] min-w-[90px] shrink',
       isActive
         ? 'bg-white text-slate-900 dark:bg-slate-900 dark:text-slate-100'
@@ -126,23 +120,12 @@ interface ValaTabsApi {
     }));
     list.querySelector('[aria-selected=true]')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
 
-    const tip = (id: string, text: string) => { const b = $(id); b.title = text; b.setAttribute('aria-label', text); };
-    tip('add', s.t.add); tip('back', s.t.back); tip('forward', s.t.forward); tip('menu', s.t.menu);
-    tip('reload', s.nav.loading ? s.t.stop : s.t.reload);
-    $('reload').textContent = s.nav.loading ? '✕' : '⟳';
-    ($('back') as HTMLButtonElement).disabled = !s.nav.canBack;
-    ($('forward') as HTMLButtonElement).disabled = !s.nav.canForward;
-    address.placeholder = s.t.address;
-    address.setAttribute('aria-label', s.t.address);
-    if (!editing) address.value = s.nav.url;
+    $('menu').title = s.t.menu;
+    $('menu').setAttribute('aria-label', s.t.menu);
     for (const b of Array.from(document.querySelectorAll<HTMLButtonElement>('[data-lang]'))) b.setAttribute('aria-pressed', String(b.dataset.lang === s.lang));
     applyTheme();
   }
 
-  $('add').addEventListener('click', () => void api.newTab());
-  $('back').addEventListener('click', () => void api.nav('back'));
-  $('forward').addEventListener('click', () => void api.nav('forward'));
-  $('reload').addEventListener('click', () => void api.nav(st?.nav.loading ? 'stop' : 'reload'));
   $('menu').addEventListener('click', () => {
     const r = $('menu').getBoundingClientRect();
     void api.menu(r.left, r.bottom);
@@ -151,16 +134,7 @@ interface ValaTabsApi {
     b.addEventListener('click', () => void api.setLang(b.dataset.lang!));
   }
 
-  address.addEventListener('focus', () => { editing = true; address.select(); });
-  address.addEventListener('blur', () => { editing = false; if (st) address.value = st.nav.url; });
-  address.addEventListener('keydown', (e) => { if (e.key === 'Escape') address.blur(); });
-  $('address-form').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    if (await api.go(address.value)) address.blur();
-  });
-
   api.onState(render);
-  api.onFocusAddress(() => address.focus());
   applyTheme();
   void api.ready();
 })();

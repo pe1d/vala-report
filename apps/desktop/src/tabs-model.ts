@@ -1,18 +1,5 @@
-/** Quy tắc thuần của cửa sổ tab (không phụ thuộc Electron, có test): ô địa chỉ, link mở cửa sổ mới, chấm trạng thái. */
+/** Quy tắc thuần của cửa sổ tab (không phụ thuộc Electron, có test): link mở cửa sổ mới, chấm trạng thái. */
 import type { SourceFull, SyncResult } from './sync';
-
-/** Chuỗi gõ ở ô địa chỉ ⇒ URL http(s), hoặc null. Thiếu giao thức thì coi là https. */
-export function addressToUrl(raw: string): string | null {
-  const s = raw.trim();
-  if (!s || /\s/.test(s)) return null;
-  const withScheme = /^[a-z][a-z0-9+.-]*:/i.test(s) ? s : `https://${s}`;
-  try {
-    const u = new URL(withScheme);
-    return u.protocol === 'https:' || u.protocol === 'http:' ? u.toString() : null;
-  } catch {
-    return null;
-  }
-}
 
 export type OpenTarget =
   | { kind: 'tab'; foreground: boolean }

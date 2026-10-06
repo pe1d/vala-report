@@ -6,26 +6,18 @@
   <title>Vala Desktop</title>
   <link rel="stylesheet" href="../dist/renderer/ui.css" />
 </head>
-<!-- Chiều cao phải khớp TOOLBAR_H trong src/browser.ts: thanh tab 38px + thanh điều hướng 42px. -->
-<body class="h-[80px] select-none overflow-hidden bg-slate-200 text-slate-900 antialiased dark:bg-slate-950 dark:text-slate-100">
-  <div class="flex h-[38px] items-end gap-1 px-2 pt-1">
+<!-- Chỉ có thanh tab, không có ô địa chỉ / nút điều hướng. Chiều cao phải khớp TOOLBAR_H trong src/browser.ts (40px). -->
+<body class="h-[40px] select-none overflow-hidden bg-slate-200 text-slate-900 antialiased dark:bg-slate-950 dark:text-slate-100">
+  <div class="flex h-[40px] items-end gap-2 border-b border-slate-300 px-2 pt-1 dark:border-slate-800">
     <div id="tabs" class="flex min-w-0 flex-1 items-end gap-1 overflow-x-auto [scrollbar-width:none]" role="tablist"></div>
-    <button type="button" id="add" class="mb-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-lg leading-none text-slate-600 hover:bg-slate-300 dark:text-slate-300 dark:hover:bg-slate-800">+</button>
-  </div>
-  <div class="flex h-[42px] items-center gap-1 border-b border-slate-300 bg-white px-2 dark:border-slate-800 dark:bg-slate-900">
-    <button type="button" id="back" class="nav-btn flex h-8 w-8 items-center justify-center rounded-md text-slate-700 hover:bg-slate-100 disabled:opacity-30 disabled:hover:bg-transparent dark:text-slate-200 dark:hover:bg-slate-800">←</button>
-    <button type="button" id="forward" class="nav-btn flex h-8 w-8 items-center justify-center rounded-md text-slate-700 hover:bg-slate-100 disabled:opacity-30 disabled:hover:bg-transparent dark:text-slate-200 dark:hover:bg-slate-800">→</button>
-    <button type="button" id="reload" class="nav-btn flex h-8 w-8 items-center justify-center rounded-md text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800">⟳</button>
-    <form id="address-form" class="min-w-0 flex-1">
-      <input id="address" spellcheck="false" autocomplete="off"
-        class="h-8 w-full rounded-full border border-transparent bg-slate-100 px-4 text-sm text-slate-800 outline-none focus:border-blue-500 focus:bg-white dark:bg-slate-800 dark:text-slate-100 dark:focus:bg-slate-950" />
-    </form>
-    <div class="flex overflow-hidden rounded-md border border-slate-300 text-xs dark:border-slate-700">
-      <button type="button" data-lang="vi" class="px-2 py-1 aria-pressed:bg-slate-900 aria-pressed:text-white dark:aria-pressed:bg-slate-100 dark:aria-pressed:text-slate-900">VI</button>
-      <button type="button" data-lang="en" class="px-2 py-1 aria-pressed:bg-slate-900 aria-pressed:text-white dark:aria-pressed:bg-slate-100 dark:aria-pressed:text-slate-900">EN</button>
+    <div class="mb-1 flex shrink-0 items-center gap-1">
+      <div class="flex overflow-hidden rounded-md border border-slate-300 text-xs dark:border-slate-700">
+        <button type="button" data-lang="vi" class="px-2 py-0.5 aria-pressed:bg-slate-900 aria-pressed:text-white dark:aria-pressed:bg-slate-100 dark:aria-pressed:text-slate-900">VI</button>
+        <button type="button" data-lang="en" class="px-2 py-0.5 aria-pressed:bg-slate-900 aria-pressed:text-white dark:aria-pressed:bg-slate-100 dark:aria-pressed:text-slate-900">EN</button>
+      </div>
+      <button type="button" id="theme" class="flex h-7 w-7 items-center justify-center rounded-md text-slate-700 hover:bg-slate-300 dark:text-slate-200 dark:hover:bg-slate-800">☾</button>
+      <button type="button" id="menu" class="flex h-7 w-7 items-center justify-center rounded-md text-lg text-slate-700 hover:bg-slate-300 dark:text-slate-200 dark:hover:bg-slate-800">⋯</button>
     </div>
-    <button type="button" id="theme" class="flex h-8 w-8 items-center justify-center rounded-md text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800">☾</button>
-    <button type="button" id="menu" class="flex h-8 w-8 items-center justify-center rounded-md text-lg text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800">⋯</button>
   </div>
   <script src="../dist/renderer/tabs.js"></script>
 </body>

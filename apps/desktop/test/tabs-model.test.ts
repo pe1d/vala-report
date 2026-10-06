@@ -1,19 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addressToUrl, openTarget, tabStatus } from '../src/tabs-model';
-
-describe('addressToUrl (ô địa chỉ)', () => {
-  it('thiếu giao thức ⇒ thêm https://', () => expect(addressToUrl('egov.bkav.com')).toBe('https://egov.bkav.com/'));
-  it('giữ http(s) có sẵn', () => {
-    expect(addressToUrl(' https://vala.bkav.com/newfeed ')).toBe('https://vala.bkav.com/newfeed');
-    expect(addressToUrl('http://localhost:5173/uy-quyen')).toBe('http://localhost:5173/uy-quyen');
-  });
-  it('từ chối giao thức khác và chuỗi rỗng', () => {
-    expect(addressToUrl('javascript:alert(1)')).toBeNull();
-    expect(addressToUrl('file:///etc/passwd')).toBeNull();
-    expect(addressToUrl('   ')).toBeNull();
-  });
-  it('chữ có khoảng trắng không phải địa chỉ ⇒ null', () => expect(addressToUrl('văn bản đến')).toBeNull());
-});
+import { openTarget, tabStatus } from '../src/tabs-model';
 
 describe('openTarget (link mở cửa sổ mới)', () => {
   it('target=_blank / window.open không kèm kích thước ⇒ tab mới', () => {
