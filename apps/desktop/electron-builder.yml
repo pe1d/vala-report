@@ -32,8 +32,16 @@ nsis:
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: true
   shortcutName: Vala Desktop
+# Ubuntu: gói .deb (cài bằng quyền quản trị, kèm hồ sơ AppArmor để sandbox của Chromium chạy được trên Ubuntu 24.04+ —
+# AppImage bị dừng ngay khi mở trên 24.04). Tự cập nhật qua latest-linux.yml; cài bản mới thì Ubuntu hỏi mật khẩu quản trị.
 linux:
-  target: [AppImage]
+  target: [deb]
   executableName: vala-desktop
+  artifactName: vala-desktop-${version}-linux-amd64.${ext}
   icon: resources/icon-256.png
   category: Office
+  maintainer: Bkav
+  synopsis: Vala Desktop
+deb:
+  afterInstall: packaging/deb-after-install.sh
+  afterRemove: packaging/deb-after-remove.sh

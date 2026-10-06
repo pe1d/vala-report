@@ -133,24 +133,33 @@ nhất được giữ lại để quay lại khi cần. Đổi `.env.prod` hoặ
 
 ## 4b. Phát hành bản Vala Desktop mới (tự cập nhật)
 
-Vala Desktop hỏi `{PUBLIC_WEB_URL}/desktop/latest.yml` lúc mở và 4 giờ một lần. Có bản mới thì tự tải, kiểm mã băm sha512,
-rồi hiện nút **"Đã có bản … — Cập nhật"** trên thanh tab (không bấm thì tự cài khi thoát). Chỉ bản **cài đặt** (NSIS)
-tự cập nhật được, bản zip thì không.
+Vala Desktop hỏi `{PUBLIC_WEB_URL}/desktop/latest.yml` (Windows) / `latest-linux.yml` (Ubuntu) lúc mở và 4 giờ một lần.
+Có bản mới thì tự tải, kiểm mã băm sha512, rồi hiện nút **"Đã có bản … — Cập nhật"** trên thanh tab. Windows: không bấm thì
+tự cài khi thoát. Ubuntu: chỉ cài khi bấm, và Ubuntu hỏi mật khẩu quản trị. Chỉ bản **cài đặt** tự cập nhật được (Windows
+NSIS, Ubuntu .deb), bản zip thì không.
 
-1. Tăng `version` trong `apps/desktop/package.json` (ứng dụng chỉ cập nhật lên bản cao hơn), rồi build bộ cài trên máy
-   dev: `apps/desktop/scripts/package-win.sh` (chạy trong container `electronuserland/builder:wine`, không cần cài wine;
-   máy Windows thì `pnpm --filter @vala/desktop package`). Kết quả trong `apps/desktop/release/`:
-   `vala-desktop-<phiên bản>-win-x64.exe`, `….exe.blockmap`, `latest.yml`.
-2. Chép 3 file đó lên máy chủ (vd `scp apps/desktop/release/{latest.yml,*.exe,*.blockmap} <user>@10.2.65.146:/tmp/vala-desktop/`)
-   rồi trên máy chủ:
+| | Windows | Ubuntu |
+|---|---|---|
+| Build (trên máy dev Linux) | `apps/desktop/scripts/package-win.sh` (Docker có wine) | `pnpm --filter @vala/desktop package:linux` |
+| File trong `apps/desktop/release/` | `vala-desktop-<v>-win-x64.exe`, `.exe.blockmap`, `latest.yml` | `vala-desktop-<v>-linux-amd64.deb`, `latest-linux.yml` |
+| Liên kết tải lần đầu | `{PUBLIC_WEB_URL}/desktop/vala-desktop-setup.exe` | `{PUBLIC_WEB_URL}/desktop/vala-desktop.deb` |
+| Cài | chạy file, cảnh báo "Windows protected your PC" ⇒ More info → Run anyway (chưa ký số) | `sudo apt install ./vala-desktop.deb` (cần quyền quản trị) |
+
+Gói .deb kèm hồ sơ AppArmor `/etc/apparmor.d/vala-desktop` (như Ubuntu cấp cho chrome / code): Ubuntu 24.04 chặn user
+namespace của ứng dụng không có hồ sơ, sandbox của Chromium không chạy được và ứng dụng dừng ngay khi mở. Vì vậy **không
+phát hành AppImage** (không mang theo được hồ sơ này; chạy được chỉ khi tắt sandbox — không an toàn).
+
+1. Tăng `version` trong `apps/desktop/package.json` (ứng dụng chỉ cập nhật lên bản cao hơn), rồi build theo bảng trên
+   (Windows trên máy Windows thì `pnpm --filter @vala/desktop package`).
+2. Chép các file trong `apps/desktop/release/` lên máy chủ (vd `scp apps/desktop/release/{latest*.yml,*.exe,*.blockmap,*.deb}
+   <user>@10.2.65.146:/tmp/vala-desktop/`) rồi trên máy chủ:
 
 ```bash
-cd /opt/vala-report && deploy/publish-desktop.sh /tmp/vala-desktop      # file cài trước, latest.yml sau cùng
-curl -sk {PUBLIC_WEB_URL}/desktop/latest.yml                            # phải thấy đúng phiên bản mới
+cd /opt/vala-report && deploy/publish-desktop.sh /tmp/vala-desktop      # file cài trước, .yml sau cùng
+curl -sk {PUBLIC_WEB_URL}/desktop/latest.yml {PUBLIC_WEB_URL}/desktop/latest-linux.yml   # phải thấy đúng phiên bản mới
 ```
 
-Người cài lần đầu tải ở liên kết cố định **`{PUBLIC_WEB_URL}/desktop/vala-desktop-setup.exe`** (script luôn trỏ nó về bản
-mới nhất). Bộ cài chưa ký số: Windows cảnh báo "Windows protected your PC" ⇒ More info → Run anyway.
+Script luôn trỏ hai liên kết tải cố định về bản mới nhất.
 
 Thư mục này gắn chỉ-đọc vào pod web (web-*.yaml). **Lần đầu** phải `git pull && deploy/k8s/deploy.sh` để pod web có ổ
 gắn này; các lần phát hành sau chỉ cần chép file, không chạy lại `deploy.sh`. Giữ lại vài file cài cũ để quay lại khi

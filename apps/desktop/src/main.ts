@@ -1,6 +1,6 @@
 /**
  * Vala Desktop — tiến trình chính.
- * Một cửa sổ tab (browser.ts). Chạy nền ở khay hệ thống (đóng cửa sổ không thoát), tự khởi động cùng Windows, giữ phiên các hệ thống nguồn và gửi
+ * Một cửa sổ tab (browser.ts). Chạy nền ở khay hệ thống (đóng cửa sổ không thoát), tự khởi động cùng máy, giữ phiên các hệ thống nguồn và gửi
  * cho Vala Reporting mỗi khi đổi + định kỳ 15 phút (thay tiện ích trình duyệt).
  */
 import { app } from 'electron';
@@ -9,6 +9,7 @@ import { getSettings } from './settings';
 import { syncAll } from './sync';
 import { initBrowser, refreshBrowser } from './browser';
 import { createMenus, refreshMenus, trayMenu } from './menu';
+import { enableLinuxAutostart } from './linux';
 import { initUpdater } from './updater';
 import { onTabLeave, registerBridge, showMain, showPortal, watchCookies } from './windows';
 
@@ -52,8 +53,12 @@ if (!app.requestSingleInstanceLock()) {
   app.setAppUserModelId('com.bkav.vala.desktop');
 
   app.whenReady().then(() => {
-    // Chỉ đăng ký tự khởi động ở bản đã cài (bản dev chạy bằng binary electron chung).
-    if (app.isPackaged) app.setLoginItemSettings({ openAtLogin: true, args: ['--hidden'] });
+    // Tự khởi động cùng máy — chỉ ở bản đã cài (bản dev chạy bằng binary electron chung). Linux không có
+    // setLoginItemSettings ⇒ tự ghi mục autostart (linux.ts).
+    if (app.isPackaged) {
+      if (process.platform === 'linux') enableLinuxAutostart();
+      else app.setLoginItemSettings({ openAtLogin: true, args: ['--hidden'] });
+    }
     registerBridge();
     watchCookies();
     createMenus({ showMain, showPortal, openSettings });
