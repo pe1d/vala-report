@@ -17,4 +17,6 @@ version() {
   git -C "$ROOT" diff --quiet HEAD 2>/dev/null || v="$v-dirty"
   echo "$v"
 }
-has_image() { $CTR images ls -q | grep -qx "docker.io/library/$1:$2"; }
+# KHÔNG dùng grep -q: với pipefail, grep thoát ngay khi thấy ⇒ ctr (danh sách image dài trên k3s dùng chung) bị SIGPIPE
+# ⇒ cả lệnh tính là lỗi ⇒ báo nhầm "Chưa có image" dù image đã có. Để grep đọc hết đầu ra.
+has_image() { $CTR images ls -q | grep -x "docker.io/library/$1:$2" >/dev/null; }
