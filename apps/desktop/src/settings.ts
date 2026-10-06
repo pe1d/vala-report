@@ -72,11 +72,19 @@ const file = () => join(app.getPath('userData'), 'settings.json');
 // Máy chủ cấu hình sẵn theo bản build (người dùng không nhập): đăng nhập cổng ngay ở tab Báo cáo.
 const DEFAULTS: Settings = { homeUrl: DEFAULT_HOME, serverUrl: DEFAULT_SERVER, deviceToken: null, user: null, lang: 'vi' };
 
+/**
+ * Ghép settings.json với mặc định. Chuỗi rỗng coi như chưa đặt: file của bản cũ lưu serverUrl = '' (mặc định khi đó) —
+ * giữ nguyên thì không có tab Báo cáo và nút "Đăng nhập" không làm gì.
+ */
+export function withDefaults(raw: Partial<Settings>): Settings {
+  const s = { ...DEFAULTS, ...raw };
+  return { ...s, serverUrl: s.serverUrl || DEFAULT_SERVER, homeUrl: s.homeUrl || DEFAULT_HOME, lang: normLang(s.lang) };
+}
+
 export function getSettings(): Settings {
   try {
     if (!existsSync(file())) return { ...DEFAULTS };
-    const s = { ...DEFAULTS, ...(JSON.parse(readFileSync(file(), 'utf8')) as Partial<Settings>) };
-    return { ...s, lang: normLang(s.lang) };
+    return withDefaults(JSON.parse(readFileSync(file(), 'utf8')) as Partial<Settings>);
   } catch {
     return { ...DEFAULTS };
   }

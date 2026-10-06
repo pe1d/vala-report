@@ -1,5 +1,23 @@
 import { describe, expect, it } from 'vitest';
-import { normalizeHome, normalizeServer, updateFeedUrl } from '../src/settings';
+import { DEFAULT_HOME, DEFAULT_SERVER, normalizeHome, normalizeServer, updateFeedUrl, withDefaults } from '../src/settings';
+
+describe('withDefaults (đọc settings.json)', () => {
+  it('máy chủ / trang chính rỗng (file của bản cũ) ⇒ dùng mặc định của bản build', () => {
+    const s = withDefaults({ homeUrl: '', serverUrl: '', deviceToken: null, user: null, lang: 'vi' });
+    expect(s.serverUrl).toBe(DEFAULT_SERVER);
+    expect(s.homeUrl).toBe(DEFAULT_HOME);
+  });
+  it('giữ giá trị đã có', () => {
+    const s = withDefaults({ serverUrl: 'https://baocao.donvi.gov.vn', homeUrl: 'https://vala.donvi.gov.vn/', lang: 'en' });
+    expect(s.serverUrl).toBe('https://baocao.donvi.gov.vn');
+    expect(s.homeUrl).toBe('https://vala.donvi.gov.vn/');
+    expect(s.lang).toBe('en');
+  });
+  it('thiếu trường / ngôn ngữ lạ ⇒ mặc định', () => {
+    const s = withDefaults({ lang: 'fr' });
+    expect(s).toMatchObject({ serverUrl: DEFAULT_SERVER, homeUrl: DEFAULT_HOME, deviceToken: null, user: null, lang: 'vi' });
+  });
+});
 
 describe('updateFeedUrl (kênh cập nhật Vala Desktop)', () => {
   it('mặc định là /desktop/ trên máy chủ Vala Reporting của đơn vị (giữ đường dẫn con)', () => {
