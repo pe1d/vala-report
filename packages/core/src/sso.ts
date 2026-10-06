@@ -13,7 +13,7 @@
  * Mọi địa chỉ đọc từ biến môi trường SSO_*. Dev trỏ vào một SSO giả lập nếu cần.
  */
 import { createHash, randomBytes } from 'node:crypto';
-import { env, envBool } from './env.js';
+import { envBool } from './env.js';
 import { Problem, L } from './errors.js';
 import type { FetchLike } from './adapter/http.js';
 
@@ -39,15 +39,35 @@ export interface SsoConfig {
   usernameClaim: string;
   /** Chưa có tài khoản cổng ⇒ tự tạo (người dùng thường). Mặc định tắt: quản trị tạo / nhập người dùng trước. */
   autoCreate: boolean;
+  /** Đủ địa chỉ SSO + client id/secret để đăng nhập SSO. false ⇒ `problem` nói thiếu gì (API tắt nút SSO, không dừng). */
+  ready: boolean;
+  problem?: string;
 }
 
 /** Đơn vị chưa có SSO ⇒ địa chỉ giả không phân giải được: luồng SSO báo lỗi rõ thay vì làm dừng cả API/worker. */
 const SSO_NOT_CONFIGURED = 'https://sso-chua-cau-hinh.invalid';
 
+/** Giá trị còn là chữ mẫu trong .env.prod (chưa điền thật). */
+const placeholder = (v: string) => !v || v === 'chua-dang-ky' || v === 'chua-cau-hinh' || /^<.*>$/.test(v);
+
+/**
+ * Cấu hình SSO từ biến môi trường. KHÔNG bao giờ dừng chương trình vì cấu hình SSO thiếu/sai: API và worker phải chạy
+ * được (lấy dữ liệu theo lịch không phụ thuộc SSO); thiếu gì ⇒ ready=false + problem, API tắt nút SSO và ghi cảnh báo.
+ */
 export function ssoConfigFromEnv(): SsoConfig {
-  const issuer = (process.env.SSO_ISSUER ?? '').trim().replace(/\/$/, '') || undefined;
-  const raw = (process.env.SSO_ORIGIN ?? '').trim() || (issuer ? new URL(issuer).origin : '');
-  if (!raw && envBool('LOGIN_SSO')) throw new Error('LOGIN_SSO=true nhưng chưa đặt SSO_ISSUER hoặc SSO_ORIGIN (địa chỉ SSO của đơn vị)');
+  const problems: string[] = [];
+  let issuer = (process.env.SSO_ISSUER ?? '').trim().replace(/\/$/, '') || undefined;
+  let issuerOrigin = '';
+  if (issuer) {
+    try { issuerOrigin = new URL(issuer).origin; } catch { problems.push(`SSO_ISSUER không phải địa chỉ hợp lệ: "${issuer}"`); issuer = undefined; }
+  }
+  let raw = (process.env.SSO_ORIGIN ?? '').trim() || issuerOrigin;
+  if (raw) { try { new URL(raw); } catch { problems.push(`SSO_ORIGIN không phải địa chỉ hợp lệ: "${raw}"`); raw = ''; } }
+  if (!raw) problems.push('chưa đặt SSO_ISSUER hoặc SSO_ORIGIN (địa chỉ SSO của đơn vị)');
+  const clientId = (process.env.SSO_CLIENT_ID ?? '').trim();
+  const clientSecret = (process.env.SSO_CLIENT_SECRET ?? '').trim();
+  if (placeholder(clientId)) problems.push('chưa có SSO_CLIENT_ID (đội quản trị SSO cấp)');
+  if (placeholder(clientSecret)) problems.push('chưa có SSO_CLIENT_SECRET (đội quản trị SSO cấp)');
   const pinned = ([['SSO_AUTHORIZE_URL', 'authorizeUrl'], ['SSO_TOKEN_URL', 'tokenUrl'], ['SSO_USERINFO_URL', 'userinfoUrl'], ['SSO_REVOKE_URL', 'revokeUrl']] as const)
     .filter(([k]) => !!process.env[k]).map(([, f]) => f);
   const matchBy = (process.env.SSO_MATCH_BY ?? 'email,username').split(',').map((x) => x.trim())
@@ -60,14 +80,16 @@ export function ssoConfigFromEnv(): SsoConfig {
     tokenUrl: process.env.SSO_TOKEN_URL ?? `${origin}/oauth2/token`,
     userinfoUrl: process.env.SSO_USERINFO_URL ?? `${origin}/oauth2/userinfo`,
     revokeUrl: process.env.SSO_REVOKE_URL ?? `${origin}/oauth2/revoke`,
-    clientId: raw ? env('SSO_CLIENT_ID') : process.env.SSO_CLIENT_ID || 'chua-cau-hinh',
-    clientSecret: raw ? env('SSO_CLIENT_SECRET') : process.env.SSO_CLIENT_SECRET || 'chua-cau-hinh',
+    clientId: clientId || 'chua-cau-hinh',
+    clientSecret: clientSecret || 'chua-cau-hinh',
     loginScope: process.env.SSO_LOGIN_SCOPE ?? 'openid profile email',
     grantScope: process.env.SSO_GRANT_SCOPE ?? 'openid offline_access',
     issuer, pinned, matchBy,
     pkce: process.env.SSO_PKCE !== 'false',
     usernameClaim: process.env.SSO_USERNAME_CLAIM ?? 'preferred_username',
     autoCreate: envBool('SSO_AUTO_CREATE'),
+    ready: problems.length === 0,
+    ...(problems.length ? { problem: problems.join('; ') } : {}),
   };
 }
 

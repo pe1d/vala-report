@@ -17,14 +17,17 @@ const limiter: RateLimiter = {
   },
 };
 
-// Đăng nhập cổng: mật khẩu luôn bật; thêm 'sso' khi LOGIN_SSO=true.
-const loginMethods: Array<'password' | 'sso'> = ['password', ...(process.env.LOGIN_SSO === 'true' ? ['sso' as const] : [])];
 
 const port = Number(process.env.API_PORT ?? 3000);
 const reader = readerDb();
 const writer = writerDb();
 const secrets = secretStore();
 const sso = new SsoClient(ssoConfigFromEnv());
+// Đăng nhập cổng: mật khẩu luôn bật; thêm 'sso' khi LOGIN_SSO=true VÀ cấu hình SSO đủ (thiếu client id/secret… ⇒ chỉ tắt
+// nút SSO và ghi cảnh báo, API vẫn chạy — trước đây dừng luôn cả API lẫn worker).
+const ssoOn = process.env.LOGIN_SSO === 'true';
+if (ssoOn && !sso.cfg.ready) console.warn(`[sso] LOGIN_SSO=true nhưng cấu hình SSO chưa đủ — tạm tắt đăng nhập SSO: ${sso.cfg.problem}`);
+const loginMethods: Array<'password' | 'sso'> = ['password', ...(ssoOn && sso.cfg.ready ? ['sso' as const] : [])];
 // SSO_ISSUER ⇒ đọc endpoint từ .well-known ngay lúc khởi động (luồng uỷ quyền cần sẵn). Lỗi ⇒ thử lại khi có người đăng nhập.
 if (sso.cfg.issuer) await sso.discover().catch((e) => console.warn(`[sso] chưa đọc được cấu hình từ ${sso.cfg.issuer}: ${(e as Error).message}`));
 // Dev: <NGUON>_BASE_URL (vd EGOV_BASE_URL, ETASK_BASE_URL) ghi đè base_url trong CSDL, trỏ vào hệ thống giả lập.
