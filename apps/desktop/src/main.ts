@@ -9,6 +9,7 @@ import { getSettings } from './settings';
 import { syncAll } from './sync';
 import { initBrowser, refreshBrowser } from './browser';
 import { createMenus, refreshMenus, trayMenu } from './menu';
+import { initUpdater } from './updater';
 import { onTabLeave, registerBridge, showMain, showPortal, watchCookies } from './windows';
 
 const SYNC_INTERVAL_MS = 15 * 60_000;
@@ -57,6 +58,8 @@ if (!app.requestSingleInstanceLock()) {
     watchCookies();
     createMenus({ showMain, showPortal, openSettings });
     initBrowser({ onLeave: onTabLeave, menu: trayMenu, onLangChanged: refreshAll });
+    // Bản mới tải xong ⇒ hiện nút "Cập nhật" trên thanh tab và trong menu.
+    initUpdater(refreshAll);
 
     if (getSettings().deviceToken) {
       startSync();

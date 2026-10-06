@@ -16,16 +16,21 @@ import { messages, normLang } from './i18n';
 import { getSettings, setSettings } from './settings';
 import { cachedSources, events, statusOf, type SourceFull } from './sync';
 import { openTarget, tabStatus, type TabStatus } from './tabs-model';
+import { installNow, pendingUpdate } from './updater';
 
 const M = messages({
   home: 'Vala', reports: 'Báo cáo', newTab: 'Trang',
   close: 'Đóng tab (Ctrl+W)', menu: 'Menu',
   lightMode: 'Chế độ sáng', darkMode: 'Chế độ tối',
+  updateTitle: 'Cài bản mới: ứng dụng đóng lại, cài xong tự mở lại',
+  updateLabel: (v: string) => `Đã có bản ${v} — Cập nhật`,
   status: { ok: 'Đã kết nối', warn: 'Cần đăng nhập lại', off: 'Chưa kết nối' } as Record<TabStatus, string>,
 }, {
   home: 'Vala', reports: 'Reports', newTab: 'Page',
   close: 'Close tab (Ctrl+W)', menu: 'Menu',
   lightMode: 'Light mode', darkMode: 'Dark mode',
+  updateTitle: 'Install the new version: the app closes, installs and reopens',
+  updateLabel: (v: string) => `Version ${v} available — Update`,
   status: { ok: 'Connected', warn: 'Needs signing in again', off: 'Not connected' } as Record<TabStatus, string>,
 });
 
@@ -280,7 +285,13 @@ function pushState(): void {
       status: src ? tabStatus(statusOf(src.code)?.result, src.state) : null,
     };
   });
-  win.webContents.send('tabs:state', { lang: s.lang, t, active, tabs: list });
+  // Hàm (chữ có tham số) không gửi qua IPC được ⇒ tách ra, gửi chữ đã ghép.
+  const { updateLabel, ...plain } = t;
+  const up = pendingUpdate();
+  win.webContents.send('tabs:state', {
+    lang: s.lang, t: plain, active, tabs: list,
+    update: up ? { label: updateLabel(up.version), title: t.updateTitle } : null,
+  });
 }
 
 /** Phím tắt chuyển/đóng tab, tải lại, quay lại — bắt ở cả thanh tab lẫn trong trang. Trả true nếu đã xử lý. */
@@ -317,6 +328,7 @@ function registerIpc(): void {
     own(e);
     hooks.menu().popup({ window: win!, x: Math.round(Number(pos?.x) || 0), y: Math.round(Number(pos?.y) || 0) });
   });
+  ipcMain.handle('tabs:install-update', (e) => { own(e); installNow(); });
   ipcMain.on('tabs:resized', (e) => { if (win && e.sender === win.webContents) layout(); });
   ipcMain.handle('tabs:lang', (e, l: unknown) => { own(e); setSettings({ lang: normLang(l) }); hooks.onLangChanged(); });
 }

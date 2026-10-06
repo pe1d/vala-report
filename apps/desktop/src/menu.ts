@@ -9,6 +9,7 @@ import { app, BrowserWindow, Menu, nativeImage, Tray, type BaseWindow, type Menu
 import { messages } from './i18n';
 import { getSettings } from './settings';
 import { cachedSources, events, statusOf, syncAll, type SyncResult } from './sync';
+import { checkNow, installNow, pendingUpdate } from './updater';
 import { openSourceTab } from './windows';
 
 const M = messages({
@@ -19,6 +20,7 @@ const M = messages({
   syncNow: 'Đồng bộ phiên ngay',
   view: 'Xem', reload: 'Tải lại', back: 'Quay lại', forward: 'Tiến tới', zoomIn: 'Phóng to', zoomOut: 'Thu nhỏ', zoomReset: 'Cỡ gốc',
   settingsMenu: 'Cài đặt', settings: 'Cài đặt…', signIn: 'Đăng nhập Vala Reporting…', quit: 'Thoát',
+  checkUpdate: 'Kiểm tra cập nhật', installUpdate: (v: string) => `Cập nhật lên bản ${v}`, version: (v: string) => `Phiên bản ${v}`,
   result: {
     sent: 'đã kết nối', unchanged: 'đã kết nối', managed: 'hệ thống tự đăng nhập', not_logged_in: 'chưa đăng nhập',
     need_consent: 'cần xác nhận đồng ý', rejected: 'phiên hết hạn', error: 'lỗi',
@@ -31,6 +33,7 @@ const M = messages({
   syncNow: 'Sync sessions now',
   view: 'View', reload: 'Reload', back: 'Back', forward: 'Forward', zoomIn: 'Zoom in', zoomOut: 'Zoom out', zoomReset: 'Actual size',
   settingsMenu: 'Settings', settings: 'Settings…', signIn: 'Sign in to Vala Reporting…', quit: 'Quit',
+  checkUpdate: 'Check for updates', installUpdate: (v: string) => `Update to version ${v}`, version: (v: string) => `Version ${v}`,
   result: {
     sent: 'connected', unchanged: 'connected', managed: 'signed in automatically', not_logged_in: 'not signed in',
     need_consent: 'consent needed', rejected: 'session expired', error: 'error',
@@ -79,6 +82,8 @@ function appMenu(): Menu {
     ] },
     { label: t.settingsMenu, submenu: [
       { label: t.settings, click: actions.openSettings },
+      updateItem(t),
+      { label: t.version(app.getVersion()), enabled: false },
       { type: 'separator' },
       { label: t.quit, accelerator: 'CmdOrCtrl+Q', click: () => app.quit() },
     ] },
@@ -95,8 +100,16 @@ export function trayMenu(): Menu {
     { label: t.sources, submenu: sourceItems() },
     { type: 'separator' },
     { label: t.settings, click: actions.openSettings },
+    updateItem(t),
+    { label: t.version(app.getVersion()), enabled: false },
+    { type: 'separator' },
     { label: t.quit, click: () => app.quit() },
   ]);
+}
+
+function updateItem(t: (typeof M)['vi']): MenuItemConstructorOptions {
+  const up = pendingUpdate();
+  return up ? { label: t.installUpdate(up.version), click: installNow } : { label: t.checkUpdate, click: checkNow };
 }
 
 /** Đổi ngôn ngữ / đăng nhập / đăng xuất / trạng thái nguồn ⇒ vẽ lại cả thanh menu và menu khay. */

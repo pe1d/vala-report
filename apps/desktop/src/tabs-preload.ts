@@ -8,5 +8,6 @@ contextBridge.exposeInMainWorld('valaTabs', {
   menu: (x: number, y: number) => ipcRenderer.invoke('tabs:menu', { x, y }),
   setLang: (lang: string) => ipcRenderer.invoke('tabs:lang', lang),
   resized: () => ipcRenderer.send('tabs:resized'),
+  installUpdate: () => ipcRenderer.invoke('tabs:install-update'),
   onState: (cb: (state: unknown) => void) => { ipcRenderer.on('tabs:state', (_e, s) => cb(s)); },
 });

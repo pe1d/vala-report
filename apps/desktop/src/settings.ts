@@ -22,9 +22,18 @@ export interface Settings {
  * Giá trị mặc định theo nơi triển khai, đặt lúc build (VALA_HOME_URL=… VALA_URL=… pnpm build, xem scripts/write-defaults.cjs).
  * Người dùng sửa được trong cửa sổ Cài đặt.
  */
-const BUILT: { homeUrl?: string; serverUrl?: string } = (() => { try { return require('./defaults.json'); } catch { return {}; } })();
+const BUILT: { homeUrl?: string; serverUrl?: string; updateUrl?: string } = (() => { try { return require('./defaults.json'); } catch { return {}; } })();
 export const DEFAULT_HOME = BUILT.homeUrl || 'https://vala.bkav.com/';
 export const DEFAULT_SERVER = BUILT.serverUrl || 'https://qtttboard-demo.demozone.vn:5443/vala-report';
+
+/**
+ * Kênh cập nhật Vala Desktop (thư mục chứa latest.yml + file cài): mặc định /desktop/ trên máy chủ Vala Reporting của
+ * đơn vị — mỗi đơn vị phát hành bản của mình; đặt riêng lúc build bằng VALA_UPDATE_URL.
+ */
+export function updateFeedUrl(serverUrl: string, override = BUILT.updateUrl): string {
+  const base = override || `${serverUrl || DEFAULT_SERVER}/desktop`;
+  return base.endsWith('/') ? base : `${base}/`;
+}
 
 /** Chuẩn hoá trang chính: chỉ https (trừ localhost cho dev), giữ nguyên đường dẫn/query. Trả null nếu không hợp lệ. */
 export function normalizeHome(raw: string): string | null {

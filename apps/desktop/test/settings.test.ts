@@ -1,5 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { normalizeHome, normalizeServer } from '../src/settings';
+import { normalizeHome, normalizeServer, updateFeedUrl } from '../src/settings';
+
+describe('updateFeedUrl (kênh cập nhật Vala Desktop)', () => {
+  it('mặc định là /desktop/ trên máy chủ Vala Reporting của đơn vị (giữ đường dẫn con)', () => {
+    expect(updateFeedUrl('https://qtttboard-demo.demozone.vn:5443/vala-report')).toBe('https://qtttboard-demo.demozone.vn:5443/vala-report/desktop/');
+    expect(updateFeedUrl('https://baocao.donvi.gov.vn')).toBe('https://baocao.donvi.gov.vn/desktop/');
+  });
+  it('đặt riêng lúc build (VALA_UPDATE_URL) thì dùng địa chỉ đó, luôn có / cuối', () => {
+    expect(updateFeedUrl('https://baocao.donvi.gov.vn', 'https://cap-nhat.donvi.gov.vn/vala')).toBe('https://cap-nhat.donvi.gov.vn/vala/');
+  });
+});
 
 describe('normalizeHome', () => {
   it('giữ nguyên đường dẫn và query của trang chính', () => {

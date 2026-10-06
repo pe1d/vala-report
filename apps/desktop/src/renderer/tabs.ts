@@ -19,6 +19,8 @@ interface TabsState {
   t: Record<string, string> & { status: Record<'ok' | 'warn' | 'off', string> };
   active: string | null;
   tabs: TabView[];
+  /** Bản mới đã tải xong, chờ cài. */
+  update: { label: string; title: string } | null;
 }
 interface ValaTabsApi {
   ready(): Promise<void>;
@@ -27,6 +29,7 @@ interface ValaTabsApi {
   menu(x: number, y: number): Promise<void>;
   setLang(lang: string): Promise<void>;
   resized(): void;
+  installUpdate(): Promise<void>;
   onState(cb: (s: TabsState) => void): void;
 }
 
@@ -157,6 +160,10 @@ interface ValaTabsApi {
       list.querySelector('[aria-selected=true]')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
     }
 
+    const up = $('update');
+    display(up, !!s.update);
+    if (s.update) { if (up.textContent !== s.update.label) up.textContent = s.update.label; up.title = s.update.title; }
+
     $('menu').title = s.t.menu;
     $('menu').setAttribute('aria-label', s.t.menu);
     for (const b of Array.from(document.querySelectorAll<HTMLButtonElement>('[data-lang]'))) b.setAttribute('aria-pressed', String(b.dataset.lang === s.lang));
@@ -171,6 +178,9 @@ interface ValaTabsApi {
     b.addEventListener('click', () => void api.setLang(b.dataset.lang!));
   }
 
+  // Ẩn bằng JS: CSP của trang chặn thuộc tính style viết trong HTML.
+  display($('update'), false);
+  $('update').addEventListener('click', () => void api.installUpdate());
   api.onState(render);
   // Trang thanh tab phủ cả cửa sổ: khung nhìn đổi cỡ = cửa sổ đổi cỡ ⇒ báo tiến trình chính canh lại nội dung tab.
   window.addEventListener('resize', () => api.resized());

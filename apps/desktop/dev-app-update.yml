@@ -1,0 +1,5 @@
+# Chỉ dùng khi thử tự cập nhật ở bản chạy từ mã nguồn (VALA_UPDATE_DEV=1). Bản cài thật dùng app-update.yml do
+# electron-builder sinh. Địa chỉ kênh thật luôn do src/updater.ts đặt theo máy chủ trong Cài đặt.
+provider: generic
+url: http://127.0.0.1:18090/desktop/
+updaterCacheDirName: vala-desktop-updater
