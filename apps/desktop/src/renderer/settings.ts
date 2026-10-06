@@ -7,10 +7,15 @@ interface SettingsState {
   lang: 'vi' | 'en';
   serverUrl: string;
   user: { ho_ten: string; email: string } | null;
+  /** Bản dev ⇒ hiện mục tự đặt trang chính. */
+  dev: boolean;
+  homeUrl: string;
+  devHomeUrl: string | null;
 }
 interface ValaSettingsApi {
   state(): Promise<SettingsState>;
   setLang(lang: string): Promise<SettingsState>;
+  saveHome(url: string | null): Promise<{ ok: boolean; message?: string; state?: SettingsState }>;
   login(server: string, username: string, password: string): Promise<{ ok: boolean; message?: string; state?: SettingsState }>;
   logout(): Promise<SettingsState>;
   openPortal(): Promise<void>;
@@ -52,6 +57,9 @@ interface ValaSettingsApi {
     document.title = t.title;
     for (const el of Array.from(document.querySelectorAll<HTMLElement>('[data-t]'))) el.textContent = t[el.dataset.t!] ?? '';
     for (const b of Array.from(document.querySelectorAll<HTMLButtonElement>('[data-lang]'))) b.setAttribute('aria-pressed', String(b.dataset.lang === st.lang));
+    $('home-section').hidden = !st.dev;
+    if (st.dev && document.activeElement !== $('home')) ($('home') as HTMLInputElement).value = st.devHomeUrl ?? st.homeUrl;
+    $('home-reset').hidden = !st.devHomeUrl;
     const signedIn = !!st.user;
     $('signed-in').hidden = !signedIn;
     $('login-form').hidden = signedIn;
@@ -68,9 +76,18 @@ interface ValaSettingsApi {
     b.addEventListener('click', async () => {
       // Thông báo cũ đang ở ngôn ngữ trước ⇒ xoá thay vì để lẫn hai thứ tiếng.
       note('login-note', '', '');
+      note('home-note', '', '');
       render(await vala.setLang(b.dataset.lang!));
     });
   }
+
+  const saveHome = async (url: string | null) => {
+    const r = await vala.saveHome(url);
+    if (r.state) render(r.state);
+    note('home-note', r.message ?? '', r.ok ? 'ok' : 'err');
+  };
+  $('home-form').addEventListener('submit', (e) => { e.preventDefault(); void saveHome(($('home') as HTMLInputElement).value); });
+  $('home-reset').addEventListener('click', () => void saveHome(null));
 
   $('login-form').addEventListener('submit', async (e) => {
     e.preventDefault();

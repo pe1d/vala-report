@@ -42,6 +42,7 @@ function openSettings() {
     onLogin: () => { refreshAll(); startSync(); closeSettingsWindow(); showPortal(); },
     onLogout: refreshAll,
     onLangChanged: refreshAll,
+    onHomeChanged: () => { void refreshHome().then(() => showMain()); },
     openPortal: showPortal,
   });
 }

@@ -16,6 +16,8 @@ export interface Settings {
   deviceToken: string | null;
   user: { ho_ten: string; email: string } | null;
   lang: Lang;
+  /** Chỉ bản dev: trang chính tự đặt để thử (đè trang quản trị đặt trên cổng). Bản cho người dùng bỏ qua trường này. */
+  devHomeUrl?: string | null;
 }
 
 /**
