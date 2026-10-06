@@ -19,6 +19,13 @@
       </div>
       <button type="button" id="theme" class="flex h-7 w-7 items-center justify-center rounded-md text-slate-700 hover:bg-slate-300 dark:text-slate-200 dark:hover:bg-slate-800">☾</button>
       <button type="button" id="menu" class="flex h-7 w-7 items-center justify-center rounded-md text-lg text-slate-700 hover:bg-slate-300 dark:text-slate-200 dark:hover:bg-slate-800">⋯</button>
+      <!-- Hồ sơ: chưa đăng nhập ⇒ nút "Đăng nhập"; đã đăng nhập ⇒ chữ cái đầu + tên, bấm ra menu (Cài đặt, Đăng xuất…). -->
+      <button type="button" id="sign-in" class="ml-1 rounded-md bg-blue-600 px-3 py-1 text-xs font-medium text-white hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-400"></button>
+      <button type="button" id="profile" class="ml-1 flex h-7 max-w-[200px] items-center gap-1.5 rounded-full py-0.5 pl-0.5 pr-2 text-[13px] text-slate-700 hover:bg-slate-300 dark:text-slate-200 dark:hover:bg-slate-800">
+        <span id="avatar" class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-blue-600 text-[10px] font-semibold text-white dark:bg-blue-500"></span>
+        <span id="profile-name" class="min-w-0 truncate"></span>
+        <span aria-hidden="true" class="text-[10px] text-slate-500 dark:text-slate-400">▾</span>
+      </button>
     </div>
   </div>
   <script src="../dist/renderer/tabs.js"></script>

@@ -1,9 +1,10 @@
-import { createContext, useContext, useEffect, useState } from 'react';
+import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { api, auth, type Me } from './api';
 import { BASE } from './base';
 import { useAsync } from './hooks';
 import { ReauthGate } from './components/Reauth';
+import { sendDeviceToken, useValaExtension } from './extension';
 import { Loading } from './components/States';
 import { Shell } from './components/Shell';
 import { ForcedPasswordChange } from './components/ChangePassword';
@@ -65,6 +66,7 @@ function Authed({ onLogout }: { onLogout: () => void }) {
   return (
     <MeContext.Provider value={me.data}>
       <ReauthGate />
+      <DesktopLink me={me.data} />
       <Shell me={me.data} onLogout={onLogout}>
         <Routes>
           <Route path="/" element={<Navigate to="/tong-quan" replace />} />
@@ -85,4 +87,23 @@ function Authed({ onLogout }: { onLogout: () => void }) {
       </Shell>
     </MeContext.Provider>
   );
+}
+
+/**
+ * Chạy trong Vala Desktop: người dùng vừa đăng nhập cổng (mật khẩu hoặc SSO) mà ứng dụng chưa đăng nhập, hoặc đang đăng
+ * nhập người khác ⇒ xin token thiết bị cho chính người này và chuyển cho ứng dụng. Chỉ một lần đăng nhập cho cả hai.
+ */
+function DesktopLink({ me }: { me: Me }) {
+  const ext = useValaExtension(() => {});
+  const sent = useRef(false);
+  useEffect(() => {
+    const i = ext.info;
+    if (sent.current || !i?.desktop) return;
+    if (i.logged_in && i.email?.toLowerCase() === me.email.toLowerCase()) return;
+    sent.current = true;
+    api.post<{ token: string; user: { ho_ten: string; email: string } }>('/me/extension-devices', { device_name: i.device })
+      .then((r) => sendDeviceToken(r.token, r.user))
+      .catch(() => { sent.current = false; });
+  }, [ext.info, me.email]);
+  return null;
 }

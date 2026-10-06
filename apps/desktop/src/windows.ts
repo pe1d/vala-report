@@ -11,6 +11,7 @@
  */
 import { join } from 'node:path';
 import { app, ipcMain, Notification, session, shell, type IpcMainInvokeEvent, type WebContents } from 'electron';
+import { adoptDeviceToken, DEVICE_TOKEN, deviceName } from './account';
 import { api } from './api';
 import { showSourceTab, showTab, showWebContents, sourceTabKey } from './browser';
 import { matchesSessionDomain, sessionDomain } from './cookies';
@@ -187,7 +188,18 @@ export function registerBridge(): void {
   ipcMain.handle('vala:bridge-hello', (e) => {
     if (!fromPortal(e)) return null;
     const s = getSettings();
-    return { installed: true, version: app.getVersion(), logged_in: !!s.deviceToken, email: s.user?.email ?? null };
+    return {
+      installed: true, version: app.getVersion(), logged_in: !!s.deviceToken, email: s.user?.email ?? null,
+      // Cổng thấy đây là Vala Desktop ⇒ tự cấp token thiết bị cho người đang đăng nhập cổng (apps/web DesktopLink).
+      desktop: true, device: deviceName(),
+    };
+  });
+  ipcMain.handle('vala:device-token', async (e, a: { token?: unknown; user?: { ho_ten?: unknown; email?: unknown } }) => {
+    if (!fromPortal(e) || typeof a?.token !== 'string' || !DEVICE_TOKEN.test(a.token)) return false;
+    const ho_ten = typeof a.user?.ho_ten === 'string' ? a.user.ho_ten.slice(0, 200) : '';
+    const email = typeof a.user?.email === 'string' ? a.user.email.slice(0, 200) : '';
+    await adoptDeviceToken(a.token, { ho_ten, email });
+    return true;
   });
   ipcMain.handle('vala:connect', (e, code: unknown) => {
     if (!fromPortal(e) || typeof code !== 'string' || !/^[a-z0-9_]{1,40}$/.test(code)) return { status: 'error' };

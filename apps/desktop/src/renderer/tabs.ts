@@ -21,6 +21,8 @@ interface TabsState {
   tabs: TabView[];
   /** Bản chạy từ mã nguồn ("Vala Desktop (dev)") ⇒ hiện nhãn DEV. */
   dev: boolean;
+  /** Người đang đăng nhập (null ⇒ nút "Đăng nhập"). */
+  profile: { name: string; email: string; initials: string } | null;
   /** Bản mới đã tải xong, chờ cài. */
   update: { label: string; title: string } | null;
 }
@@ -32,6 +34,8 @@ interface ValaTabsApi {
   setLang(lang: string): Promise<void>;
   resized(): void;
   installUpdate(): Promise<void>;
+  profile(x: number, y: number): Promise<void>;
+  signIn(): Promise<void>;
   onState(cb: (s: TabsState) => void): void;
 }
 
@@ -163,6 +167,16 @@ interface ValaTabsApi {
     }
 
     display($('dev'), s.dev);
+    display($('sign-in'), !s.profile);
+    display($('profile'), !!s.profile);
+    setIf($('sign-in'), 'title', s.t.signInTitle);
+    if ($('sign-in').textContent !== s.t.signIn) $('sign-in').textContent = s.t.signIn;
+    if (s.profile) {
+      if ($('avatar').textContent !== s.profile.initials) $('avatar').textContent = s.profile.initials;
+      if ($('profile-name').textContent !== s.profile.name) $('profile-name').textContent = s.profile.name;
+      setIf($('profile'), 'title', `${s.profile.name} — ${s.profile.email}`);
+      setIf($('profile'), 'aria-label', `${s.t.account}: ${s.profile.name}`);
+    }
     const up = $('update');
     display(up, !!s.update);
     if (s.update) { if (up.textContent !== s.update.label) up.textContent = s.update.label; up.title = s.update.title; }
@@ -184,6 +198,13 @@ interface ValaTabsApi {
   // Ẩn bằng JS: CSP của trang chặn thuộc tính style viết trong HTML.
   display($('update'), false);
   display($('dev'), false);
+  display($('sign-in'), false);
+  display($('profile'), false);
+  $('sign-in').addEventListener('click', () => void api.signIn());
+  $('profile').addEventListener('click', () => {
+    const r = $('profile').getBoundingClientRect();
+    void api.profile(r.left, r.bottom);
+  });
   $('update').addEventListener('click', () => void api.installUpdate());
   api.onState(render);
   // Trang thanh tab phủ cả cửa sổ: khung nhìn đổi cỡ = cửa sổ đổi cỡ ⇒ báo tiến trình chính canh lại nội dung tab.

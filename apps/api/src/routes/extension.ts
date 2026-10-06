@@ -25,6 +25,23 @@ declare module 'fastify' {
 const DEVICE_TTL_DAYS = 180;
 const hashToken = (t: string) => createHash('sha256').update(t).digest();
 
+/**
+ * Cấp token thiết bị (vxt_…) cho một người dùng — tiện ích đăng nhập bằng mật khẩu (/ext/login), hoặc cổng cấp cho Vala
+ * Desktop khi người dùng đã đăng nhập cổng trong ứng dụng (POST /me/extension-devices). Chỉ lưu SHA-256 của token.
+ */
+async function issueDeviceToken(deps: ApiDeps, req: FastifyRequest, userId: number, deviceName: string | undefined, via: 'extension' | 'desktop') {
+  const token = `vxt_${randomBytes(32).toString('base64url')}`;
+  const user = await withTenant(deps.writer, async (t) => {
+    const d = await t.one<{ id: number }>(
+      `INSERT INTO extension_devices (app_user_id, token_hash, ten, expires_at)
+       VALUES ($1, $2, $3, now() + make_interval(days => $4)) RETURNING id`,
+      [userId, hashToken(token), deviceName?.trim() || 'Trình duyệt', DEVICE_TTL_DAYS]);
+    await audit(t, req, 'login', { type: 'extension_device', id: String(d.id) }, { via }, userId);
+    return t.one<{ ho_ten: string; email: string }>('SELECT ho_ten, email FROM app_users WHERE id = $1', [userId]);
+  });
+  return { token, user };
+}
+
 /** POST /ext/login — tiện ích đăng nhập bằng tài khoản cổng, nhận token thiết bị. */
 export const extensionLoginRoutes = (deps: ApiDeps): FastifyPluginAsync => async (app) => {
   app.post<{ Body: { username: string; password: string; device_name?: string } }>('/ext/login', {
@@ -35,16 +52,7 @@ export const extensionLoginRoutes = (deps: ApiDeps): FastifyPluginAsync => async
       throw new Problem('password_change_required', L('Cần đổi mật khẩu', 'Password change required'),
         L('Đăng nhập cổng Vala một lần để đổi mật khẩu tạm, rồi đăng nhập lại tiện ích', 'Sign in to the Vala portal once to change your temporary password, then sign in to the extension again'));
     }
-    const token = `vxt_${randomBytes(32).toString('base64url')}`;
-    const user = await withTenant(deps.writer, async (t) => {
-      const d = await t.one<{ id: number }>(
-        `INSERT INTO extension_devices (app_user_id, token_hash, ten, expires_at)
-         VALUES ($1, $2, $3, now() + make_interval(days => $4)) RETURNING id`,
-        [row.id, hashToken(token), req.body.device_name?.trim() || 'Trình duyệt', DEVICE_TTL_DAYS]);
-      await audit(t, req, 'login', { type: 'extension_device', id: String(d.id) }, { via: 'extension' }, row.id);
-      return t.one<{ ho_ten: string; email: string }>('SELECT ho_ten, email FROM app_users WHERE id = $1', [row.id]);
-    });
-    return { token, user };
+    return issueDeviceToken(deps, req, row.id, req.body.device_name, 'extension');
   });
 };
 
@@ -213,6 +221,19 @@ export const extensionRoutes = (deps: ApiDeps): FastifyPluginAsync => async (app
 
 /** /me/extension-devices — người dùng xem và thu hồi các trình duyệt đã cài tiện ích (token cổng). */
 export const extensionDeviceRoutes = (deps: ApiDeps): FastifyPluginAsync => async (app) => {
+  /**
+   * Vala Desktop: người dùng đã đăng nhập cổng ngay trong ứng dụng (tab Báo cáo — mật khẩu hoặc SSO) ⇒ cổng cấp luôn token
+   * thiết bị cho ứng dụng qua cầu nối, người dùng không phải đăng nhập lần nữa. Token chỉ trả cho chính người đang đăng nhập.
+   */
+  app.post<{ Body: { device_name?: string } }>('/me/extension-devices', {
+    schema: { body: { type: 'object', additionalProperties: false, properties: { device_name: { type: 'string', maxLength: 100 } } } },
+  }, async (req) => {
+    if (!(await deps.limiter.take(`desktop-device:${req.user.id}`, 10))) {
+      throw new Problem('rate_limited', L('Vừa cấp quyền cho ứng dụng, thử lại sau vài giây', 'The app was just authorized, try again in a few seconds'));
+    }
+    return issueDeviceToken(deps, req, req.user.id, req.body?.device_name, 'desktop');
+  });
+
   app.get('/me/extension-devices', async (req) => {
     const rows = await withTenant(deps.writer, (t) => t.any<{ ten: string }>(
       `SELECT id, ten, created_at, last_used_at, expires_at FROM extension_devices

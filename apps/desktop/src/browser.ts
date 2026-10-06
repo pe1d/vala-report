@@ -11,7 +11,7 @@
  * trang khác không gọi được gì.
  */
 import { join } from 'node:path';
-import { app, BrowserWindow, ipcMain, shell, WebContentsView, type HandlerDetails, type Input, type IpcMainInvokeEvent, type Menu, type WebContents } from 'electron';
+import { app, BrowserWindow, ipcMain, session, shell, WebContentsView, type HandlerDetails, type Input, type IpcMainInvokeEvent, type Menu, type WebContents } from 'electron';
 import { APP_NAME, ICON, IS_DEV } from './channel';
 import { messages, normLang } from './i18n';
 import { getSettings, setSettings } from './settings';
@@ -21,14 +21,16 @@ import { installNow, pendingUpdate } from './updater';
 
 const M = messages({
   home: 'Vala', reports: 'Báo cáo', newTab: 'Trang',
-  close: 'Đóng tab (Ctrl+W)', menu: 'Menu',
+  close: 'Đóng tab (Ctrl+W)', menu: 'Hệ thống nguồn',
+  signIn: 'Đăng nhập', signInTitle: 'Đăng nhập Vala Reporting ở tab Báo cáo', account: 'Tài khoản',
   lightMode: 'Chế độ sáng', darkMode: 'Chế độ tối',
   updateTitle: 'Cài bản mới: ứng dụng đóng lại, cài xong tự mở lại',
   updateLabel: (v: string) => `Đã có bản ${v} — Cập nhật`,
   status: { ok: 'Đã kết nối', warn: 'Cần đăng nhập lại', off: 'Chưa kết nối' } as Record<TabStatus, string>,
 }, {
   home: 'Vala', reports: 'Reports', newTab: 'Page',
-  close: 'Close tab (Ctrl+W)', menu: 'Menu',
+  close: 'Close tab (Ctrl+W)', menu: 'Source systems',
+  signIn: 'Sign in', signInTitle: 'Sign in to Vala Reporting on the Reports tab', account: 'Account',
   lightMode: 'Light mode', darkMode: 'Dark mode',
   updateTitle: 'Install the new version: the app closes, installs and reopens',
   updateLabel: (v: string) => `Version ${v} available — Update`,
@@ -53,8 +55,12 @@ interface Tab {
 export interface BrowserHooks {
   /** Rời một tab sau `ms` mili-giây đang xem (vd rời tab eGov ⇒ báo lấy dữ liệu ngay). */
   onLeave: (key: string, ms: number) => void;
-  /** Menu "⋯" ở góc phải thanh điều hướng. */
+  /** Menu "⋯" ở góc phải thanh tab. */
   menu: () => Menu;
+  /** Menu hồ sơ (bấm tên / ảnh đại diện). */
+  profileMenu: () => Menu;
+  /** Nút "Đăng nhập" (chưa đăng nhập): đưa sang tab Báo cáo. */
+  signIn: () => void;
   onLangChanged: () => void;
 }
 
@@ -74,7 +80,8 @@ function pinnedDefs(): PinnedDef[] {
   const s = getSettings();
   const t = M[s.lang];
   const defs: PinnedDef[] = [{ key: 'home', label: t.home, url: s.homeUrl }];
-  if (s.deviceToken && s.serverUrl) defs.push({ key: 'portal', label: t.reports, url: s.serverUrl });
+  // Tab Báo cáo luôn có — kể cả khi chưa đăng nhập: đó là nơi đăng nhập (cổng cấp quyền cho ứng dụng qua cầu nối).
+  if (s.serverUrl) defs.push({ key: 'portal', label: t.reports, url: s.serverUrl });
   return defs;
 }
 
@@ -290,8 +297,11 @@ function pushState(): void {
   // Hàm (chữ có tham số) không gửi qua IPC được ⇒ tách ra, gửi chữ đã ghép.
   const { updateLabel, ...plain } = t;
   const up = pendingUpdate();
+  const name = s.user?.ho_ten || s.user?.email || '';
   win.webContents.send('tabs:state', {
     lang: s.lang, t: plain, active, tabs: list, dev: IS_DEV,
+    // Hồ sơ trên thanh tab: tên + chữ cái đầu (họ + tên) khi đã đăng nhập; chưa thì nút "Đăng nhập".
+    profile: s.deviceToken && name ? { name, email: s.user?.email ?? '', initials: initialsOf(name) } : null,
     update: up ? { label: updateLabel(up.version), title: t.updateTitle } : null,
   });
 }
@@ -330,6 +340,11 @@ function registerIpc(): void {
     own(e);
     hooks.menu().popup({ window: win!, x: Math.round(Number(pos?.x) || 0), y: Math.round(Number(pos?.y) || 0) });
   });
+  ipcMain.handle('tabs:profile', (e, pos: { x?: unknown; y?: unknown }) => {
+    own(e);
+    hooks.profileMenu().popup({ window: win!, x: Math.round(Number(pos?.x) || 0), y: Math.round(Number(pos?.y) || 0) });
+  });
+  ipcMain.handle('tabs:sign-in', (e) => { own(e); hooks.signIn(); });
   ipcMain.handle('tabs:install-update', (e) => { own(e); installNow(); });
   ipcMain.on('tabs:resized', (e) => { if (win && e.sender === win.webContents) layout(); });
   ipcMain.handle('tabs:lang', (e, l: unknown) => { own(e); setSettings({ lang: normLang(l) }); hooks.onLangChanged(); });
@@ -339,4 +354,28 @@ export function initBrowser(h: BrowserHooks): void {
   hooks = h;
   registerIpc();
   events.on('status', refreshBrowser);
+}
+
+/** "Tăng Xuân Điệp" ⇒ "TĐ" (chữ đầu của họ và tên); một từ ⇒ chữ đầu. */
+function initialsOf(name: string): string {
+  const w = name.trim().split(/\s+/).filter(Boolean);
+  if (!w.length) return '?';
+  return ((w[0]![0] ?? '') + (w.length > 1 ? w[w.length - 1]![0] ?? '' : '')).toUpperCase();
+}
+
+/**
+ * Đăng xuất: xoá phiên cổng (token trong localStorage của trang cổng) — không thì cổng còn đăng nhập sẽ lại tự cấp token
+ * thiết bị mới cho ứng dụng. Tab Báo cáo đang mở thì nạp lại (hiện màn hình đăng nhập).
+ */
+export async function forgetPortalLogin(): Promise<void> {
+  const s = getSettings();
+  if (!s.serverUrl) return;
+  const wc = tabs.get('portal')?.view?.webContents;
+  if (wc && !wc.isDestroyed()) {
+    try { await wc.executeJavaScript("localStorage.removeItem('vala.token'); 1", true); } catch { /* trang đang tải */ }
+    void wc.loadURL(s.serverUrl);
+  } else {
+    await session.defaultSession.clearStorageData({ origin: new URL(s.serverUrl).origin, storages: ['localstorage'] });
+  }
+  pushState();
 }

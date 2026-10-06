@@ -1,16 +1,16 @@
 /**
- * Cửa sổ Cài đặt: đăng nhập thiết bị vào Vala Reporting, ngôn ngữ. Trang chính do quản trị đặt trên cổng (homepage.ts),
- * người dùng không sửa ở đây.
+ * Cửa sổ Cài đặt — mở từ menu hồ sơ trên thanh tab: tài khoản đang dùng (đăng nhập qua cổng ở tab Báo cáo, không có form
+ * riêng), ngôn ngữ, sáng/tối. Máy chủ Vala Reporting và trang chính do nơi triển khai / quản trị cấu hình, người dùng không
+ * sửa; riêng bản dev được tự đặt trang chính để thử.
  * Trang là HTML tĩnh trong gói (resources/settings.html); chữ hiển thị lấy từ đây theo ngôn ngữ đang chọn.
  * IPC chỉ nhận từ chính cửa sổ này.
  */
 import { join } from 'node:path';
 import { BrowserWindow, ipcMain, type IpcMainInvokeEvent } from 'electron';
-import { loginDevice, logoutDevice } from './account';
+import { accountEvents } from './account';
 import { ICON, IS_DEV } from './channel';
-import { ApiError } from './api';
 import { messages, normLang } from './i18n';
-import { DEFAULT_SERVER, getSettings, normalizeHome, normalizeServer, setSettings } from './settings';
+import { DEFAULT_SERVER, getSettings, normalizeHome, setSettings } from './settings';
 
 const M = messages({
   title: 'Cài đặt Vala Desktop',
@@ -20,15 +20,12 @@ const M = messages({
   serverHome: 'Đang dùng trang của máy chủ',
   badHome: 'Địa chỉ không hợp lệ (cần bắt đầu bằng https://, hoặc http://localhost)',
   lightMode: 'Chế độ sáng', darkMode: 'Chế độ tối',
-  accountTitle: 'Tài khoản Vala Reporting',
-  accountHint: 'Đăng nhập để Vala Desktop giữ phiên các hệ thống nguồn (eGov, eTask…) và gửi cho Vala lấy dữ liệu thay bạn.',
-  serverLabel: 'Máy chủ Vala Reporting', usernameLabel: 'Tài khoản', passwordLabel: 'Mật khẩu',
-  login: 'Đăng nhập', loggingIn: 'Đang đăng nhập…',
-  badServer: 'Địa chỉ máy chủ không hợp lệ (cần bắt đầu bằng https://)',
-  missing: 'Nhập tài khoản và mật khẩu',
+  accountTitle: 'Tài khoản',
+  accountHint: 'Vala Desktop dùng tài khoản bạn đăng nhập ở tab Báo cáo để giữ phiên các hệ thống nguồn (eGov, eTask…) và gửi cho Vala lấy dữ liệu thay bạn.',
+  notSignedIn: 'Chưa đăng nhập.',
+  signIn: 'Đăng nhập',
   signedInAs: 'Đã đăng nhập', serverIs: 'Máy chủ',
   openPortal: 'Mở cổng báo cáo', logout: 'Đăng xuất',
-  unknownError: 'Lỗi không xác định',
 }, {
   title: 'Vala Desktop settings',
   homeTitle: 'Home page (dev build only)',
@@ -37,20 +34,19 @@ const M = messages({
   serverHome: 'Using the server\'s page',
   badHome: 'Invalid address (must start with https://, or http://localhost)',
   lightMode: 'Light mode', darkMode: 'Dark mode',
-  accountTitle: 'Vala Reporting account',
-  accountHint: 'Sign in so Vala Desktop keeps your source-system sessions (eGov, eTask…) and sends them to Vala to fetch data for you.',
-  serverLabel: 'Vala Reporting server', usernameLabel: 'Username', passwordLabel: 'Password',
-  login: 'Sign in', loggingIn: 'Signing in…',
-  badServer: 'Invalid server address (must start with https://)',
-  missing: 'Enter your username and password',
+  accountTitle: 'Account',
+  accountHint: 'Vala Desktop uses the account you sign in with on the Reports tab to keep your source-system sessions (eGov, eTask…) and send them to Vala to fetch data for you.',
+  notSignedIn: 'Not signed in.',
+  signIn: 'Sign in',
   signedInAs: 'Signed in as', serverIs: 'Server',
   openPortal: 'Open reporting portal', logout: 'Sign out',
-  unknownError: 'Unknown error',
 });
 
 export interface SettingsHooks {
-  onLogin: () => void;
-  onLogout: () => void;
+  /** Đưa người dùng sang tab Báo cáo để đăng nhập cổng. */
+  signIn: () => void;
+  /** Đăng xuất cả ứng dụng lẫn cổng. */
+  signOut: () => Promise<void>;
   onLangChanged: () => void;
   /** Bản dev đổi trang chính tự đặt ⇒ nạp lại tab Vala. */
   onHomeChanged: () => void;
@@ -69,15 +65,15 @@ function state() {
   };
 }
 
-const errText = (e: unknown) => {
-  if (e instanceof ApiError) return e.detail ? `${e.message}: ${e.detail}` : e.message;
-  return M[getSettings().lang].unknownError;
-};
+/** Tài khoản đổi (đăng nhập ở tab Báo cáo / đăng xuất) ⇒ cửa sổ đang mở tự vẽ lại. */
+const pushState = () => { if (win && !win.isDestroyed()) win.webContents.send('vala:settings-changed'); };
+accountEvents.on('login', pushState);
+accountEvents.on('logout', pushState);
 
 export function openSettingsWindow(hooks: SettingsHooks): void {
   if (win && !win.isDestroyed()) { win.show(); win.focus(); return; }
   const w = new BrowserWindow({
-    width: 520, height: 800, minWidth: 420, minHeight: 600, autoHideMenuBar: true, show: false,
+    width: 520, height: IS_DEV ? 760 : 560, minWidth: 420, minHeight: 480, autoHideMenuBar: true, show: false,
     icon: ICON,
     webPreferences: { preload: join(__dirname, 'settings-preload.js') },
   });
@@ -98,31 +94,14 @@ export function openSettingsWindow(hooks: SettingsHooks): void {
     hooks.onHomeChanged();
     return { ok: true, message: url ? t.saved : t.serverHome, state: state() };
   });
-  ipcMain.handle('vala:login', async (e, a: { server?: unknown; username?: unknown; password?: unknown }) => {
-    own(e);
-    const t = M[getSettings().lang];
-    const server = typeof a?.server === 'string' ? normalizeServer(a.server) : null;
-    if (!server) return { ok: false, message: t.badServer };
-    if (typeof a.username !== 'string' || !a.username.trim() || typeof a.password !== 'string' || !a.password) return { ok: false, message: t.missing };
-    try {
-      await loginDevice(server, a.username.trim(), a.password);
-    } catch (err) {
-      return { ok: false, message: errText(err) };
-    }
-    hooks.onLogin();
-    return { ok: true, state: state() };
-  });
-  ipcMain.handle('vala:logout', async (e) => { own(e); await logoutDevice(); hooks.onLogout(); return state(); });
+  ipcMain.handle('vala:sign-in', (e) => { own(e); hooks.signIn(); w.close(); });
+  ipcMain.handle('vala:logout', async (e) => { own(e); await hooks.signOut(); return state(); });
   ipcMain.handle('vala:open-portal', (e) => { own(e); hooks.openPortal(); });
 
   w.once('ready-to-show', () => w.show());
   w.on('closed', () => {
-    for (const ch of ['vala:settings-state', 'vala:set-lang', 'vala:save-home', 'vala:login', 'vala:logout', 'vala:open-portal']) ipcMain.removeHandler(ch);
+    for (const ch of ['vala:settings-state', 'vala:set-lang', 'vala:save-home', 'vala:sign-in', 'vala:logout', 'vala:open-portal']) ipcMain.removeHandler(ch);
     if (win === w) win = null;
   });
   void w.loadFile(join(__dirname, '../resources/settings.html'));
-}
-
-export function closeSettingsWindow(): void {
-  if (win && !win.isDestroyed()) win.close();
 }

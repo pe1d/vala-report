@@ -6,11 +6,12 @@
 import { app } from 'electron';
 import { setupChannel } from './channel';
 import { cleanUserAgent } from './ua';
-import { closeSettingsWindow, openSettingsWindow } from './settings-window';
+import { accountEvents, logoutDevice } from './account';
+import { openSettingsWindow } from './settings-window';
 import { getSettings } from './settings';
 import { syncAll } from './sync';
-import { initBrowser, refreshBrowser } from './browser';
-import { createMenus, refreshMenus, trayMenu } from './menu';
+import { forgetPortalLogin, initBrowser, refreshBrowser } from './browser';
+import { createMenus, moreMenu, profileMenu, refreshMenus } from './menu';
 import { refreshHomeFromServer } from './homepage';
 import { enableLinuxAutostart } from './linux';
 import { initUpdater } from './updater';
@@ -36,11 +37,21 @@ function startSync() {
   if (!syncTimer) syncTimer = setInterval(() => { void syncAll(); void refreshHome(); }, SYNC_INTERVAL_MS);
 }
 
+/** Đăng xuất cả ứng dụng (thu hồi token thiết bị) lẫn cổng (xoá phiên cổng — không thì cổng lại tự cấp token mới). */
+async function signOut() {
+  await logoutDevice();
+  await forgetPortalLogin();
+  refreshAll();
+}
+
+// Đăng nhập cổng ở tab Báo cáo ⇒ cổng cấp token thiết bị qua cầu nối (account.ts) ⇒ bắt đầu giữ/gửi phiên.
+accountEvents.on('login', () => { refreshAll(); startSync(); });
+accountEvents.on('logout', refreshAll);
+
 function openSettings() {
   openSettingsWindow({
-    // Đăng nhập xong ⇒ mở luôn tab Báo cáo (mục đích của việc đăng nhập).
-    onLogin: () => { refreshAll(); startSync(); closeSettingsWindow(); showPortal(); },
-    onLogout: refreshAll,
+    signIn: showPortal,
+    signOut,
     onLangChanged: refreshAll,
     onHomeChanged: () => { void refreshHome().then(() => showMain()); },
     openPortal: showPortal,
@@ -67,20 +78,15 @@ if (!app.requestSingleInstanceLock()) {
     }
     registerBridge();
     watchCookies();
-    createMenus({ showMain, showPortal, openSettings });
-    initBrowser({ onLeave: onTabLeave, menu: trayMenu, onLangChanged: refreshAll });
+    createMenus({ showMain, showPortal, openSettings, signOut: () => void signOut() });
+    initBrowser({ onLeave: onTabLeave, menu: moreMenu, profileMenu, signIn: showPortal, onLangChanged: refreshAll });
     // Bản mới tải xong ⇒ hiện nút "Cập nhật" trên thanh tab và trong menu.
     initUpdater(refreshAll);
 
     void refreshHome();
-    if (getSettings().deviceToken) {
-      startSync();
-      if (!HIDDEN) showMain();
-    } else {
-      // Chưa đăng nhập thiết bị: vẫn mở được trang chính; cửa sổ Cài đặt mời đăng nhập để giữ phiên các hệ thống nguồn.
-      if (!HIDDEN) showMain();
-      openSettings();
-    }
+    // Không bật cửa sổ Cài đặt: chưa đăng nhập thì thanh tab có nút "Đăng nhập" (sang tab Báo cáo đăng nhập cổng).
+    if (getSettings().deviceToken) startSync();
+    if (!HIDDEN) showMain();
   });
 
   // Chạy nền ở khay hệ thống: đóng hết cửa sổ không thoát ứng dụng.

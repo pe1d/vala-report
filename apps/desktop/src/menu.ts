@@ -1,10 +1,11 @@
 /**
- * Menu của Vala Desktop: thanh menu luôn hiện trên mọi cửa sổ (Vala · Báo cáo · Hệ thống nguồn · Xem · Cài đặt) và menu
- * biểu tượng khay hệ thống. Thanh menu là đường chính để chuyển giữa trang chính và cổng báo cáo — biểu tượng khay không
- * phải máy nào cũng hiện (vd Ubuntu GNOME thiếu extension AppIndicator).
+ * Menu của Vala Desktop:
+ *   - menu hồ sơ (bấm tên / ảnh đại diện trên thanh tab): tài khoản, Cài đặt, cập nhật, phiên bản, Đăng xuất, Thoát;
+ *   - menu "⋯" trên thanh tab: hệ thống nguồn, đồng bộ phiên;
+ *   - menu biểu tượng khay hệ thống (đủ mục — khi cửa sổ đang ẩn);
+ *   - thanh menu ứng dụng (ẩn, nhấn Alt).
  * Vẽ lại mỗi khi trạng thái nguồn, ngôn ngữ hoặc đăng nhập đổi.
  */
-import { join } from 'node:path';
 import { app, BrowserWindow, Menu, nativeImage, Tray, type BaseWindow, type MenuItemConstructorOptions } from 'electron';
 import { APP_NAME, ICON } from './channel';
 import { messages } from './i18n';
@@ -16,10 +17,10 @@ import { openSourceTab } from './windows';
 const M = messages({
   vala: 'Vala', openMain: 'Trang chính',
   reports: 'Báo cáo', openPortal: 'Mở cổng báo cáo',
-  sources: 'Hệ thống nguồn', noSources: '(chưa có hệ thống nào)', signInFirst: '(đăng nhập Vala Reporting trong Cài đặt trước)',
+  sources: 'Hệ thống nguồn', noSources: '(chưa có hệ thống nào)', signInFirst: '(đăng nhập ở tab Báo cáo trước)',
   syncNow: 'Đồng bộ phiên ngay',
   view: 'Xem', reload: 'Tải lại', back: 'Quay lại', forward: 'Tiến tới', zoomIn: 'Phóng to', zoomOut: 'Thu nhỏ', zoomReset: 'Cỡ gốc',
-  settingsMenu: 'Cài đặt', settings: 'Cài đặt…', signIn: 'Đăng nhập Vala Reporting…', quit: 'Thoát',
+  settingsMenu: 'Cài đặt', settings: 'Cài đặt…', signIn: 'Đăng nhập…', signOut: 'Đăng xuất', quit: 'Thoát',
   checkUpdate: 'Kiểm tra cập nhật', installUpdate: (v: string) => `Cập nhật lên bản ${v}`, version: (v: string) => `Phiên bản ${v}`,
   result: {
     sent: 'đã kết nối', unchanged: 'đã kết nối', managed: 'hệ thống tự đăng nhập', not_logged_in: 'chưa đăng nhập',
@@ -28,10 +29,10 @@ const M = messages({
 }, {
   vala: 'Vala', openMain: 'Home page',
   reports: 'Reports', openPortal: 'Open reporting portal',
-  sources: 'Source systems', noSources: '(no systems yet)', signInFirst: '(sign in to Vala Reporting in Settings first)',
+  sources: 'Source systems', noSources: '(no systems yet)', signInFirst: '(sign in on the Reports tab first)',
   syncNow: 'Sync sessions now',
   view: 'View', reload: 'Reload', back: 'Back', forward: 'Forward', zoomIn: 'Zoom in', zoomOut: 'Zoom out', zoomReset: 'Actual size',
-  settingsMenu: 'Settings', settings: 'Settings…', signIn: 'Sign in to Vala Reporting…', quit: 'Quit',
+  settingsMenu: 'Settings', settings: 'Settings…', signIn: 'Sign in…', signOut: 'Sign out', quit: 'Quit',
   checkUpdate: 'Check for updates', installUpdate: (v: string) => `Update to version ${v}`, version: (v: string) => `Version ${v}`,
   result: {
     sent: 'connected', unchanged: 'connected', managed: 'signed in automatically', not_logged_in: 'not signed in',
@@ -39,7 +40,7 @@ const M = messages({
   } as Record<SyncResult, string>,
 });
 
-export interface MenuActions { showMain: () => void; showPortal: () => void; openSettings: () => void }
+export interface MenuActions { showMain: () => void; showPortal: () => void; openSettings: () => void; signOut: () => void }
 
 let tray: Tray | null = null;
 let actions: MenuActions;
@@ -68,7 +69,7 @@ function appMenu(): Menu {
     { label: t.vala, submenu: [{ label: t.openMain, accelerator: 'CmdOrCtrl+1', click: actions.showMain }] },
     { label: t.reports, submenu: [s.deviceToken
       ? { label: t.openPortal, accelerator: 'CmdOrCtrl+2', click: actions.showPortal }
-      : { label: t.signIn, click: actions.openSettings }] },
+      : { label: t.signIn, click: actions.showPortal }] },
     { label: t.sources, submenu: sourceItems() },
     { label: t.view, submenu: [
       { label: t.back, accelerator: 'Alt+Left', click: (_i, w) => { const h = history(w); if (h?.canGoBack()) h.goBack(); } },
@@ -95,7 +96,7 @@ export function trayMenu(): Menu {
   const t = M[s.lang];
   return Menu.buildFromTemplate([
     { label: t.openMain, click: actions.showMain },
-    s.deviceToken ? { label: t.openPortal, click: actions.showPortal } : { label: t.signIn, click: actions.openSettings },
+    s.deviceToken ? { label: t.openPortal, click: actions.showPortal } : { label: t.signIn, click: actions.showPortal },
     { label: t.sources, submenu: sourceItems() },
     { type: 'separator' },
     { label: t.settings, click: actions.openSettings },
@@ -104,6 +105,30 @@ export function trayMenu(): Menu {
     { type: 'separator' },
     { label: t.quit, click: () => app.quit() },
   ]);
+}
+
+/** Menu hồ sơ trên thanh tab: tài khoản, Cài đặt, cập nhật, phiên bản, Đăng xuất, Thoát. */
+export function profileMenu(): Menu {
+  const s = getSettings();
+  const t = M[s.lang];
+  return Menu.buildFromTemplate([
+    ...(s.deviceToken && s.user ? [
+      { label: s.user.ho_ten || s.user.email, enabled: false },
+      ...(s.user.ho_ten ? [{ label: s.user.email, enabled: false }] : []),
+      { type: 'separator' as const },
+    ] : []),
+    { label: t.settings, click: actions.openSettings },
+    updateItem(t),
+    { label: t.version(app.getVersion()), enabled: false },
+    { type: 'separator' },
+    ...(s.deviceToken ? [{ label: t.signOut, click: actions.signOut }] : [{ label: t.signIn, click: actions.showPortal }]),
+    { label: t.quit, click: () => app.quit() },
+  ]);
+}
+
+/** Menu "⋯" trên thanh tab: các hệ thống nguồn (mở tab) và đồng bộ phiên. */
+export function moreMenu(): Menu {
+  return Menu.buildFromTemplate(sourceItems());
 }
 
 function updateItem(t: (typeof M)['vi']): MenuItemConstructorOptions {

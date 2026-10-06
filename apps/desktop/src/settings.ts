@@ -69,7 +69,8 @@ export function normalizeServer(raw: string): string | null {
 }
 
 const file = () => join(app.getPath('userData'), 'settings.json');
-const DEFAULTS: Settings = { homeUrl: DEFAULT_HOME, serverUrl: '', deviceToken: null, user: null, lang: 'vi' };
+// Máy chủ cấu hình sẵn theo bản build (người dùng không nhập): đăng nhập cổng ngay ở tab Báo cáo.
+const DEFAULTS: Settings = { homeUrl: DEFAULT_HOME, serverUrl: DEFAULT_SERVER, deviceToken: null, user: null, lang: 'vi' };
 
 export function getSettings(): Settings {
   try {

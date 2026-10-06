@@ -16,7 +16,8 @@ interface ValaSettingsApi {
   state(): Promise<SettingsState>;
   setLang(lang: string): Promise<SettingsState>;
   saveHome(url: string | null): Promise<{ ok: boolean; message?: string; state?: SettingsState }>;
-  login(server: string, username: string, password: string): Promise<{ ok: boolean; message?: string; state?: SettingsState }>;
+  signIn(): Promise<void>;
+  onChanged(cb: () => void): void;
   logout(): Promise<SettingsState>;
   openPortal(): Promise<void>;
 }
@@ -62,12 +63,10 @@ interface ValaSettingsApi {
     $('home-reset').hidden = !st.devHomeUrl;
     const signedIn = !!st.user;
     $('signed-in').hidden = !signedIn;
-    $('login-form').hidden = signedIn;
+    $('signed-out').hidden = signedIn;
     if (st.user) {
       $('user-name').textContent = `${st.user.ho_ten} (${st.user.email})`;
       $('user-server').textContent = st.serverUrl;
-    } else if (!($('server') as HTMLInputElement).value) {
-      ($('server') as HTMLInputElement).value = st.serverUrl;
     }
     applyTheme();
   }
@@ -75,7 +74,6 @@ interface ValaSettingsApi {
   for (const b of Array.from(document.querySelectorAll<HTMLButtonElement>('[data-lang]'))) {
     b.addEventListener('click', async () => {
       // Thông báo cũ đang ở ngôn ngữ trước ⇒ xoá thay vì để lẫn hai thứ tiếng.
-      note('login-note', '', '');
       note('home-note', '', '');
       render(await vala.setLang(b.dataset.lang!));
     });
@@ -89,23 +87,9 @@ interface ValaSettingsApi {
   $('home-form').addEventListener('submit', (e) => { e.preventDefault(); void saveHome(($('home') as HTMLInputElement).value); });
   $('home-reset').addEventListener('click', () => void saveHome(null));
 
-  $('login-form').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const btn = $('login-btn') as HTMLButtonElement;
-    btn.disabled = true;
-    btn.textContent = st.t.loggingIn;
-    note('login-note', '', '');
-    try {
-      const r = await vala.login(($('server') as HTMLInputElement).value, ($('username') as HTMLInputElement).value, ($('password') as HTMLInputElement).value);
-      ($('password') as HTMLInputElement).value = '';
-      if (r.state) render(r.state);
-      if (!r.ok) note('login-note', r.message ?? '', 'err');
-    } finally {
-      btn.disabled = false;
-      btn.textContent = st.t.login;
-    }
-  });
-
+  $('sign-in').addEventListener('click', () => void vala.signIn());
+  // Đăng nhập ở tab Báo cáo / đăng xuất trong lúc cửa sổ đang mở ⇒ vẽ lại.
+  vala.onChanged(() => void vala.state().then(render));
   $('logout').addEventListener('click', async () => render(await vala.logout()));
   $('open-portal').addEventListener('click', () => void vala.openPortal());
 
