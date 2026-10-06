@@ -40,6 +40,8 @@ export interface SsoConfig {
   usernameClaim: string;
   /** Chưa có tài khoản cổng ⇒ tự tạo (người dùng thường). Mặc định tắt: quản trị tạo / nhập người dùng trước. */
   autoCreate: boolean;
+  /** SSO không trả email ⇒ ghép <tên đăng nhập>@emailDomain (vd bkav.com). Trống ⇒ không ghép. */
+  emailDomain?: string;
   /** Đủ địa chỉ SSO + client id/secret để đăng nhập SSO. false ⇒ `problem` nói thiếu gì (API tắt nút SSO, không dừng). */
   ready: boolean;
   problem?: string;
@@ -89,6 +91,7 @@ export function ssoConfigFromEnv(): SsoConfig {
     pkce: process.env.SSO_PKCE !== 'false',
     usernameClaim: process.env.SSO_USERNAME_CLAIM ?? 'preferred_username',
     autoCreate: envBool('SSO_AUTO_CREATE'),
+    emailDomain: (process.env.SSO_EMAIL_DOMAIN ?? '').trim().replace(/^@/, '').toLowerCase() || undefined,
     ready: problems.length === 0,
     ...(problems.length ? { problem: problems.join('; ') } : {}),
   };
@@ -111,6 +114,37 @@ export interface SsoUser {
   email_verified?: boolean;
   preferred_username?: string;
   [claim: string]: unknown;
+}
+
+const USERNAME = /^[a-z0-9][a-z0-9._-]{0,63}$/;
+const EMAIL = /^[^@\s<>]+@[^@\s<>]+\.[^@\s<>]+$/;
+/** sub dạng UUID (WSO2 bản mới) — không phải tên đăng nhập, không đoán từ đây. */
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Tên đăng nhập SSO: claim usernameClaim (preferred_username); không có thì sub khi sub là tên đăng nhập — WSO2 hay để
+ * `dieptx` hoặc `dieptx@carbon.super` (carbon.super = tenant mặc định của WSO2, bỏ đi). sub là UUID ⇒ null.
+ */
+export function usernameOf(who: SsoUser, o: { usernameClaim: string }): string | null {
+  const claim = who[o.usernameClaim];
+  if (typeof claim === 'string' && claim.trim()) return claim.trim().toLowerCase();
+  if (typeof who.sub !== 'string' || UUID.test(who.sub)) return null;
+  // Bỏ tenant mặc định (@carbon.super) và miền kho người dùng (PRIMARY/…) mà WSO2 hay gắn vào sub.
+  const sub = who.sub.trim().toLowerCase().replace(/@carbon\.super$/, '').replace(/^[a-z0-9_-]+\//, '');
+  return USERNAME.test(sub) || EMAIL.test(sub) ? sub : null;
+}
+
+/**
+ * Email để ghép / tạo tài khoản: email SSO trả (trừ khi SSO báo chưa xác minh); không có ⇒ <tên đăng nhập>@emailDomain khi
+ * nơi triển khai đặt SSO_EMAIL_DOMAIN (tên đăng nhập đã là email thì dùng nguyên). Không đoán được ⇒ null.
+ */
+export function emailOf(who: SsoUser, o: { usernameClaim: string; emailDomain?: string }): string | null {
+  if (typeof who.email === 'string' && who.email.includes('@') && who.email_verified !== false) return who.email.trim().toLowerCase();
+  if (!o.emailDomain) return null;
+  const u = usernameOf(who, o);
+  if (!u) return null;
+  if (EMAIL.test(u)) return u;
+  return USERNAME.test(u) ? `${u}@${o.emailDomain}` : null;
 }
 
 /** PKCE: code_verifier ngẫu nhiên + code_challenge = base64url(sha256(verifier)). */

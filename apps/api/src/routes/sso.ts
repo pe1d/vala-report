@@ -3,7 +3,7 @@
  * `state` (ký HMAC, hết hạn 10 phút) cho biết đây là quay về sau khi ĐĂNG NHẬP cổng hay sau khi UỶ QUYỀN.
  */
 import type { FastifyPluginAsync, FastifyReply } from 'fastify';
-import { Problem, pkcePair, withTenant, withUserContext, type SsoUser, type UserContext } from '@vala/core';
+import { Problem, emailOf, pkcePair, usernameOf, withTenant, withUserContext, type SsoUser, type UserContext } from '@vala/core';
 import { audit } from '../audit.js';
 import { issuePortalToken } from '../auth.js';
 import type { ApiDeps } from '../deps.js';
@@ -127,9 +127,9 @@ async function handleGrant(deps: ApiDeps, req: Parameters<typeof audit>[1], repl
  */
 async function findOrLinkUser(deps: ApiDeps, who: SsoUser): Promise<{ id: number } | { loi: string }> {
   const cfg = deps.sso.cfg;
-  const email = typeof who.email === 'string' && who.email.includes('@') && who.email_verified !== false ? who.email.trim().toLowerCase() : null;
-  const claim = who[cfg.usernameClaim];
-  const username = typeof claim === 'string' && claim.trim() ? claim.trim().toLowerCase() : null;
+  // Email SSO trả; không có ⇒ <tên đăng nhập>@SSO_EMAIL_DOMAIN (nếu đặt). Tên đăng nhập: preferred_username hoặc sub (WSO2).
+  const email = emailOf(who, cfg);
+  const username = usernameOf(who, cfg);
   return withTenant(deps.writer, async (t) => {
     const linked = await t.oneOrNone<{ id: number; is_active: boolean }>('SELECT id, is_active FROM app_users WHERE sso_subject = $1', [who.sub]);
     if (linked) {
