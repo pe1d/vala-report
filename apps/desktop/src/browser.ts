@@ -142,7 +142,12 @@ function createView(t: Tab): WebContentsView {
   // Chỉ vẽ lại thanh tab khi tiêu đề đổi / trang chính điều hướng — không theo sự kiện tải khung con (trang như vala.bkav.com,
   // eGov tải ngầm liên tục).
   for (const ev of ['page-title-updated', 'did-navigate'] as const) wc.on(ev as 'did-navigate', push);
-  wc.on('page-favicon-updated', (_e, favicons) => { t.favicon = favicons.find((f) => /^https?:/.test(f)); push(); });
+  // Trang có thể tự đổi favicon (vd vala.bkav.com vẽ số thông báo ⇒ data:image/...): nhận cả data:image; lần cập nhật không
+  // có ảnh dùng được thì GIỮ favicon cũ, không xoá.
+  wc.on('page-favicon-updated', (_e, favicons) => {
+    const f = favicons.find((u) => /^(https?:|data:image\/)/.test(u));
+    if (f && f !== t.favicon) { t.favicon = f; push(); }
+  });
   wc.on('before-input-event', (e, input) => { if (shortcut(input)) e.preventDefault(); });
   void wc.loadURL(t.url);
   layout();
