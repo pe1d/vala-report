@@ -14,3 +14,4 @@ __pycache__/
 deploy/backup/
 deploy/certs/*
 !deploy/certs/README.txt
+apps/desktop/release/

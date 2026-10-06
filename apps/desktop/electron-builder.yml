@@ -1,0 +1,33 @@
+# Đóng gói Vala Desktop. Trang chính / máy chủ mặc định theo nơi triển khai đặt lúc build:
+#   VALA_HOME_URL=https://vala.donvi.gov.vn/ VALA_URL=https://baocao.donvi.gov.vn pnpm package
+appId: com.bkav.vala.desktop
+productName: Vala Desktop
+artifactName: vala-desktop-${version}-${os}-${arch}.${ext}
+directories:
+  output: release
+# Không có dependency chạy (chỉ devDependencies) ⇒ không cần rebuild module native; bước này còn lỗi với node_modules của pnpm.
+npmRebuild: false
+files:
+  - dist/**/*
+  - resources/settings.html
+  - resources/icon.png
+  - package.json
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  icon: resources/icon-256.png
+  # Build từ Linux không có wine: bỏ bước gắn icon/thông tin phiên bản vào .exe.
+  # Build trên Windows: pnpm build && npx electron-builder --win -c.win.signAndEditExecutable=true
+  signAndEditExecutable: false
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  shortcutName: Vala Desktop
+linux:
+  target: [AppImage]
+  executableName: vala-desktop
+  icon: resources/icon-256.png
+  category: Office
