@@ -1,14 +1,15 @@
 /**
  * Vala Desktop — tiến trình chính.
- * Chạy nền ở khay hệ thống (đóng cửa sổ không thoát), tự khởi động cùng Windows, giữ phiên các hệ thống nguồn và gửi
+ * Một cửa sổ tab (browser.ts). Chạy nền ở khay hệ thống (đóng cửa sổ không thoát), tự khởi động cùng Windows, giữ phiên các hệ thống nguồn và gửi
  * cho Vala Reporting mỗi khi đổi + định kỳ 15 phút (thay tiện ích trình duyệt).
  */
 import { app } from 'electron';
 import { closeSettingsWindow, openSettingsWindow } from './settings-window';
 import { getSettings } from './settings';
 import { syncAll } from './sync';
-import { createMenus, refreshMenus } from './menu';
-import { registerBridge, showMain, showPortal, watchCookies } from './windows';
+import { initBrowser, refreshBrowser } from './browser';
+import { createMenus, refreshMenus, trayMenu } from './menu';
+import { onTabLeave, registerBridge, showMain, showPortal, watchCookies } from './windows';
 
 const SYNC_INTERVAL_MS = 15 * 60_000;
 /** Mở lúc Windows khởi động ⇒ chỉ chạy nền, không bật cửa sổ. */
@@ -16,18 +17,24 @@ const HIDDEN = process.argv.includes('--hidden');
 
 let syncTimer: ReturnType<typeof setInterval> | null = null;
 
+/** Đăng nhập/đăng xuất, đổi trang chính, đổi ngôn ngữ ⇒ vẽ lại menu và các tab ghim. */
+function refreshAll() {
+  refreshMenus();
+  refreshBrowser();
+}
+
 function startSync() {
-  void syncAll().then(refreshMenus, refreshMenus);
+  void syncAll().then(refreshAll, refreshAll);
   if (!syncTimer) syncTimer = setInterval(() => void syncAll(), SYNC_INTERVAL_MS);
 }
 
 function openSettings() {
   openSettingsWindow({
-    // Đăng nhập xong ⇒ mở luôn cổng báo cáo (mục đích của việc đăng nhập), trang chính vẫn mở phía sau.
-    onLogin: () => { refreshMenus(); startSync(); closeSettingsWindow(); showMain(); showPortal(); },
-    onLogout: refreshMenus,
-    onHomeChanged: showMain,
-    onLangChanged: refreshMenus,
+    // Đăng nhập xong ⇒ mở luôn tab Báo cáo (mục đích của việc đăng nhập).
+    onLogin: () => { refreshAll(); startSync(); closeSettingsWindow(); showPortal(); },
+    onLogout: refreshAll,
+    onHomeChanged: () => { refreshAll(); showMain(); },
+    onLangChanged: refreshAll,
     openPortal: showPortal,
   });
 }
@@ -49,6 +56,7 @@ if (!app.requestSingleInstanceLock()) {
     registerBridge();
     watchCookies();
     createMenus({ showMain, showPortal, openSettings });
+    initBrowser({ onLeave: onTabLeave, menu: trayMenu, onLangChanged: refreshAll });
 
     if (getSettings().deviceToken) {
       startSync();

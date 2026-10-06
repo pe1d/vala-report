@@ -1,0 +1,325 @@
+/**
+ * Cửa sổ tab kiểu Edge: một BrowserWindow, phần trên là thanh tab + thanh điều hướng (resources/tabs.html), mỗi tab là
+ * một WebContentsView đặt bên dưới, chỉ tab đang chọn hiện.
+ *
+ * Tab ghim (không đóng được): Vala (trang chính) · Báo cáo (cổng Vala Reporting) · mỗi hệ thống nguồn. Tab ghim chỉ nạp
+ * trang khi được bấm lần đầu, để lúc khởi động không mở eGov/eTask vô ích. Tab thường: link target=_blank, window.open,
+ * Ctrl+T. Popup có kích thước và form POST vẫn mở cửa sổ thật (xem tabs-model.ts openTarget).
+ *
+ * Mọi tab dùng portal-preload.js (cầu nối với cổng) — tiến trình chính tự kiểm origin trước khi trả lời, nên tab của
+ * trang khác không gọi được gì.
+ */
+import { join } from 'node:path';
+import { app, BrowserWindow, ipcMain, shell, WebContentsView, type HandlerDetails, type Input, type IpcMainInvokeEvent, type Menu, type WebContents } from 'electron';
+import { messages, normLang } from './i18n';
+import { getSettings, setSettings } from './settings';
+import { cachedSources, events, statusOf, type SourceFull } from './sync';
+import { addressToUrl, openTarget, tabStatus, type TabStatus } from './tabs-model';
+
+const M = messages({
+  home: 'Vala', reports: 'Báo cáo', newTab: 'Tab mới', loading: 'Đang tải…',
+  back: 'Quay lại (Alt+←)', forward: 'Tiến tới (Alt+→)', reload: 'Tải lại (F5)', stop: 'Dừng tải',
+  close: 'Đóng tab (Ctrl+W)', add: 'Tab mới (Ctrl+T)', menu: 'Menu', address: 'Nhập địa chỉ trang',
+  lightMode: 'Chế độ sáng', darkMode: 'Chế độ tối',
+  status: { ok: 'Đã kết nối', warn: 'Cần đăng nhập lại', off: 'Chưa kết nối' } as Record<TabStatus, string>,
+}, {
+  home: 'Vala', reports: 'Reports', newTab: 'New tab', loading: 'Loading…',
+  back: 'Back (Alt+←)', forward: 'Forward (Alt+→)', reload: 'Reload (F5)', stop: 'Stop loading',
+  close: 'Close tab (Ctrl+W)', add: 'New tab (Ctrl+T)', menu: 'Menu', address: 'Enter a page address',
+  lightMode: 'Light mode', darkMode: 'Dark mode',
+  status: { ok: 'Connected', warn: 'Needs signing in again', off: 'Not connected' } as Record<TabStatus, string>,
+});
+
+/** Chiều cao thanh tab + thanh điều hướng — phải khớp resources/tabs.html (38px + 42px). */
+const TOOLBAR_H = 80;
+const ICON = join(__dirname, '../resources/icon.png');
+const TAB_PRELOAD = join(__dirname, 'portal-preload.js');
+
+interface PinnedDef { key: string; label: string; url: string; src?: SourceFull }
+interface Tab {
+  key: string;
+  pinned: boolean;
+  url: string;
+  view: WebContentsView | null;
+  favicon?: string;
+  /** Lúc tab được chọn gần nhất (tính thời gian làm việc trên tab). */
+  since?: number;
+}
+
+export interface BrowserHooks {
+  /** Rời một tab sau `ms` mili-giây đang xem (vd rời tab eGov ⇒ báo lấy dữ liệu ngay). */
+  onLeave: (key: string, ms: number) => void;
+  /** Menu "⋯" ở góc phải thanh điều hướng. */
+  menu: () => Menu;
+  onLangChanged: () => void;
+}
+
+let hooks: BrowserHooks;
+let win: BrowserWindow | null = null;
+const tabs = new Map<string, Tab>();
+/** Thứ tự các tab thường (tab ghim luôn đứng trước, theo pinnedDefs). */
+let order: string[] = [];
+let active: string | null = null;
+let nextId = 1;
+let quitting = false;
+app.on('before-quit', () => { quitting = true; });
+
+export const sourceTabKey = (code: string) => `src:${code}`;
+
+function pinnedDefs(): PinnedDef[] {
+  const s = getSettings();
+  const t = M[s.lang];
+  const defs: PinnedDef[] = [{ key: 'home', label: t.home, url: s.homeUrl }];
+  if (s.deviceToken && s.serverUrl) {
+    defs.push({ key: 'portal', label: t.reports, url: s.serverUrl });
+    for (const src of cachedSources()) defs.push({ key: sourceTabKey(src.code), label: src.ten, url: src.login_url, src });
+  }
+  return defs;
+}
+
+/** Khớp tab ghim với cấu hình hiện tại: thêm tab mới có, bỏ tab không còn (đăng xuất), đổi trang chính ⇒ nạp lại. */
+function syncPinned(): void {
+  const defs = pinnedDefs();
+  const keep = new Set(defs.map((d) => d.key));
+  for (const t of [...tabs.values()]) if (t.pinned && !keep.has(t.key)) destroyTab(t.key);
+  for (const d of defs) {
+    const t = tabs.get(d.key);
+    if (!t) { tabs.set(d.key, { key: d.key, pinned: true, url: d.url, view: null }); continue; }
+    if (d.key === 'home' && t.url !== d.url) {
+      t.url = d.url;
+      if (t.view) void t.view.webContents.loadURL(d.url);
+    }
+  }
+}
+
+function ensureWindow(): BrowserWindow {
+  if (win && !win.isDestroyed()) return win;
+  const w = new BrowserWindow({
+    width: 1280, height: 860, minWidth: 720, minHeight: 480, icon: ICON, title: 'Vala Desktop', show: false,
+    autoHideMenuBar: true,
+    webPreferences: { preload: join(__dirname, 'tabs-preload.js') },
+  });
+  win = w;
+  w.once('ready-to-show', () => w.show());
+  // Đóng cửa sổ chỉ ẩn xuống khay hệ thống (các tab, phiên vẫn giữ); "Thoát" mới đóng thật.
+  w.on('close', (e) => { if (!quitting) { e.preventDefault(); w.hide(); } });
+  w.on('closed', () => { win = null; tabs.clear(); order = []; active = null; });
+  for (const ev of ['resize', 'maximize', 'unmaximize', 'enter-full-screen', 'leave-full-screen'] as const) w.on(ev as 'resize', layout);
+  w.webContents.on('before-input-event', (e, input) => { if (shortcut(input)) e.preventDefault(); });
+  void w.loadFile(join(__dirname, '../resources/tabs.html'));
+  syncPinned();
+  return w;
+}
+
+function layout(): void {
+  if (!win || win.isDestroyed()) return;
+  const [width, height] = win.getContentSize();
+  const bounds = { x: 0, y: TOOLBAR_H, width: width!, height: Math.max(0, height! - TOOLBAR_H) };
+  for (const t of tabs.values()) t.view?.setBounds(bounds);
+}
+
+function createView(t: Tab): WebContentsView {
+  const view = new WebContentsView({ webPreferences: { preload: TAB_PRELOAD } });
+  t.view = view;
+  win!.contentView.addChildView(view);
+  view.setVisible(false);
+  const wc = view.webContents;
+  wc.setWindowOpenHandler((d: HandlerDetails) => {
+    const target = openTarget({ url: d.url, disposition: d.disposition, hasPostBody: !!d.postBody });
+    if (target.kind === 'window') return { action: 'allow', overrideBrowserWindowOptions: { icon: ICON, autoHideMenuBar: true } };
+    if (target.kind === 'external') void shell.openExternal(d.url);
+    if (target.kind === 'tab') openTab(d.url, target.foreground, t.key);
+    return { action: 'deny' };
+  });
+  const push = () => pushState();
+  for (const ev of ['page-title-updated', 'did-start-loading', 'did-stop-loading', 'did-navigate', 'did-navigate-in-page'] as const) wc.on(ev as 'did-stop-loading', push);
+  wc.on('page-favicon-updated', (_e, favicons) => { t.favicon = favicons.find((f) => /^https?:/.test(f)); push(); });
+  wc.on('before-input-event', (e, input) => { if (shortcut(input)) e.preventDefault(); });
+  void wc.loadURL(t.url);
+  layout();
+  return view;
+}
+
+function destroyTab(key: string): void {
+  const t = tabs.get(key);
+  if (!t) return;
+  if (t.view && win && !win.isDestroyed()) {
+    win.contentView.removeChildView(t.view);
+    t.view.webContents.close();
+  }
+  tabs.delete(key);
+  order = order.filter((k) => k !== key);
+  if (active === key) active = null;
+}
+
+function reveal(w: BrowserWindow) {
+  if (w.isMinimized()) w.restore();
+  w.show();
+  w.focus();
+}
+
+/** Chọn một tab (tạo cửa sổ / nạp trang nếu cần) và đưa cửa sổ lên trước. */
+export function showTab(key: string, opts: { reloadTo?: string } = {}): boolean {
+  const w = ensureWindow();
+  syncPinned();
+  const t = tabs.get(key);
+  if (!t) return false;
+  const prev = active ? tabs.get(active) : undefined;
+  if (prev && prev.key !== key) {
+    prev.view?.setVisible(false);
+    if (prev.since) hooks.onLeave(prev.key, Date.now() - prev.since);
+    prev.since = undefined;
+  }
+  if (!t.view) createView(t);
+  else if (opts.reloadTo) void t.view.webContents.loadURL(opts.reloadTo);
+  t.view!.setVisible(true);
+  t.since = t.since ?? Date.now();
+  active = key;
+  layout();
+  reveal(w);
+  t.view!.webContents.focus();
+  pushState();
+  return true;
+}
+
+export function openTab(url: string, foreground = true, after?: string): string {
+  ensureWindow();
+  const key = `t:${nextId++}`;
+  tabs.set(key, { key, pinned: false, url, view: null });
+  // Như Edge: tab mở từ một tab thường nằm ngay sau tab đó; còn lại thêm cuối.
+  const i = after ? order.indexOf(after) : -1;
+  if (i >= 0) order.splice(i + 1, 0, key); else order.push(key);
+  if (foreground) showTab(key);
+  else { createView(tabs.get(key)!); pushState(); }
+  return key;
+}
+
+export function closeTab(key: string): void {
+  const t = tabs.get(key);
+  if (!t || t.pinned) return;
+  const keys = visibleKeys();
+  const idx = keys.indexOf(key);
+  const wasActive = active === key;
+  destroyTab(key);
+  if (wasActive) {
+    const rest = visibleKeys();
+    showTab(rest[Math.min(idx, rest.length - 1)] ?? 'home');
+  } else {
+    pushState();
+  }
+}
+
+/** Đưa tab chứa trang này lên (vd quay về cổng báo cáo sau khi kết nối xong). */
+export function showWebContents(wc: WebContents): boolean {
+  for (const t of tabs.values()) if (t.view?.webContents === wc) return showTab(t.key);
+  return false;
+}
+
+const visibleKeys = () => [...pinnedDefs().map((d) => d.key).filter((k) => tabs.has(k)), ...order];
+const activeWc = () => (active ? tabs.get(active)?.view?.webContents : undefined);
+
+/** Cấu hình đổi (đăng nhập/đăng xuất, trang chính, ngôn ngữ) hoặc trạng thái nguồn đổi ⇒ cập nhật tab ghim và thanh tab. */
+export function refreshBrowser(): void {
+  if (!win || win.isDestroyed()) return;
+  syncPinned();
+  if (active && !tabs.has(active)) { showTab('home'); return; }
+  pushState();
+}
+
+function pushState(): void {
+  if (!win || win.isDestroyed()) return;
+  const s = getSettings();
+  const t = M[s.lang];
+  const defs = new Map(pinnedDefs().map((d) => [d.key, d]));
+  const list = visibleKeys().map((key) => {
+    const tab = tabs.get(key)!;
+    const wc = tab.view?.webContents;
+    const def = defs.get(key);
+    const title = wc?.getTitle() || '';
+    return {
+      key,
+      pinned: tab.pinned,
+      label: def?.label ?? (title || (wc?.isLoading() ? t.loading : t.newTab)),
+      title: title || def?.label || tab.url,
+      loading: !!wc?.isLoading(),
+      favicon: tab.favicon ?? null,
+      status: def?.src ? tabStatus(statusOf(def.src.code)?.result, def.src.state) : null,
+    };
+  });
+  const wc = activeWc();
+  win.webContents.send('tabs:state', {
+    lang: s.lang,
+    t,
+    active,
+    tabs: list,
+    nav: {
+      url: wc?.getURL() ?? '',
+      canBack: !!wc?.navigationHistory.canGoBack(),
+      canForward: !!wc?.navigationHistory.canGoForward(),
+      loading: !!wc?.isLoading(),
+    },
+  });
+}
+
+/** Phím tắt như trình duyệt, bắt ở cả thanh tab lẫn trong trang. Trả true nếu đã xử lý. */
+function shortcut(input: Input): boolean {
+  if (input.type !== 'keyDown') return false;
+  const ctrl = input.control || input.meta;
+  const key = input.key;
+  const keys = visibleKeys();
+  if (ctrl && !input.shift && key.toLowerCase() === 't') { openTab(getSettings().homeUrl); return true; }
+  if (ctrl && key.toLowerCase() === 'w') { if (active) closeTab(active); return true; }
+  if (ctrl && key === 'Tab') {
+    const i = active ? keys.indexOf(active) : 0;
+    const next = keys[(i + (input.shift ? -1 : 1) + keys.length) % keys.length];
+    if (next) showTab(next);
+    return true;
+  }
+  if (ctrl && /^[1-9]$/.test(key)) {
+    const k = key === '9' ? keys[keys.length - 1] : keys[Number(key) - 1];
+    if (k) showTab(k);
+    return true;
+  }
+  if (ctrl && key.toLowerCase() === 'l') { win?.webContents.focus(); win?.webContents.send('tabs:focus-address'); return true; }
+  if (key === 'F5' || (ctrl && key.toLowerCase() === 'r')) { activeWc()?.reload(); return true; }
+  if (input.alt && key === 'ArrowLeft') { const h = activeWc()?.navigationHistory; if (h?.canGoBack()) h.goBack(); return true; }
+  if (input.alt && key === 'ArrowRight') { const h = activeWc()?.navigationHistory; if (h?.canGoForward()) h.goForward(); return true; }
+  return false;
+}
+
+/** IPC của thanh tab — chỉ nhận từ chính trang thanh tab của cửa sổ này. */
+function registerIpc(): void {
+  const own = (e: IpcMainInvokeEvent) => { if (!win || e.sender !== win.webContents) throw new Error('forbidden'); };
+  ipcMain.handle('tabs:ready', (e) => { own(e); if (!active) showTab('home'); else pushState(); });
+  ipcMain.handle('tabs:activate', (e, key: unknown) => { own(e); if (typeof key === 'string') showTab(key); });
+  ipcMain.handle('tabs:close', (e, key: unknown) => { own(e); if (typeof key === 'string') closeTab(key); });
+  ipcMain.handle('tabs:new', (e) => { own(e); openTab(getSettings().homeUrl); });
+  ipcMain.handle('tabs:nav', (e, action: unknown) => {
+    own(e);
+    const wc = activeWc();
+    if (!wc) return;
+    if (action === 'back' && wc.navigationHistory.canGoBack()) wc.navigationHistory.goBack();
+    if (action === 'forward' && wc.navigationHistory.canGoForward()) wc.navigationHistory.goForward();
+    if (action === 'reload') wc.reload();
+    if (action === 'stop') wc.stop();
+  });
+  ipcMain.handle('tabs:go', (e, raw: unknown) => {
+    own(e);
+    const url = typeof raw === 'string' ? addressToUrl(raw) : null;
+    if (!url) return false;
+    const wc = activeWc();
+    if (wc) void wc.loadURL(url); else openTab(url);
+    return true;
+  });
+  ipcMain.handle('tabs:menu', (e, pos: { x?: unknown; y?: unknown }) => {
+    own(e);
+    hooks.menu().popup({ window: win!, x: Math.round(Number(pos?.x) || 0), y: Math.round(Number(pos?.y) || 0) });
+  });
+  ipcMain.handle('tabs:lang', (e, l: unknown) => { own(e); setSettings({ lang: normLang(l) }); hooks.onLangChanged(); });
+}
+
+export function initBrowser(h: BrowserHooks): void {
+  hooks = h;
+  registerIpc();
+  events.on('status', refreshBrowser);
+}

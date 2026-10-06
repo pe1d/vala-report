@@ -7,7 +7,7 @@
   "description": "Vala Desktop — giữ phiên các hệ thống nguồn và mở cổng Vala như một ứng dụng",
   "main": "dist/main.js",
   "scripts": {
-    "build": "tsc -p . && node scripts/write-defaults.cjs && tailwindcss -i resources/settings.src.css -o dist/renderer/settings.css --minify",
+    "build": "tsc -p . && node scripts/write-defaults.cjs && tailwindcss -i resources/ui.src.css -o dist/renderer/ui.css --minify",
     "dev": "pnpm build && electron .",
     "package": "pnpm build && electron-builder --win",
     "package:zip": "pnpm build && electron-builder --win zip",

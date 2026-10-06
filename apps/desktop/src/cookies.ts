@@ -5,7 +5,7 @@
  * nó, nên không có trạng thái "chưa cho phép". Nguyên tắc an toàn giữ nguyên: chỉ đọc và gửi đúng các cookie adapter
  * khai (cookie_names), không lưu giá trị, không log giá trị.
  */
-import { BrowserWindow, session } from 'electron';
+import { session, webContents } from 'electron';
 
 export interface Source {
   code: string;
@@ -76,16 +76,17 @@ export function parseDocumentCookie(raw: string, wanted: string[]): Record<strin
 
 /**
  * Cookie do JS của trang đặt mà kho cookie không trả (vd cookie phân vùng meId/companyId của eTask): đọc
- * document.cookie trên một cửa sổ đang mở trang nguồn. Không có cửa sổ nào ⇒ rỗng (bắt được ở lần đồng bộ sau).
+ * document.cookie trên một tab/cửa sổ đang mở trang nguồn. Không có trang nào ⇒ rỗng (bắt được ở lần đồng bộ sau).
  */
 async function readPageCookies(src: Source, names: string[]): Promise<Record<string, string>> {
   if (!names.length) return {};
   const host = new URL(src.origin).hostname;
-  for (const w of BrowserWindow.getAllWindows()) {
-    const url = w.webContents.getURL();
+  for (const wc of webContents.getAllWebContents()) {
+    if (wc.isDestroyed()) continue;
+    const url = wc.getURL();
     if (!/^https?:/.test(url) || new URL(url).hostname !== host) continue;
     try {
-      const raw = (await w.webContents.executeJavaScript('document.cookie', false)) as string;
+      const raw = (await wc.executeJavaScript('document.cookie', false)) as string;
       const got = parseDocumentCookie(raw, names);
       if (Object.keys(got).length) return got;
     } catch { /* trang đang tải lại: thử cửa sổ khác */ }

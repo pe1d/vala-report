@@ -9,7 +9,7 @@ import { app, BrowserWindow, Menu, nativeImage, Tray, type BaseWindow, type Menu
 import { messages } from './i18n';
 import { getSettings } from './settings';
 import { cachedSources, events, statusOf, syncAll, type SyncResult } from './sync';
-import { openSourceWindow } from './windows';
+import { openSourceTab } from './windows';
 
 const M = messages({
   tooltip: 'Vala Desktop',
@@ -48,7 +48,7 @@ function sourceItems(): MenuItemConstructorOptions[] {
   if (!s.deviceToken) return [{ label: t.signInFirst, enabled: false }];
   const items: MenuItemConstructorOptions[] = cachedSources().map((src) => {
     const r = statusOf(src.code)?.result;
-    return { label: r ? `${src.ten} — ${t.result[r]}` : src.ten, click: () => openSourceWindow(src) };
+    return { label: r ? `${src.ten} — ${t.result[r]}` : src.ten, click: () => openSourceTab(src) };
   });
   return [
     ...(items.length ? items : [{ label: t.noSources, enabled: false }]),
@@ -85,7 +85,8 @@ function appMenu(): Menu {
   ]);
 }
 
-function trayMenu(): Menu {
+/** Menu khay hệ thống, cũng là menu "⋯" trên thanh điều hướng. */
+export function trayMenu(): Menu {
   const s = getSettings();
   const t = M[s.lang];
   return Menu.buildFromTemplate([

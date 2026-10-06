@@ -1,16 +1,17 @@
 /**
- * Các cửa sổ của Vala Desktop và luồng "kết nối một hệ thống nguồn":
- *   - cửa sổ chính: trang chính của đơn vị (settings.homeUrl, vd https://vala.bkav.com/);
- *   - cổng báo cáo: máy chủ Vala Reporting (settings.serverUrl);
- *   - cửa sổ hệ thống nguồn (eGov, eTask…): người dùng đăng nhập/làm việc ngay trong ứng dụng, cookie đổi ⇒ gửi phiên.
+ * Luồng "kết nối một hệ thống nguồn" và các tab của Vala Desktop (xem browser.ts):
+ *   - tab Vala: trang chính của đơn vị (settings.homeUrl, vd https://vala.bkav.com/);
+ *   - tab Báo cáo: cổng Vala Reporting (settings.serverUrl);
+ *   - tab từng hệ thống nguồn (eGov, eTask…): người dùng đăng nhập/làm việc ngay trong ứng dụng, cookie đổi ⇒ gửi phiên.
  *
  * Cầu nối với cổng báo cáo: cổng nói chuyện với tiện ích qua window.postMessage (apps/web/src/extension.ts);
  * portal-preload.ts giả lập đúng giao thức đó nên nút "Đăng nhập qua tiện ích" chạy được trong desktop mà không sửa cổng.
  * Mọi lời gọi IPC từ trang chỉ được nhận khi khung gọi thuộc đúng origin máy chủ Vala đã cấu hình.
  */
 import { join } from 'node:path';
-import { app, BrowserWindow, ipcMain, Notification, session, shell, type IpcMainInvokeEvent, type WebContents } from 'electron';
+import { app, ipcMain, Notification, session, shell, type IpcMainInvokeEvent, type WebContents } from 'electron';
 import { api } from './api';
+import { showTab, showWebContents, sourceTabKey } from './browser';
 import { matchesSessionDomain, sessionDomain } from './cookies';
 import { messages } from './i18n';
 import { getSettings } from './settings';
@@ -18,7 +19,7 @@ import { cachedSources, events, refreshSources, statusOf, syncSource, type Sourc
 
 const M = messages({
   unknownSource: 'Vala Desktop chưa đăng nhập hoặc không có hệ thống này',
-  loginOpened: (ten: string) => `Đăng nhập ${ten} trong cửa sổ vừa mở — xong Vala Desktop tự đưa bạn quay lại`,
+  loginOpened: (ten: string) => `Đăng nhập ${ten} trong tab vừa mở — xong Vala Desktop tự đưa bạn quay lại`,
   connectFailed: 'Kết nối không thành công',
   connected: (ten: string) => `Đã kết nối ${ten}`,
   reconnected: (ten: string) => `Đã kết nối lại ${ten}`,
@@ -28,7 +29,7 @@ const M = messages({
   expiredBody: 'Vala không lấy được dữ liệu mới. Bấm vào đây để đăng nhập lại.',
 }, {
   unknownSource: 'Vala Desktop is not signed in or does not have this system',
-  loginOpened: (ten: string) => `Sign in to ${ten} in the window that just opened — Vala Desktop will bring you back when done`,
+  loginOpened: (ten: string) => `Sign in to ${ten} in the tab that just opened — Vala Desktop will bring you back when done`,
   connectFailed: 'Connection failed',
   connected: (ten: string) => `Connected to ${ten}`,
   reconnected: (ten: string) => `Reconnected to ${ten}`,
@@ -40,47 +41,17 @@ const M = messages({
 const T = () => M[getSettings().lang];
 
 const ICON = join(__dirname, '../resources/icon.png');
-const PORTAL_PRELOAD = join(__dirname, 'portal-preload.js');
 
-/** Đang thoát hẳn (menu "Thoát") ⇒ cho đóng cửa sổ; còn lại đóng cửa sổ chỉ ẩn xuống khay hệ thống. */
-let quitting = false;
-app.on('before-quit', () => { quitting = true; });
+/** Tab Vala: trang chính của đơn vị. */
+export const showMain = (): void => { showTab('home'); };
 
-let mainWindow: BrowserWindow | null = null;
-let portalWindow: BrowserWindow | null = null;
+/** Tab Báo cáo: cổng Vala Reporting (chỉ có khi đã đăng nhập thiết bị). */
+export const showPortal = (): void => { showTab('portal'); };
 
-function appWindow(url: string, onClosed: () => void): BrowserWindow {
-  const win = new BrowserWindow({
-    width: 1280, height: 860, icon: ICON, show: false,
-    webPreferences: { preload: PORTAL_PRELOAD },
-  });
-  win.once('ready-to-show', () => win.show());
-  win.on('close', (e) => { if (!quitting) { e.preventDefault(); win.hide(); } });
-  win.on('closed', onClosed);
-  void win.loadURL(url);
-  return win;
-}
-
-const reveal = (w: BrowserWindow) => { if (w.isMinimized()) w.restore(); w.show(); w.focus(); };
-
-/** Cửa sổ chính: trang chính của đơn vị. Đổi trang chính trong Cài đặt ⇒ mở lại đúng trang mới. */
-export function showMain(): void {
-  const url = getSettings().homeUrl;
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    if (!mainWindow.webContents.getURL().startsWith(new URL(url).origin)) void mainWindow.loadURL(url);
-    reveal(mainWindow);
-    return;
-  }
-  mainWindow = appWindow(url, () => { mainWindow = null; });
-}
-
-/** Cổng báo cáo Vala Reporting (Tài khoản nguồn, báo cáo…). */
-export function showPortal(): void {
-  const url = getSettings().serverUrl;
-  if (!url) return;
-  if (portalWindow && !portalWindow.isDestroyed()) { reveal(portalWindow); return; }
-  portalWindow = appWindow(url, () => { portalWindow = null; });
-}
+/** Tab của một hệ thống nguồn; `relogin` ⇒ đưa về trang đăng nhập (luồng kết nối). */
+export const openSourceTab = (src: SourceFull, relogin = false): void => {
+  showTab(sourceTabKey(src.code), relogin ? { reloadTo: src.login_url } : {});
+};
 
 /** Trang trong khung gọi IPC có thuộc đúng origin máy chủ Vala Reporting không. */
 function fromPortal(e: IpcMainInvokeEvent): boolean {
@@ -93,35 +64,23 @@ function fromPortal(e: IpcMainInvokeEvent): boolean {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Cửa sổ hệ thống nguồn + "vừa làm việc xong thì lấy lại dữ liệu ngay"
+// Vừa làm việc trên tab hệ thống nguồn rồi rời tab ⇒ báo Vala lấy lại dữ liệu ngay (máy chủ tự giới hạn).
 // ---------------------------------------------------------------------------------------------
 const MIN_STAY_MS = 15_000;
 const NUDGE_GAP_MS = 2 * 60_000;
 const nudged = new Map<string, number>();
-const sourceWindows = new Map<string, BrowserWindow>();
 
-/** Người dùng vừa làm việc trên hệ thống nguồn rồi rời cửa sổ ⇒ báo Vala lấy lại dữ liệu ngay (máy chủ tự giới hạn). */
-async function nudge(src: SourceFull) {
-  if (Date.now() - (nudged.get(src.code) ?? 0) < NUDGE_GAP_MS) return;
+export function onTabLeave(key: string, ms: number): void {
+  if (!key.startsWith('src:') || ms < MIN_STAY_MS) return;
+  const src = cachedSources().find((s) => sourceTabKey(s.code) === key);
+  if (!src || Date.now() - (nudged.get(src.code) ?? 0) < NUDGE_GAP_MS) return;
   nudged.set(src.code, Date.now());
-  try {
-    await syncSource(src);
-    await api('POST', `/ext/sources/${src.code}/refresh`);
-  } catch { /* lần sau */ }
-}
-
-export function openSourceWindow(src: SourceFull): BrowserWindow {
-  const open = sourceWindows.get(src.code);
-  if (open && !open.isDestroyed()) { reveal(open); return open; }
-  const win = new BrowserWindow({ width: 1280, height: 860, title: src.ten, icon: ICON });
-  sourceWindows.set(src.code, win);
-  let since: number | null = null;
-  const leave = () => { if (since !== null && Date.now() - since >= MIN_STAY_MS) void nudge(src); since = null; };
-  win.on('focus', () => { since = Date.now(); });
-  win.on('blur', leave);
-  win.on('closed', () => { leave(); if (sourceWindows.get(src.code) === win) sourceWindows.delete(src.code); });
-  void win.loadURL(src.login_url);
-  return win;
+  void (async () => {
+    try {
+      await syncSource(src);
+      await api('POST', `/ext/sources/${src.code}/refresh`);
+    } catch { /* lần sau */ }
+  })();
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -131,7 +90,7 @@ type ConnectEvent =
   | { type: 'connected'; code: string; ten: string }
   | { type: 'connect-failed'; code: string; ten: string; message: string };
 
-interface Pending { win?: BrowserWindow; portal?: WebContents; at: number }
+interface Pending { portal?: WebContents; at: number }
 const PENDING_TTL_MS = 15 * 60_000;
 const pending = new Map<string, Pending>();
 
@@ -146,12 +105,12 @@ export async function startConnect(code: string, portal?: WebContents): Promise<
     pending.delete(code);
     return { status: r === 'managed' ? 'managed' : 'error', message: statusOf(code)?.message };
   }
-  // Chưa đăng nhập / phiên hỏng ⇒ mở trang đăng nhập nguồn; cookie đổi sẽ kích hoạt gửi (watchCookies).
-  pending.set(code, { win: openSourceWindow(src), portal, at: Date.now() });
+  // Chưa đăng nhập / phiên hỏng ⇒ mở tab nguồn ở trang đăng nhập; cookie đổi sẽ kích hoạt gửi (watchCookies).
+  openSourceTab(src, true);
   return { status: 'login_opened', message: T().loginOpened(src.ten) };
 }
 
-/** Kết thúc lượt kết nối đang chờ: báo cổng, đóng cửa sổ đăng nhập đã mở, đưa người dùng về cổng. */
+/** Kết thúc lượt kết nối đang chờ: báo cổng, đưa người dùng về tab cổng (tab nguồn vẫn giữ để làm việc tiếp). */
 function finishPending(src: SourceFull, ok: boolean, message?: string) {
   const p = pending.get(src.code);
   if (!p) return;
@@ -162,10 +121,8 @@ function finishPending(src: SourceFull, ok: boolean, message?: string) {
   if (!ok) notify(T().notConnected(src.ten), ev.type === 'connect-failed' ? ev.message : '');
   if (p.portal && !p.portal.isDestroyed()) {
     p.portal.send('vala:event', ev);
-    const w = BrowserWindow.fromWebContents(p.portal);
-    if (w) reveal(w);
+    showWebContents(p.portal);
   }
-  if (ok && p.win && !p.win.isDestroyed()) p.win.close();
 }
 
 events.on('status', (code?: string) => {
@@ -237,7 +194,10 @@ export function registerBridge(): void {
   });
 }
 
-/** Liên kết mở cửa sổ mới trong trang chính/cổng: trang web http(s) mở trong ứng dụng, giao thức khác giao cho hệ điều hành. */
+/**
+ * Mặc định cho mọi trang (popup thật mở từ tab, cửa sổ Cài đặt): web http(s) mở cửa sổ trong ứng dụng, giao thức khác giao cho
+ * hệ điều hành. Tab đặt handler riêng ngay sau khi tạo (browser.ts) — mở link thành tab.
+ */
 app.on('web-contents-created', (_e, wc) => {
   wc.setWindowOpenHandler(({ url }) => {
     if (/^https?:/i.test(url)) return { action: 'allow', overrideBrowserWindowOptions: { icon: ICON, autoHideMenuBar: true } };
