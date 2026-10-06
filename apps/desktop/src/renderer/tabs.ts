@@ -52,8 +52,8 @@ interface ValaTabsApi {
     ok: 'bg-emerald-500', warn: 'bg-amber-500', off: 'bg-slate-400 dark:bg-slate-500',
   };
 
-  /** Phần tử của một tab: tạo một lần, cập nhật tại chỗ. Ô biểu tượng cố định 16px để tên tab không xê dịch. */
-  interface TabNode { el: HTMLElement; icon: HTMLImageElement; label: HTMLElement; dot: HTMLElement; close: HTMLButtonElement | null }
+  /** Phần tử của một tab: tạo một lần, cập nhật tại chỗ. Ô biểu tượng cố định 16px (favicon hoặc chữ cái đầu). */
+  interface TabNode { el: HTMLElement; icon: HTMLImageElement; letter: HTMLElement; label: HTMLElement; dot: HTMLElement; close: HTMLButtonElement | null }
   const nodes = new Map<string, TabNode>();
   const separator = document.createElement('span');
   separator.className = 'mx-1 mb-2 h-4 w-px shrink-0 bg-slate-400 dark:bg-slate-700';
@@ -66,13 +66,18 @@ interface ValaTabsApi {
     el.addEventListener('auxclick', (e) => { if (e.button === 1 && !tab.pinned) void api.close(tab.key); });
     const box = document.createElement('span');
     box.className = 'flex h-4 w-4 shrink-0 items-center justify-center';
+    // Chưa có favicon dùng được ⇒ chữ cái đầu của tên tab trong ô màu (không để ô trống).
+    const letter = document.createElement('span');
+    letter.className = 'flex h-4 w-4 items-center justify-center rounded bg-blue-600 text-[10px] font-semibold leading-none text-white dark:bg-blue-500';
     const icon = document.createElement('img');
     icon.alt = '';
     icon.className = 'h-4 w-4';
     icon.hidden = true;
-    icon.addEventListener('error', () => { icon.hidden = true; });
-    icon.addEventListener('load', () => { icon.hidden = false; });
-    box.append(icon);
+    const showIcon = (ok: boolean) => { icon.hidden = !ok; letter.hidden = ok; };
+    icon.addEventListener('error', () => showIcon(false));
+    // Ảnh 1×1 (favicon rỗng/trong suốt) coi như không có.
+    icon.addEventListener('load', () => showIcon(icon.naturalWidth > 1 && icon.naturalHeight > 1));
+    box.append(letter, icon);
     const label = document.createElement('span');
     label.className = 'min-w-0 flex-1 truncate';
     const dot = document.createElement('span');
@@ -88,7 +93,7 @@ interface ValaTabsApi {
       close.addEventListener('click', () => void api.close(tab.key));
       el.append(close);
     }
-    return { el, icon, label, dot, close };
+    return { el, icon, letter, label, dot, close };
   }
 
   const setIf = (el: HTMLElement, attr: string, v: string) => { if (el.getAttribute(attr) !== v) el.setAttribute(attr, v); };
@@ -108,8 +113,11 @@ interface ValaTabsApi {
     if ((n.icon.dataset.src ?? '') !== fav) {
       n.icon.dataset.src = fav;
       n.icon.hidden = true;
+      n.letter.hidden = false;
       if (fav) n.icon.src = fav; else n.icon.removeAttribute('src');
     }
+    const initial = (tab.label.trim()[0] ?? '•').toUpperCase();
+    if (n.letter.textContent !== initial) n.letter.textContent = initial;
     if (n.label.textContent !== tab.label) n.label.textContent = tab.label;
     n.dot.hidden = !tab.status;
     if (tab.status) {
