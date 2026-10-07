@@ -16,7 +16,7 @@ import { prefsEvents, setPrefs } from './prefs';
 import { DEFAULT_SERVER, getSettings, normalizeHome, setSettings } from './settings';
 import { strings } from './settings-strings';
 import { cachedSources, events as syncEvents } from './sync';
-import { canUpdate, checkNow, installNow, pendingUpdate } from './updater';
+import { canUpdate, checkNow, currentNotes, installNow, pendingUpdate } from './updater';
 
 export interface SettingsHooks {
   signIn: () => void;
@@ -63,6 +63,8 @@ function state() {
     homeUrl: s.homeUrl, devHomeUrl: s.devHomeUrl ?? null,
     autostart: { enabled: autostartEnabled(), supported: autostartSupported() },
     update: { pending: pendingUpdate()?.version ?? null, canUpdate: canUpdate() },
+    // Điểm mới của bản đang chạy và của bản đã tải chờ cài (null ⇒ không có ghi chú).
+    whatsNew: { current: currentNotes()?.[s.lang] ?? null, pending: pendingUpdate()?.notes?.[s.lang] ?? null },
     passwords: passwords(),
   };
 }

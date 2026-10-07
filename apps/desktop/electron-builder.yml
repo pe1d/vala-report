@@ -16,6 +16,9 @@ files:
   - package.json
 # Sinh latest.yml (phiên bản + sha512 của file cài) cho tự cập nhật. Địa chỉ ở đây chỉ để electron-builder ghi vào gói —
 # ứng dụng luôn hỏi <máy chủ Vala Reporting trong Cài đặt>/desktop/ (src/updater.ts). Không tự tải lên đâu (-p never).
+# Điểm mới của bản này (scripts/release-notes.cjs tách từ CHANGELOG.md) ⇒ trường releaseNotes của latest.yml.
+releaseInfo:
+  releaseNotesFile: dist/release-notes.json
 publish:
   - provider: generic
     url: https://qtttboard-demo.demozone.vn:5443/vala-report/desktop/

@@ -3,12 +3,14 @@
 #   apps/desktop/scripts/package-win.sh            (đặt VALA_HOME_URL / VALA_URL / VALA_UPDATE_URL nếu cần, như pnpm package)
 # Ra apps/desktop/release/: vala-desktop-<phiên bản>-win-x64.exe, .exe.blockmap, latest.yml
 # → chép lên máy chủ rồi chạy deploy/publish-desktop.sh (xem docs/trien-khai-k3s.md mục 4b).
-# Nhớ tăng "version" trong apps/desktop/package.json trước mỗi lần phát hành: ứng dụng chỉ cập nhật lên bản cao hơn.
+# Nhớ tăng "version" trong apps/desktop/package.json trước mỗi lần phát hành (ứng dụng chỉ cập nhật lên bản cao hơn) và
+# viết điểm mới của bản đó trong apps/desktop/CHANGELOG.md (thiếu thì dừng).
 set -eu
 cd "$(dirname "$0")/.."
 APP="$(pwd)"
 REPO="$(cd ../.. && pwd)"
 pnpm build
+node scripts/release-notes.cjs --strict
 rm -rf release
 CACHE="${XDG_CACHE_HOME:-$HOME/.cache}"
 mkdir -p "$CACHE/electron" "$CACHE/electron-builder" "$CACHE/vala-desktop-wine"

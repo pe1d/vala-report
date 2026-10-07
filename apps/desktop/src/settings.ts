@@ -25,6 +25,8 @@ export interface Settings {
   autostart?: boolean;
   /** Chỉ bản dev: trang chính tự đặt để thử (đè trang quản trị đặt trên cổng). Bản cho người dùng bỏ qua trường này. */
   devHomeUrl?: string | null;
+  /** Phiên bản lần chạy trước — khác bản đang chạy ⇒ vừa cập nhật, báo "có gì mới" một lần (updater.ts). */
+  lastVersion?: string;
 }
 
 /**

@@ -15,6 +15,7 @@ interface SettingsState {
   devHomeUrl: string | null;
   autostart: { enabled: boolean; supported: boolean };
   update: { pending: string | null; canUpdate: boolean };
+  whatsNew: { current: string[] | null; pending: string[] | null };
   passwords: { available: boolean; sources: PwRow[]; sites: PwRow[]; never: { code: string; ten: string }[] };
 }
 interface PwRow { code: string; ten: string; username: string | null; auto: boolean; savedAt: string | null }
@@ -150,6 +151,13 @@ interface ValaSettingsApi {
     const install = $<HTMLButtonElement>('install-update');
     install.hidden = !next.update.pending;
     install.textContent = next.update.pending ? `${t.installUpdate} ${next.update.pending}` : '';
+    const list = (id: string, items: string[] | null) => {
+      $(id).replaceChildren(...(items ?? []).map((x) => el('li', '', x)));
+      return !!items?.length;
+    };
+    $('whats-new-pending').hidden = !(next.update.pending && list('whats-new-pending-list', next.whatsNew.pending));
+    $('whats-new-pending-title').textContent = `${t.whatsNewPending} ${next.update.pending ?? ''}`;
+    $('whats-new-current').hidden = !list('whats-new-current-list', next.whatsNew.current);
 
     renderPasswords(next);
 

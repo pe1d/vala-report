@@ -15,7 +15,7 @@ import { cachedSources, events, statusOf, syncAll, type SourceFull, type SyncRes
 import { credentialEvents, deleteCredential, savedCredential, secureStorageAvailable, setAutoLogin } from './credentials';
 import { targetForUrl } from './autofill';
 import { openCredentialDialog } from './credential-window';
-import { checkNow, installNow, pendingUpdate } from './updater';
+import { checkNow, pendingUpdate, promptInstall } from './updater';
 import { openSourceTab } from './windows';
 
 const M = messages({
@@ -192,7 +192,7 @@ export function moreMenu(): Menu {
 
 function updateItem(t: (typeof M)['vi']): MenuItemConstructorOptions {
   const up = pendingUpdate();
-  return up ? { label: t.installUpdate(up.version), click: installNow } : { label: t.checkUpdate, click: checkNow };
+  return up ? { label: t.installUpdate(up.version), click: () => void promptInstall() } : { label: t.checkUpdate, click: checkNow };
 }
 
 /** Đổi ngôn ngữ / đăng nhập / đăng xuất / trạng thái nguồn ⇒ vẽ lại cả thanh menu và menu khay. */

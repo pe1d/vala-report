@@ -21,7 +21,7 @@ import { currentPrefs, prefsEvents, setPrefs } from './prefs';
 import { getSettings } from './settings';
 import { cachedSources, events, statusOf, type SourceFull } from './sync';
 import { openTarget, tabStatus, type TabStatus } from './tabs-model';
-import { installNow, pendingUpdate } from './updater';
+import { pendingUpdate, promptInstall } from './updater';
 
 const M = messages({
   home: 'Vala', reports: 'Báo cáo', newTab: 'Trang',
@@ -451,7 +451,7 @@ function registerIpc(): void {
     const url = tabs.get(a.key)?.view?.webContents.getURL() ?? '';
     hooks.tabMenu(a.key, url)?.popup({ window: win!, x: Math.round(Number(a.x) || 0), y: Math.round(Number(a.y) || 0) });
   });
-  ipcMain.handle('tabs:install-update', (e) => { own(e); installNow(); });
+  ipcMain.handle('tabs:install-update', (e) => { own(e); void promptInstall(); });
   ipcMain.on('tabs:resized', (e) => { if (win && e.sender === win.webContents) layout(); });
   // Người dùng bấm thông báo do trang tạo (vd tin nhắn Vala) ⇒ đưa cửa sổ lên, chuyển sang đúng tab đó. Giới hạn nhịp để
   // một trang không dùng lệnh này giành cửa sổ liên tục.

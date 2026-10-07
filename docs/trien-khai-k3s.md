@@ -152,7 +152,10 @@ Gói .deb kèm hồ sơ AppArmor `/etc/apparmor.d/vala-desktop` (như Ubuntu c�
 namespace của ứng dụng không có hồ sơ, sandbox của Chromium không chạy được và ứng dụng dừng ngay khi mở. Vì vậy **không
 phát hành AppImage** (không mang theo được hồ sơ này; chạy được chỉ khi tắt sandbox — không an toàn).
 
-1. Tăng `version` trong `apps/desktop/package.json` (ứng dụng chỉ cập nhật lên bản cao hơn), rồi build theo bảng trên
+1. Tăng `version` trong `apps/desktop/package.json` (ứng dụng chỉ cập nhật lên bản cao hơn) và viết mục `## <phiên bản>`
+   trong `apps/desktop/CHANGELOG.md` (`### vi` + `### en`, câu ngắn cho người dùng đọc). Thiếu mục này thì bước đóng gói
+   dừng. Nội dung được ghi vào `latest.yml` (trường `releaseNotes`): người dùng thấy hộp "Bản … có gì mới" trước khi cài,
+   một thông báo "Đã cập nhật lên bản …" sau khi cài, và danh sách ở Cài đặt → Giới thiệu. Rồi build theo bảng trên
    (Windows trên máy Windows thì `pnpm --filter @vala/desktop package`).
 2. Chép các file trong `apps/desktop/release/` lên máy chủ (vd `scp apps/desktop/release/{latest*.yml,*.exe,*.blockmap,*.deb}
    <user>@10.2.65.146:/tmp/vala-desktop/`) rồi trên máy chủ:

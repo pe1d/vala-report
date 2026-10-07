@@ -21,7 +21,7 @@ import { setNotifyReveal } from './notify';
 import { createMenus, moreMenu, profileMenu, refreshMenus, tabContextMenu } from './menu';
 import { refreshHomeFromServer } from './homepage';
 import { applyAutostart } from './autostart';
-import { initUpdater } from './updater';
+import { announceUpdate, initUpdater } from './updater';
 import { changePortalPassword, onTabLeave, portalUserEvents, registerBridge, showMain, showPortal, watchCookies } from './windows';
 
 const SYNC_INTERVAL_MS = 15 * 60_000;
@@ -94,6 +94,8 @@ if (!app.requestSingleInstanceLock()) {
     initBrowser({ onLeave: onTabLeave, menu: moreMenu, profileMenu, signIn: showPortal, tabMenu: tabContextMenu });
     // Bản mới tải xong ⇒ hiện nút "Cập nhật" trên thanh tab và trong menu.
     initUpdater(refreshAll);
+    // Vừa cập nhật lên bản mới ⇒ báo một lần "có gì mới" (bấm ⇒ Cài đặt → Giới thiệu).
+    announceUpdate(() => openSettings('gioi-thieu'));
 
     void refreshHome();
     void refreshUi();
