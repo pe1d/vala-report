@@ -1,6 +1,6 @@
 import { Queue } from 'bullmq';
 import {
-  CRAWL_QUEUE, ConnectionSessions, CrawlabClient, SessionManager, SourceRegistry, SsoClient, TENANT, crawlabConfigFromEnv, env, markSourceMfa, readerDb,
+  CRAWL_QUEUE, ConnectionSessions, CrawlabClient, SessionManager, SourceRegistry, SsoClient, TENANT, crawlabConfigFromEnv, env, markSourceMfa, packageSigner, readerDb,
   redisConnection, secretStore, ssoConfigFromEnv, withTenant, writerDb, type CrawlJob,
 } from '@vala/core';
 import { buildApp } from './app.js';
@@ -58,6 +58,13 @@ const connections = new ConnectionSessions({ secrets, tenant: TENANT, sourceInfo
   onOtpRequired: async (s) => { await markSourceMfa(writer, s); await sources.reload(); } });
 const crawlabCfg = crawlabConfigFromEnv();
 const crawlab = crawlabCfg ? new CrawlabClient(crawlabCfg) : undefined;
+// Khoá ký gói kịch bản Vala Desktop: SCRIPT_SIGNING_KEY, không có / sai thì suy ra từ AUTH_JWT_SECRET (không dừng API).
+const signer = (() => {
+  try { return packageSigner({ signingKey: process.env.SCRIPT_SIGNING_KEY, jwtSecret: env('AUTH_JWT_SECRET') }); } catch (e) {
+    console.warn(`[desktop] SCRIPT_SIGNING_KEY không dùng được (${(e as Error).message}) — dùng khoá suy ra từ AUTH_JWT_SECRET`);
+    return packageSigner({ jwtSecret: env('AUTH_JWT_SECRET') });
+  }
+})();
 const app = await buildApp({
   reader,
   writer,
@@ -70,6 +77,7 @@ const app = await buildApp({
   crawlab,
   queue,
   limiter,
+  packageSigner: signer,
   config: {
     loginMethods,
     jwtSecret: env('AUTH_JWT_SECRET'),

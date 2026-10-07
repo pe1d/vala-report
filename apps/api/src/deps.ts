@@ -1,5 +1,5 @@
 import type { Queue } from 'bullmq';
-import type { ConnectionSessions, CrawlJob, CrawlabClient, Db, SecretStore, SessionManager, SourceInfo, SourceRegistry, SsoClient } from '@vala/core';
+import type { ConnectionSessions, CrawlJob, CrawlabClient, Db, PackageSigner, SecretStore, SessionManager, SourceInfo, SourceRegistry, SsoClient } from '@vala/core';
 
 export interface ApiConfig {
   /** Đăng nhập cổng: 'password' (mặc định) và/hoặc 'sso'. */
@@ -34,6 +34,8 @@ export interface ApiDeps {
   crawlab?: CrawlabClient;
   queue: Pick<Queue<CrawlJob>, 'addBulk'>;
   limiter: RateLimiter;
+  /** Ký gói kịch bản Vala Desktop (khoá từ .env, không trong CSDL). */
+  packageSigner: PackageSigner;
   config: ApiConfig;
 }
 

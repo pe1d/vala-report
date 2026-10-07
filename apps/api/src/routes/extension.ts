@@ -7,7 +7,7 @@
  */
 import { createHash, randomBytes } from 'node:crypto';
 import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
-import { L, Problem, canAutoRenew, langOf, localizeStored, saveSourceAccount, vaultRef, withTenant, type AuthMethod } from '@vala/core';
+import { L, Problem, canAutoRenew, langOf, localizeStored, saveSourceAccount, vaultRef, withTenant, type AuthMethod, type SignedFields } from '@vala/core';
 import { loadAllSpecs } from '@vala/core/adapter';
 import { audit } from '../audit.js';
 import type { AuthUser } from '../auth.js';
@@ -95,6 +95,23 @@ export const extensionRoutes = (deps: ApiDeps): FastifyPluginAsync => async (app
 
   /** Người dùng xác nhận đồng ý ngay trong tiện ích (trước lần kết nối đầu tiên). */
   app.post<{ Params: { source: string } }>('/ext/sources/:source/consent', async (req) => giveConsent(deps, req, req.user.id, req.params.source, 'extension'));
+
+  /**
+   * Gói kịch bản Vala Desktop đang bật, kèm chữ ký Ed25519 từng gói và khoá công khai để ứng dụng kiểm. ETag theo
+   * (mã, version) ⇒ ứng dụng hỏi định kỳ, không đổi thì nhận 304 không kèm nội dung.
+   */
+  app.get('/ext/desktop-packages', async (req, reply) => {
+    const rows = await withTenant(deps.writer, (t) => t.any<SignedFields & { ten: string; source_system: string | null }>(
+      'SELECT code, ten, source_system, version, matches, css, script FROM desktop_packages WHERE is_enabled ORDER BY code'));
+    const key = deps.packageSigner.publicKey;
+    const etag = `"${createHash('sha256').update(key).update(JSON.stringify(rows.map((r) => [r.code, r.version]))).digest('base64url').slice(0, 27)}"`;
+    reply.header('etag', etag).header('cache-control', 'no-cache');
+    if (req.headers['if-none-match'] === etag) return reply.status(304).send();
+    return {
+      public_key: key,
+      packages: rows.map((r) => ({ ...r, signature: deps.packageSigner.sign(r) })),
+    };
+  });
 
   /** Hệ thống nguồn tiện ích cần theo dõi: origin để đọc cookie, đúng tên cookie phiên, trạng thái kết nối. */
   app.get('/ext/sources', async (req) => {

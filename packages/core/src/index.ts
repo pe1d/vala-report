@@ -17,3 +17,4 @@ export * from './ingest/spider.js';
 export * from './crawlab.js';
 export * from './spiderOps.js';
 export * from './sources.js';
+export * from './desktopScripts.js';
