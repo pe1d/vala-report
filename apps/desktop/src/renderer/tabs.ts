@@ -58,7 +58,6 @@ interface ValaTabsApi {
   const applyTheme = () => {
     document.documentElement.classList.toggle('dark', isDark());
     const b = $('theme');
-    b.textContent = isDark() ? '☀' : '☾';
     if (st) { b.title = isDark() ? st.t.lightMode : st.t.darkMode; b.setAttribute('aria-label', b.title); }
   };
   $('theme').addEventListener('click', () => void api.setTheme(isDark() ? 'light' : 'dark'));
