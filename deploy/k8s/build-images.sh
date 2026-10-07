@@ -18,9 +18,16 @@ sed -e "s|VALA_VERSION|$VER|g" -e "s|RUNNER_VERSION|$RV|g" -e "s|BUILD_RUNNER|$B
   -e "s|BUILD_PROXY|${BUILD_HTTP_PROXY:-}|g" -e "s|WEB_BASE_PATH|${WEB_BASE_PATH:-/}|g" \
   "$K8S/build-job.yaml" | k apply -f - >/dev/null
 # Theo log tới khi Job xong (lần build đầu 5–15 phút: tải image gốc + thư viện npm; sau đó có cache nhanh hơn).
+# Pod không tạo được (vd vượt ResourceQuota của namespace) ⇒ báo ngay, không chờ 30 phút.
 for _ in $(seq 1 120); do
   phase="$(k get pods -l job-name=vala-build -o jsonpath='{.items[0].status.phase}' 2>/dev/null || true)"
   case "$phase" in Running|Succeeded|Failed) break;; esac
+  why="$(k get events --field-selector involvedObject.name=vala-build,reason=FailedCreate -o jsonpath='{.items[-1:].message}' 2>/dev/null || true)"
+  if [ -n "$why" ]; then
+    echo "Job build không tạo được pod: $why"
+    echo "Xem hạn mức: $KUBECTL -n $NS describe resourcequota"
+    exit 1
+  fi
   sleep 2
 done
 k logs -f job/vala-build 2>/dev/null || echo "(không theo dõi được log — vẫn đợi build xong)"

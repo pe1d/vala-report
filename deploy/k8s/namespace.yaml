@@ -15,8 +15,10 @@ spec:
   hard:
     requests.cpu: "6"
     requests.memory: 6Gi
-    limits.cpu: "16"
-    limits.memory: 12Gi
+    # Trần limits (không phải phần giữ chỗ — giữ chỗ là requests ở trên): đủ cho mọi dịch vụ + runner (Chromium) + Job build
+    # image chạy cùng lúc. 16 CPU / 12Gi trước đây làm Job build không tạo được pod khi đã có runner (kẹt deploy).
+    limits.cpu: "24"
+    limits.memory: 16Gi
     requests.storage: 40Gi
     persistentvolumeclaims: "12"
     pods: "20"
