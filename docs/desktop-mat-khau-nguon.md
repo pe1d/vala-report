@@ -22,7 +22,7 @@ bằng **kho mật khẩu của hệ điều hành** và tự đăng nhập lạ
 
 Ngoài hệ thống nguồn khai trên cổng, **mọi trang** mở trong app (ví dụ QLVB của một đơn vị) cũng lưu được mật khẩu. Mật
 khẩu lưu theo đúng host của trang (`site:<host>`), giống trình duyệt, và chỉ được điền lại trên đúng host đó. Quản lý ở
-Cài đặt → Mật khẩu, chuột phải lên tab của trang đó, hoặc ở menu ⋯ → **Mật khẩu đã lưu cho trang khác**. Trang cổng Vala Reporting không
+Cài đặt → Mật khẩu (menu ⋯ → **Quản lý mật khẩu…**) hoặc chuột phải lên tab của trang đó. Trang cổng Vala Reporting không
 lưu ở đây.
 
 ## Tự điền và tự đăng nhập

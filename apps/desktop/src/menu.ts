@@ -12,7 +12,7 @@ import { messages } from './i18n';
 import { portalHasPassword } from './portal-state';
 import { getSettings } from './settings';
 import { cachedSources, events, statusOf, syncAll, type SourceFull, type SyncResult } from './sync';
-import { credentialEvents, deleteCredential, listCredentials, savedCredential, secureStorageAvailable, setAutoLogin } from './credentials';
+import { credentialEvents, deleteCredential, savedCredential, secureStorageAvailable, setAutoLogin } from './credentials';
 import { targetForUrl } from './autofill';
 import { openCredentialDialog } from './credential-window';
 import { checkNow, installNow, pendingUpdate } from './updater';
@@ -28,7 +28,7 @@ const M = messages({
   open: (ten: string) => `Mở ${ten}`, credSaved: (u: string) => `Mật khẩu: ${u} ✓ đã lưu`, credNone: 'Chưa lưu mật khẩu',
   credAuto: 'Tự đăng nhập lại', credEnter: 'Lưu mật khẩu…', credChange: 'Đổi mật khẩu…', credDelete: 'Xoá mật khẩu',
   credUnavailable: 'Máy chưa có kho mật khẩu của hệ điều hành',
-  otherSites: 'Mật khẩu đã lưu cho trang khác', noOtherSites: '(chưa có)', managePasswords: 'Quản lý mật khẩu…',
+  managePasswords: 'Quản lý mật khẩu…',
   checkUpdate: 'Kiểm tra cập nhật', installUpdate: (v: string) => `Cập nhật lên bản ${v}`, version: (v: string) => `Phiên bản ${v}`,
   result: {
     sent: 'đã kết nối', unchanged: 'đã kết nối', managed: 'hệ thống tự đăng nhập', not_logged_in: 'chưa đăng nhập',
@@ -44,7 +44,7 @@ const M = messages({
   open: (ten: string) => `Open ${ten}`, credSaved: (u: string) => `Password: ${u} ✓ saved`, credNone: 'No saved password',
   credAuto: 'Sign in again automatically', credEnter: 'Save password…', credChange: 'Change password…', credDelete: 'Delete password',
   credUnavailable: 'No operating-system password store on this computer',
-  otherSites: 'Saved passwords for other sites', noOtherSites: '(none)', managePasswords: 'Manage passwords…',
+  managePasswords: 'Manage passwords…',
   checkUpdate: 'Check for updates', installUpdate: (v: string) => `Update to version ${v}`, version: (v: string) => `Version ${v}`,
   result: {
     sent: 'connected', unchanged: 'connected', managed: 'signed in automatically', not_logged_in: 'not signed in',
@@ -99,21 +99,11 @@ export function tabContextMenu(key: string, url: string): Menu | null {
   return Menu.buildFromTemplate([{ label: tg.ten, enabled: false }, { type: 'separator' }, ...credentialItems({ code: tg.key, ten: tg.ten })]);
 }
 
-/** Mật khẩu đã lưu cho các trang không khai trên cổng (site:<host>) — trong menu ⋯. */
-function otherSiteItems(): MenuItemConstructorOptions {
-  const t = M[getSettings().lang];
-  const sites = Object.keys(listCredentials()).filter((k) => k.startsWith('site:')).sort();
-  return {
-    label: t.otherSites,
-    submenu: sites.length ? sites.map((k) => ({ label: k.slice(5), submenu: credentialItems({ code: k, ten: k.slice(5) }) })) : [{ label: t.noOtherSites, enabled: false }],
-  };
-}
-
 function sourceItems(): MenuItemConstructorOptions[] {
   const s = getSettings();
   const t = M[s.lang];
   const manage: MenuItemConstructorOptions = { label: t.managePasswords, click: () => actions.openSettings('mat-khau') };
-  if (!s.deviceToken) return [{ label: t.signInFirst, enabled: false }, { type: 'separator' }, otherSiteItems(), manage];
+  if (!s.deviceToken) return [{ label: t.signInFirst, enabled: false }, { type: 'separator' }, manage];
   const items: MenuItemConstructorOptions[] = cachedSources().map((src) => {
     const r = statusOf(src.code)?.result;
     return { label: r ? `${src.ten} — ${t.result[r]}` : src.ten, submenu: sourceMenuItems(src) };
@@ -121,7 +111,6 @@ function sourceItems(): MenuItemConstructorOptions[] {
   return [
     ...(items.length ? items : [{ label: t.noSources, enabled: false }]),
     { type: 'separator' },
-    otherSiteItems(),
     manage,
     { label: t.syncNow, click: () => void syncAll(true) },
   ];
