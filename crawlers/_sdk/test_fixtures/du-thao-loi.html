@@ -1,0 +1,94 @@
+
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"/><title>
+	QLVB Thử nghiệm
+</title><style>
+    body { font: 13px Tahoma, Arial, sans-serif; margin: 0; background: #eef2f7; color: #222 }
+    .top { background: #1f4e8c; color: #fff; padding: 8px 16px } .top a { color: #fff; margin-left: 16px }
+    .user { float: right } .main { background: #fff; margin: 12px; padding: 12px 16px; border: 1px solid #c9d3e0 }
+    table.grid { border-collapse: collapse; width: 100% } .grid th, .grid td { border: 1px solid #c9d3e0; padding: 4px 6px }
+    .grid th { background: #dfe7f2 } .loi { color: #b00020 } .tb { color: #0a6b2c } label { margin-right: 8px }
+    .o { margin: 6px 0 } .o > span.nhan { display: inline-block; width: 120px }
+  </style>
+</head>
+<body>
+  <form method="post" action="DuThao.aspx" enctype="multipart/form-data" id="ctl00_form1">
+<script type="text/javascript">//<![CDATA[
+	var theForm;
+	if (document.getElementById) { theForm = document.getElementById ('ctl00_form1'); }
+	else { theForm = document.ctl00_form1; }
+//]]></script>
+
+<div class="aspNetHidden">
+
+
+<input type="hidden" name="__EVENTARGUMENT" id="__EVENTARGUMENT" value="" /><input type="hidden" name="__VIEWSTATE" id="__VIEWSTATE" value="/wEMDAwQAgAADgEMBQAMEAIAAA4BDAUDDBACDwEBB2VuY3R5cGUBE211bHRpcGFydC9mb3JtLWRhdGEADgIMBQMMEAIMDwEBBFRleHQBIU5ndXnhu4VuIFRo4buLIFbEg24gVGjGsCAodmFudGh1KQAAAAwFBwwQAgAADgEMBQMMEAIMAAwIEAUQBQABFeKAlCBDaOG7jW4gbG/huqFpIOKAlAEACQgQBQABCkPDtG5nIHbEg24BATEICBAFAAEPUXV54bq/dCDEkeG7i25oAQEyCQgQBQABC1Thu50gdHLDrG5oAQEzCQgQBQABCULDoW8gY8OhbwEBNAkIAAAAAALJUz8AcZxnI2sxsStzsWY/YFJUQiCCaTahDsNRqzZG" /><input type="hidden" name="__EVENTTARGET" id="__EVENTTARGET" value="" />
+</div>
+
+<script type="text/javascript">//<![CDATA[
+window._form = theForm;
+window.__doPostBack = function (eventTarget, eventArgument) {
+	if(theForm.onsubmit && theForm.onsubmit() == false) return;
+	theForm.__EVENTTARGET.value = eventTarget;
+	theForm.__EVENTARGUMENT.value = eventArgument;
+	theForm.submit();
+}
+//]]></script>
+
+<script src="/WebResource.axd?d=14M53jeZxJoIHxMZEgulmvx5Aa7d5qQafCErYBZfA5k%3d_Yuqg4BrPfCpnDgcC7mUQlxN9FxvGHaMjEc716ZjYP6Y%3d_f&t=637908411900000000" type="text/javascript"></script>
+<script type="text/javascript">//<![CDATA[
+WebForm_Initialize(window);
+//]]></script>
+
+<script src="/ScriptResource.axd?d=14M53jeZxJoIHxMZEgulmvx5Aa7d5qQafCErYBZfA5k%3d_LaCmOA2Ke%2brbVL1azZLxCa6LQ9925AEYkln01gbN%2fqc%3dfd_t&t=637908411900000000&n=f" type="text/javascript"></script>
+<script type="text/javascript">//<![CDATA[
+if (typeof(Sys) === 'undefined') throw new Error('ASP.NET Ajax client-side framework failed to load.');
+//]]></script>
+<script src="/ScriptResource.axd?d=14M53jeZxJoIHxMZEgulmvx5Aa7d5qQafCErYBZfA5k%3d_LD9iU%2boxg%2bRZZjuo%2b8Pje4eumyV8dp3P5aOFIXUP1WI%3dfd_t&t=637908411900000000&n=f" type="text/javascript"></script>
+
+    <script type="text/javascript">
+//<![CDATA[
+Sys.WebForms.PageRequestManager._initialize('ctl00$sm', document.getElementById('ctl00_form1'));
+Sys.WebForms.PageRequestManager.getInstance()._updateControls([], [], [], 90);
+//]]
+</script>
+
+    <div class="top">
+      <b>QLVB Thử nghiệm</b>
+      <a href="VanBan.aspx">Văn bản</a> <a href="DuThao.aspx">Tạo dự thảo</a>
+      <span class="user">Xin chào, <span id="ctl00_lblUser">Nguyễn Thị Văn Thư (vanthu)</span> ·
+        <a id="ctl00_lnkThoat" href="javascript:__doPostBack(&#39;ctl00$lnkThoat&#39;,&#39;&#39;)">Đăng xuất</a></span>
+    </div>
+    <div class="main">
+  <h3>Tạo dự thảo</h3>
+  <div id="ctl00_MainContent_vsLoi" class="loi" style="color:Red;">
+	<ul><li>Nhập trích yếu</li></ul>
+</div>
+  <div class="o"><span class="nhan">Loại văn bản</span><select name="ctl00$MainContent$ddlLoai" id="ctl00_MainContent_ddlLoai">
+	<option value="">— Chọn loại —</option>
+	<option selected="selected" value="1">C&#244;ng văn</option>
+	<option value="2">Quyết định</option>
+	<option value="3">Tờ tr&#236;nh</option>
+	<option value="4">B&#225;o c&#225;o</option>
+
+</select>
+    &nbsp;</div>
+  <div class="o"><span class="nhan">Trích yếu</span><input type="text" name="ctl00$MainContent$txtTrichYeu" id="ctl00_MainContent_txtTrichYeu" style="width:420px;" />
+    <span id="ctl00_MainContent_rfvTrichYeu" class="loi" style="color:Red;">*</span></div>
+  <div class="o"><span class="nhan">Nội dung</span><textarea cols="20" rows="5" name="ctl00$MainContent$txtNoiDung" id="ctl00_MainContent_txtNoiDung" style="width:420px;">
+</textarea></div>
+  <div class="o"><span class="nhan">Đính kèm</span><input type="file" name="ctl00$MainContent$fuDinhKem" id="ctl00_MainContent_fuDinhKem" /></div>
+  <input type="submit" name="ctl00$MainContent$btnLuu" value="Lưu dự thảo" id="ctl00_MainContent_btnLuu" />
+</div>
+  
+<div class="aspNetHidden">
+<input type="hidden" name="__EVENTVALIDATION" id="__EVENTVALIDATION" value="/wEdAAEAAAD/////AQAAAAAAAAAPAQAAAAkAAAAIK9F0v3ZeBX6t0FtDVnfLOTt4afXq0hWAcavU92SrpwU46jj1CwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHLqpRCZFmdJOkGq1x3lIw9o3SwhNHNyab1jzVPa7FzF" />
+</div>
+
+<script type="text/javascript">//<![CDATA[
+Sys.Application.initialize();
+//]]></script>
+</form>
+</body>
+</html>

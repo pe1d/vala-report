@@ -21,6 +21,9 @@ Cách dùng:
 
     Vala().run('ma_spider', crawl)
 
+Hệ thống không có API (ASP.NET WebForms): run.webform('/Trang.aspx') ⇒ WebForm — đọc bảng, gửi lại form / phân trang
+(xem lớp WebForm, docs/tich-hop-aspnet.md).
+
 Biến môi trường (Crawlab đặt sẵn qua "Environments", do "Đồng bộ Crawlab" cấu hình):
     VALA_API_URL, VALA_INTERNAL_TOKEN, CRAWLAB_TASK_ID (Crawlab tự đặt)
 Tham số dòng lệnh: --user <id> (chạy riêng một người — lịch do worker Vala hẹn giờ, hoặc "chạy ngay"),
@@ -28,13 +31,14 @@ Tham số dòng lệnh: --user <id> (chạy riêng một người — lịch do 
 """
 import argparse
 import os
+import re
 import sys
 import time
-from urllib.parse import urlparse
+from urllib.parse import unquote, urljoin, urlparse
 
 import requests
 
-__all__ = ['Vala', 'Run', 'SessionExpired', 'SchemaDrift', 'SourceUnavailable', 'ApiError']
+__all__ = ['Vala', 'Run', 'WebForm', 'WebFormError', 'SessionExpired', 'SchemaDrift', 'SourceUnavailable', 'SourceResponseError', 'ApiError']
 
 REDIRECT_OR_DENIED = {301, 302, 303, 307, 308, 401, 403}
 
@@ -185,6 +189,10 @@ class Run:
     def get(self, path, **kw):
         return self._request('GET', path, **kw)
 
+    def webform(self, path, form=None):
+        """Trang ASP.NET WebForms (không có API): đọc bảng, gửi lại form / phân trang — xem WebForm."""
+        return WebForm(self, path, form=form)
+
     def post(self, path, **kw):
         return self._request('POST', path, **kw)
 
@@ -210,6 +218,463 @@ class Run:
             'status': status, 'error_code': error_code,
             'error_detail': (error_detail or '')[:500] or None, 'http_calls': self.calls,
         })
+
+
+# ---------------------------------------------------------------------------------------------
+# WebForm — hệ thống ASP.NET WebForms không có API (T07, docs/tich-hop-aspnet.md)
+# ---------------------------------------------------------------------------------------------
+
+class WebFormError(Exception):
+    """Lỗi khi dùng form: khong_tim_thay_truong, truong_trung_ten, du_lieu_khong_hop_le (chi_tiet: các câu lỗi), khong_co_form."""
+
+    def __init__(self, code, message, chi_tiet=None):
+        super().__init__(message)
+        self.code = code
+        self.chi_tiet = chi_tiet
+
+
+def _clean(s):
+    return re.sub(r'\s+', ' ', s or '').strip()
+
+
+def _hidden_style(el):
+    st = re.sub(r'\s', '', (el.get('style') or '')).lower()
+    return 'display:none' in st or 'visibility:hidden' in st or el.has_attr('hidden')
+
+
+_POSTBACK = re.compile(r"""__doPostBack\(\\?['"]([^'"\\]+)\\?['"]\s*,\s*\\?['"]([^'"\\]*)|WebForm_PostBackOptions\(\s*\\?["']([^"'\\]+)""")
+
+
+class WebForm:
+    """
+    Một trang ASP.NET WebForms đang mở (cùng mô hình với vala.webform của gói kịch bản): giữ form của trang làm trạng thái;
+    postback() / submit() dựng thân như trình duyệt (trạng thái hiện tại + trường đè) nên __VIEWSTATE / __EVENTVALIDATION
+    luôn đúng qua nhiều lần gửi.
+
+        f = run.webform('/VanBan.aspx')
+        rows = []
+        while True:
+            rows += f.table('[id$="_gvVanBan"]')
+            nxt = f.next_page('gvVanBan')
+            if not nxt: break
+            f.postback('gvVanBan', argument=nxt)
+
+    Bị đưa về trang đăng nhập (ReturnUrl=) ⇒ SessionExpired (Vala.run tự xin phiên mới rồi chạy lại crawl). Trang lỗi ASP.NET
+    (EventValidation, ViewState…) ⇒ SourceResponseError kèm câu lỗi. Chuyển hướng khác sau khi gửi form ⇒ đi theo.
+    Cần BeautifulSoup (có sẵn trong Crawlab).
+    """
+
+    def __init__(self, run, path, form=None):
+        self._run = run
+        self._form_sel = form
+        self.url = ''
+        r, url, redirected, _ = self._go('GET', urljoin(run.base_url + '/', path.lstrip('/')))
+        self._load(r, url, redirected)
+
+    # ---- HTTP ----
+    def _go(self, method, url, data=None, files=None, headers=None, check=False):
+        before = urlparse(getattr(self, 'url', '') or '').path.lower()
+        sent_path = urlparse(url).path.lower()
+        redirected = False
+        for _hop in range(6):
+            r = self._call(method, url, data=data, files=files, headers=headers)
+            loc = r.headers.get('Location') or r.headers.get('location')
+            if 300 <= r.status_code < 400 and loc:
+                url = urljoin(url, loc)
+                if self._is_login(url, sent_path):
+                    raise SessionExpired(f'bị chuyển về trang đăng nhập ({urlparse(url).path})')
+                method, data, files, headers, redirected = 'GET', None, None, None, True
+                continue
+            break
+        else:
+            raise SourceResponseError(f'quá nhiều lần chuyển hướng từ {sent_path}')
+        if self._is_login(url, sent_path):
+            raise SessionExpired(f'bị chuyển về trang đăng nhập ({urlparse(url).path})')
+        if r.status_code in (401, 403):
+            raise SessionExpired(f'{sent_path} → HTTP {r.status_code}')
+        return r, url, redirected, before
+
+    def _call(self, method, url, **kw):
+        run = self._run
+        for attempt in (1, 2):
+            run._throttle()
+            run.calls += 1
+            try:
+                return run.http.request(method, url, allow_redirects=False, timeout=30,
+                                        **{k: v for k, v in kw.items() if v is not None})
+            except (requests.ConnectionError, requests.Timeout) as e:
+                if attempt == 1:
+                    time.sleep(5)
+                    continue
+                raise SourceUnavailable(f'{method} {urlparse(url).path} không phản hồi ({type(e).__name__})')
+
+    @staticmethod
+    def _is_login(url, sent_path):
+        u = urlparse(url)
+        return bool(re.search(r'[?&]ReturnUrl=', u.query, re.I)) or ('login' in u.path.lower() and 'login' not in sent_path)
+
+    @staticmethod
+    def _decode(r):
+        """
+        Thân phản hồi ⇒ chuỗi. KHÔNG dùng r.text: hệ thống ASP.NET cũ (và Mono) hay trả `Content-Type: text/html` không có
+        charset ⇒ requests đoán ISO-8859-1 ⇒ vỡ dấu tiếng Việt. Thứ tự: charset trong header ⇒ <meta charset> ⇒ UTF-8.
+        """
+        raw = r.content or b''
+        m = re.search(r'charset=["\']?([\w-]+)', r.headers.get('Content-Type') or r.headers.get('content-type') or '', re.I)
+        if not m:
+            m = re.search(r'<meta[^>]+charset=["\']?([\w-]+)', raw[:4096].decode('ascii', 'ignore'), re.I)
+        try:
+            return raw.decode(m.group(1) if m else 'utf-8')
+        except (LookupError, UnicodeDecodeError):
+            return raw.decode('utf-8', 'replace')
+
+    def _load(self, r, url, redirected):
+        from bs4 import BeautifulSoup   # chỉ spider dùng WebForm mới cần thư viện này (Crawlab có sẵn)
+        text = self._decode(r)
+        err = self._server_error(r.status_code, text)
+        if err:
+            raise SourceResponseError(f'Hệ thống nguồn báo lỗi: {err}')
+        if r.status_code >= 400:
+            raise SourceResponseError(f'{urlparse(url).path} → HTTP {r.status_code}')
+        self.soup = BeautifulSoup(text, 'html.parser')
+        self.url, self.status, self.redirected = url, r.status_code, redirected
+        self._pick_form()
+
+    def _pick_form(self):
+        if self._form_sel:
+            self.form = self.soup.select_one(self._form_sel)
+        else:
+            vs = self.soup.find('input', attrs={'name': '__VIEWSTATE'})
+            self.form = vs.find_parent('form') if vs else self.soup.find('form')
+
+    @staticmethod
+    def _server_error(status, text):
+        title = _clean((re.search(r'<title>([\s\S]*?)</title>', text, re.I) or [None, ''])[1])
+        if status < 500 and not re.search(r'Server Error in|Runtime Error|^Error \d{3}$', title, re.I):
+            return None
+        known = re.search(r'(Invalid postback or callback argument|Validation of viewstate MAC failed|The state information is invalid for this page)', text, re.I)
+        if known:
+            return known.group(1)
+        exc = re.search(r'(System\.[A-Za-z.]+Exception)\s*:?\s*([^\r\n<]{0,200})', text)
+        if exc:
+            return _clean(exc.group(1) + (': ' + exc.group(2) if exc.group(2) else ''))
+        return title or f'HTTP {status}'
+
+    def _validation_errors(self):
+        out = []
+        for el in self.soup.find_all(['div', 'span']):
+            if _hidden_style(el) or not re.search(r'color:\s*red', el.get('style') or '', re.I):
+                continue
+            for li in el.select('ul > li'):
+                t = _clean(li.get_text())
+                if t and t not in out:
+                    out.append(t)
+        if out:
+            return out
+        for el in self.soup.find_all('span', id=True):
+            t = _clean(el.get_text())
+            if not _hidden_style(el) and re.search(r'color:\s*red', el.get('style') or '', re.I) and t and t != '*' and t not in out:
+                out.append(t)
+        return out
+
+    # ---- tên trường, trạng thái form ----
+    def _elements(self):
+        return self.form.find_all(['input', 'select', 'textarea', 'button']) if self.form else []
+
+    def _names(self):
+        names = []
+        for el in self._elements():
+            n = el.get('name')
+            if not n:
+                continue
+            if n not in names:
+                names.append(n)
+            base = re.match(r'^(.*)\$\d+$', n)
+            if base and base.group(1) not in names:
+                names.append(base.group(1))
+        for el in self.soup.find_all(attrs={'href': True}) + self.soup.find_all(attrs={'onclick': True}) + self.soup.find_all(attrs={'onchange': True}):
+            for k in ('href', 'onclick', 'onchange'):
+                for m in _POSTBACK.finditer(el.get(k) or ''):
+                    n = m.group(1) or m.group(3)
+                    if n and n not in names:
+                        names.append(n)
+        return names
+
+    def name(self, ten):
+        """Tên ngắn ⇒ tên đầy đủ (khớp đúng / khớp đuôi `$tên`), kể cả đích postback (GridView, LinkButton). `__…` giữ nguyên."""
+        if ten.startswith('__'):
+            return ten
+        names = self._names()
+        if ten in names:
+            return ten
+        hit = [n for n in names if n.endswith('$' + ten)]
+        if len(hit) == 1:
+            return hit[0]
+        if not hit:
+            raise WebFormError('khong_tim_thay_truong', f'Trang không có trường {ten}')
+        raise WebFormError('truong_trung_ten', f'Có nhiều trường tên {ten}: {", ".join(hit)} — dùng tên đầy đủ')
+
+    def _pairs(self):
+        """Các cặp (tên, giá trị) như trình duyệt sẽ gửi (không gồm nút, tệp)."""
+        out = []
+        for el in self._elements():
+            n = el.get('name')
+            if not n or el.has_attr('disabled'):
+                continue
+            typ = (el.get('type') or '').lower()
+            if el.name == 'button' or (el.name == 'input' and typ in ('submit', 'button', 'image', 'reset', 'file')):
+                continue
+            if el.name == 'input' and typ in ('checkbox', 'radio'):
+                if el.has_attr('checked'):
+                    out.append((n, el.get('value', 'on')))
+                continue
+            if el.name == 'select':
+                opts = el.find_all('option')
+                sel = [o for o in opts if o.has_attr('selected')]
+                if not sel and not el.has_attr('multiple') and opts:
+                    sel = [opts[0]]
+                out.extend((n, o.get('value', _clean(o.get_text()))) for o in sel)
+                continue
+            if el.name == 'textarea':
+                out.append((n, re.sub(r'^\r?\n', '', el.get_text())))
+                continue
+            out.append((n, el.get('value', '')))
+        return out
+
+    def fields(self):
+        """Trạng thái form ⇒ dict (trường lặp ⇒ list)."""
+        o = {}
+        for k, v in self._pairs():
+            o[k] = (o[k] if isinstance(o[k], list) else [o[k]]) + [v] if k in o else v
+        return o
+
+    def options(self, ten):
+        """Lựa chọn của ô chọn / CheckBoxList / RadioButtonList: [{value, text, selected, field}]. Ô chưa có mục ⇒ []."""
+        try:
+            full = self.name(ten)
+        except WebFormError as e:
+            if e.code == 'khong_tim_thay_truong':
+                return []
+            raise
+        sel = self.form.find('select', attrs={'name': full}) if self.form else None
+        if sel:
+            return [{'value': o.get('value', _clean(o.get_text())), 'text': _clean(o.get_text()), 'selected': o.has_attr('selected'), 'field': full}
+                    for o in sel.find_all('option')]
+        pat = re.compile('^' + re.escape(full) + r'(\$\d+)?$')
+        out = []
+        for i, el in enumerate(x for x in self._elements() if x.name == 'input' and (x.get('type') or '').lower() in ('checkbox', 'radio') and pat.match(x.get('name') or '')):
+            label = self.soup.find('label', attrs={'for': el.get('id')}) if el.get('id') else None
+            out.append({'value': el.get('value', str(i)), 'text': _clean(label.get_text() if label else ''), 'selected': el.has_attr('checked'), 'field': el['name']})
+        return out
+
+    def _apply(self, pairs, fields):
+        for k, v in (fields or {}).items():
+            full = self.name(k)
+            if isinstance(v, (list, tuple)):
+                items = self.options(full)
+                is_list = bool(items) and items[0]['field'] != full
+                pairs = [p for p in pairs if (all(it['field'] != p[0] for it in items) if is_list else p[0] != full)]
+                for x in v:
+                    it = next((o for o in items if o['value'] == str(x)), None) or next((o for o in items if o['text'].lower() == _clean(str(x)).lower()), None)
+                    if not it:
+                        raise WebFormError('khong_tim_thay_truong', f'Ô {k} không có lựa chọn {x}')
+                    pairs.append((it['field'], it['value']) if is_list else (full, it['value']))
+                continue
+            opts = [o for o in self.options(full) if o['field'] == full]
+            if opts and not any(o['value'] == str(v) for o in opts):
+                hit = next((o for o in opts if o['text'].lower() == _clean(str(v)).lower()), None)
+                if not hit:
+                    raise WebFormError('khong_tim_thay_truong', f'Ô {k} không có lựa chọn {v}')
+                v = hit['value']
+            idx = next((i for i, p in enumerate(pairs) if p[0] == full), None)
+            pairs = [p for i, p in enumerate(pairs) if p[0] != full or i == idx]
+            if idx is None:
+                pairs.append((full, str(v)))
+            else:
+                pairs[idx] = (full, str(v))
+        return pairs
+
+    # ---- gửi ----
+    def _panel(self, target, explicit):
+        if explicit:
+            return explicit if '$' in explicit else explicit.replace('_', '$')
+        scripts = '\n'.join(s.get_text() for s in self.soup.find_all('script'))
+        listed = (re.search(r'_updateControls\(\[([^\]]*)\]', scripts) or [None, ''])[1]
+        panels = [x[1:] for x in re.findall(r"'([tf][^']+)'", listed)]
+        el = self.soup.find(attrs={'name': target}) or self.soup.find(id=target.replace('$', '_'))
+        for a in (el.parents if el else []):
+            if not getattr(a, 'get', None) or not a.get('id') or a.name == 'form':
+                continue
+            hit = next((u for u in panels if u.replace('$', '_') == a['id']), None)
+            if hit:
+                return hit
+            if not panels and a.name == 'div':
+                return a['id'].replace('_', '$')            # Mono không khai UpdatePanel ⇒ khối cha gần nhất có id
+        if panels:
+            return panels[0]
+        raise WebFormError('khong_tim_thay_truong', f'Không tìm thấy UpdatePanel chứa {target} — truyền panel=')
+
+    def _send(self, pairs, async_=False, panel=None, button=None, files=None):
+        if not self.form:
+            raise WebFormError('khong_co_form', f'Trang {self.url} không có form')
+        action = urljoin(self.url, self.form.get('action') or self.url)
+        headers = {}
+        if async_:
+            scripts = '\n'.join(s.get_text() for s in self.soup.find_all('script'))
+            sm = re.search(r"PageRequestManager\._initialize\('([^']+)'", scripts)
+            if not sm:
+                raise WebFormError('khong_tim_thay_truong', 'Trang không có ScriptManager (không gửi kiểu UpdatePanel được)')
+            target = dict(pairs).get('__EVENTTARGET') or button
+            pairs = [(sm.group(1), f'{self._panel(target, panel)}|{target}')] + pairs + [('__ASYNCPOST', 'true')]
+            headers = {'X-MicrosoftAjax': 'Delta=true', 'X-Requested-With': 'XMLHttpRequest'}
+        if files or 'multipart' in (self.form.get('enctype') or '').lower():
+            data = pairs
+            up = {self.name(k): (t[0], t[1], t[2] if len(t) > 2 else 'application/octet-stream') for k, t in (files or {}).items()}
+            r, url, redirected, before = self._go('POST', action, data=data, files=up or {'': ('', b'')}, headers=headers or None)
+        else:
+            from urllib.parse import urlencode
+            headers['Content-Type'] = 'application/x-www-form-urlencoded; charset=UTF-8'
+            r, url, redirected, before = self._go('POST', action, data=urlencode(pairs), headers=headers)
+        if async_:
+            return self._delta(r)
+        self._load(r, url, redirected)
+        if urlparse(self.url).path.lower() == before:
+            bad = self._validation_errors()
+            if bad:
+                raise WebFormError('du_lieu_khong_hop_le', 'Dữ liệu không hợp lệ: ' + '; '.join(bad), bad)
+        return self
+
+    def _delta(self, r):
+        text = self._decode(r)
+        items = self._parse_delta(text) if r.status_code < 500 else None
+        if items is None:
+            raise SourceResponseError('Hệ thống nguồn báo lỗi: ' + (self._server_error(max(r.status_code, 500), text) or 'phản hồi UpdatePanel không đúng dạng'))
+        from bs4 import BeautifulSoup
+        for typ, ident, content in items:
+            if typ == 'error':
+                raise SourceResponseError('Hệ thống nguồn báo lỗi: ' + _clean(content or ident))
+            if typ == 'pageRedirect':
+                to = urljoin(self.url, unquote(content))
+                r2, url, _, _ = self._go('GET', to)
+                self._load(r2, url, True)
+                return self
+            if typ == 'updatePanel':
+                el = self.soup.find(id=ident)
+                if el is not None:
+                    el.clear()
+                    for child in list(BeautifulSoup(content, 'html.parser').contents):
+                        el.append(child)
+            elif typ == 'hiddenField' and self.form is not None:
+                h = self.form.find('input', attrs={'name': ident})
+                if h is None:
+                    h = self.soup.new_tag('input', type='hidden', attrs={'name': ident})
+                    self.form.append(h)
+                h['value'] = content
+        self._pick_form()
+        bad = self._validation_errors()
+        if bad:
+            raise WebFormError('du_lieu_khong_hop_le', 'Dữ liệu không hợp lệ: ' + '; '.join(bad), bad)
+        return self
+
+    @staticmethod
+    def _parse_delta(text):
+        """`độ dài|loại|id|nội dung|` (nội dung có thể chứa "|") ⇒ [(loại, id, nội dung)]; sai dạng ⇒ None."""
+        items, i = [], 0
+        while i < len(text):
+            parts = []
+            for _ in range(3):
+                j = text.find('|', i)
+                if j < 0:
+                    return None
+                parts.append(text[i:j])
+                i = j + 1
+            if not parts[0].isdigit():
+                return None
+            n = int(parts[0])
+            if text[i + n:i + n + 1] != '|':
+                return None
+            items.append((parts[1], parts[2], text[i:i + n]))
+            i += n + 1
+        return items or None
+
+    def postback(self, target, fields=None, async_=False, panel=None, argument=None):
+        """Như __doPostBack(target, argument): AutoPostBack, LinkButton, phân trang GridView (argument='Page$2')."""
+        t = self.name(target)
+        fields = dict(fields or {})
+        arg = argument if argument is not None else fields.pop('__EVENTARGUMENT', '')
+        fields.pop('__EVENTARGUMENT', None)
+        pairs = [p for p in self._apply(self._pairs(), fields) if p[0] not in ('__EVENTTARGET', '__EVENTARGUMENT')]
+        return self._send([('__EVENTTARGET', t), ('__EVENTARGUMENT', str(arg))] + pairs, async_=async_, panel=panel)
+
+    def submit(self, button=None, fields=None, files=None):
+        """Bấm nút gửi `button` (None ⇒ gửi form không qua nút). files: {tên: (tên tệp, bytes, loại?)}."""
+        pairs = [(k, '') if k in ('__EVENTTARGET', '__EVENTARGUMENT') else (k, v) for k, v in self._apply(self._pairs(), fields)]
+        b = None
+        if button:
+            b = self.name(button)
+            el = next((e for e in self._elements() if e.get('name') == b), None)
+            if el is not None and (el.get('type') or '').lower() == 'image':
+                pairs += [(b + '.x', '0'), (b + '.y', '0')]
+            else:
+                pairs.append((b, (el.get('value') or _clean(el.get_text())) if el is not None else ''))
+        return self._send(pairs, button=b, files=files)
+
+    # ---- đọc ----
+    def select(self, sel):
+        return self.soup.select_one(sel)
+
+    def read(self, sel):
+        """Chữ của phần tử (đã bỏ khoảng trắng thừa); không có ⇒ None."""
+        el = self.soup.select_one(sel)
+        return None if el is None else _clean(el.get_text())
+
+    def value(self, sel):
+        """Giá trị (thuộc tính value) của ô nhập; không có ⇒ None."""
+        el = self.soup.select_one(sel)
+        return None if el is None else el.get('value')
+
+    def table(self, sel, links=False):
+        """Bảng ⇒ list dict theo tiêu đề (hàng có th); bỏ hàng số trang của GridView. links=True ⇒ thêm `_links` (cột ⇒ href)."""
+        t = self.soup.select_one(sel)
+        if t is None:
+            return []
+        rows = [tr for tr in t.find_all('tr') if tr.find_parent('table') is t and not tr.find('table')]
+        head = None
+        if rows and rows[0].find('th'):
+            head = [_clean(c.get_text()) for c in rows.pop(0).find_all(['th', 'td'])]
+        out = []
+        for tr in rows:
+            cells = tr.find_all(['td', 'th'], recursive=False)
+            if head is None:
+                out.append([_clean(c.get_text()) for c in cells])
+                continue
+            row = {(k or f'cot_{i + 1}'): (_clean(cells[i].get_text()) if i < len(cells) else '') for i, k in enumerate(head)}
+            if links:
+                row['_links'] = {(k or f'cot_{i + 1}'): cells[i].find('a')['href'] for i, k in enumerate(head) if i < len(cells) and cells[i].find('a', href=True)}
+            out.append(row)
+        return out
+
+    def next_page(self, grid):
+        """Đối số trang sau của GridView phân trang số (vd 'Page$3'); hết trang ⇒ None."""
+        full = self.name(grid)
+        args = []
+        for a in self.soup.find_all('a', href=True):
+            for m in _POSTBACK.finditer(a['href']):
+                if m.group(1) == full and m.group(2).startswith('Page$'):
+                    args.append((m.group(2), _clean(a.get_text())))
+        cur = None
+        t = self.soup.find(id=full.replace('$', '_'))
+        pager = next((tr for tr in (t.find_all('tr') if t else []) if tr.find('table')), None)
+        if pager:
+            span = next((s for s in pager.find_all('span') if _clean(s.get_text()).isdigit()), None)
+            cur = int(_clean(span.get_text())) if span else None
+        if cur is None:
+            return None
+        want = f'Page${cur + 1}'
+        if any(a == want for a, _ in args):
+            return want
+        more = [a for a, txt in args if txt == '...' and a.split('$')[1].isdigit() and int(a.split('$')[1]) > cur]
+        return more[0] if more else None
 
 
 class Vala:

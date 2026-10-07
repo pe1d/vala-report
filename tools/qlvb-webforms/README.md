@@ -14,6 +14,14 @@ Chỉ dùng để thử, không triển khai cho người dùng.
 - Ảnh dựa trên `mono:6.12` (Debian buster đã hết hỗ trợ), nên `Dockerfile` trỏ nguồn apt về `archive.debian.org`.
 - Mã trang là C# nội tuyến trong `.aspx`; `xsp4` biên dịch lúc chạy. Sửa trang xong thì build lại ảnh.
 
+## Đưa vào Vala như một nguồn thật
+
+    VALA_PASSWORD=… node tools/qlvb-webforms/nap-vao-vala.mjs
+
+Tạo / cập nhật: hệ thống nguồn `qlvb_thu` + adapter (`adapter.yaml`), spider `qlvb_thu_van_ban` (`spider.py`) + Đồng bộ
+Crawlab, báo cáo "Văn bản (QLVB thử nghiệm)", gói kịch bản Desktop `qlvb_thu` (`kich-ban.js`, 7 thao tác). Bản trong
+thư mục này là bản MẪU — bản chạy thật nằm trong CSDL. Chi tiết: `docs/tich-hop-aspnet.md`.
+
 ## Tài khoản (mật khẩu chung `Qlvb@2026`)
 
 | Tên đăng nhập | Họ tên | Đơn vị | Ghi chú |

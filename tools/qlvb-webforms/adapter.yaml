@@ -1,0 +1,41 @@
+# Adapter nguồn "QLVB Thử nghiệm" (hệ thống ASP.NET WebForms giả lập, T07 phần 4). Bản MẪU: bản thật lưu trong CSDL
+# (Hệ thống nguồn → qlvb_thu) — nạp bằng `node tools/qlvb-webforms/nap-vao-vala.mjs`.
+# Kết nối: Vala Desktop gửi phiên (.ASPXAUTH + ASP.NET_SessionId). Dữ liệu do spider Python (spider.py, vala_sdk.WebForm)
+# lấy; bước `steps` dưới đây chỉ để đủ khuôn adapter (worker không đọc được HTML).
+adapter:
+  id: qlvb_thu.van_ban
+  version: "1.0.0"
+  source_system: qlvb_thu
+  execution: server
+  transport: http_api
+  auth:
+    type: delegated_session
+    vault_ref: "vault://{tenant}/users/{app_user_id}/qlvb_thu"
+    cookies_required: [.ASPXAUTH, ASP.NET_SessionId]
+    # Còn phiên ⇒ 200 và "Xin chào, Họ Tên (tên đăng nhập)"; hết phiên ⇒ 302 về Login.aspx (= hết hạn).
+    session_probe:
+      request: { method: GET, path: /VanBan.aspx }
+      extract:
+        puid: { type: regex, pattern: 'lblUser">[^<]*\(([A-Za-z0-9_.@-]+)\)<', group: 1 }
+  allowed_endpoints:
+    - { method: GET, path: /VanBan.aspx }
+    - { method: POST, path: /VanBan.aspx }
+  rate_limit: { max_requests_per_minute: 30, delay_between_calls_ms: 300 }
+  capabilities:
+    - id: van_ban
+      ten: "Danh sách văn bản"
+      steps:
+        - { id: fetch, request: { method: GET, path: /VanBan.aspx }, extract: { items: "$.items" } }
+      output_schema:
+        - { source: ma, field: ma, type: string, key: true, label: "Mã" }
+        - { source: so_ky_hieu, field: so_ky_hieu, type: string, label: "Số ký hiệu" }
+        - { source: trich_yeu, field: trich_yeu, type: string, label: "Trích yếu" }
+        - { source: loai, field: loai, type: string, label: "Loại", index: true }
+        - { source: trang_thai, field: trang_thai, type: string, label: "Trạng thái", index: true }
+        - { source: ngay_tao, field: ngay_tao, type: date, format: "DD/MM/YYYY", label: "Ngày tạo", index: true }
+        - { source: nguoi_xu_ly, field: nguoi_xu_ly, type: string, label: "Người đang xử lý" }
+      content_hash_fields: [ma, so_ky_hieu, trich_yeu, loai, trang_thai, nguoi_xu_ly]
+      # Spider gửi ĐỦ danh sách (mọi trang) ⇒ văn bản không còn thì đóng lại.
+      sink: { table: records, close_missing: true }
+  monitoring:
+    schema_baseline_fields: [ma, trich_yeu, trang_thai]

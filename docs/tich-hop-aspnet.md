@@ -120,9 +120,85 @@ Lỗi ném ra có `code`. `__vala.run` trả về `{ ok: false, error, code, chi
 | `du_lieu_khong_hop_le` | sau khi gửi, trang hiện lỗi kiểm tra dữ liệu (ValidationSummary / validator); `chi_tiet` là danh sách câu lỗi |
 | `khong_tim_thay_truong` / `truong_trung_ten` | tên trường hoặc lựa chọn không có / trùng nhiều |
 
-### Nạp gói vào CSDL dev
-
-    VALA_PASSWORD=… node tools/qlvb-webforms/nap-kich-ban.mjs     # tạo / cập nhật gói qlvb_thu (máy chủ ký khi lưu)
-
 Test tích hợp (Chrome thật, bộ hàm được chèn đúng như Desktop và runner):
 `pnpm --filter @vala/qlvb-webforms test` (`test/kich-ban.test.ts`).
+
+## 3. Đọc dữ liệu bằng Crawlab: `run.webform`
+
+Hệ thống không có API ⇒ spider Python đọc trang HTML, sang trang bằng cách gửi lại form. `vala_sdk.WebForm` dùng cùng mô
+hình với `vala.webform` (giữ form làm trạng thái, gửi lại đúng trường ẩn). `vala_sdk.py` được "Đồng bộ Crawlab" đẩy kèm mọi
+spider; cần BeautifulSoup (Crawlab có sẵn). Ví dụ đầy đủ: `tools/qlvb-webforms/spider.py`.
+
+```python
+from vala_sdk import SchemaDrift, SessionExpired, Vala
+
+def crawl(run):
+    f = run.webform('/VanBan.aspx')
+    run.account(re.search(r'\((\w+)\)$', f.read('[id$="_lblUser"]')).group(1))   # định danh người dùng nguồn
+    items = []
+    while True:
+        items += f.table('[id$="_gvVanBan"]')            # list dict theo tiêu đề cột (đã giải dấu), bỏ dòng số trang
+        nxt = f.next_page('gvVanBan')                     # 'Page$3' … hoặc None
+        if not nxt:
+            break
+        f.postback('gvVanBan', argument=nxt)
+    run.save('van_ban', [map_keys(r) for r in items])
+
+Vala().run('qlvb_thu_van_ban', crawl)
+```
+
+| Hàm | Dùng để |
+|---|---|
+| `run.webform(đường_dẫn, form=None)` | mở trang (đường dẫn trong hệ thống nguồn) |
+| `f.table(css, links=False)` | bảng ⇒ list dict theo tiêu đề; `links=True` thêm `_links` (cột ⇒ href) |
+| `f.next_page(lưới)` | đối số trang sau của GridView phân trang số; hết ⇒ `None` |
+| `f.postback(đích, trường=None, async_=False, panel=None, argument=None)` | như `__doPostBack` (lọc, phân trang, LinkButton, UpdatePanel) |
+| `f.submit(nút=None, trường=None, files=None)` | bấm nút gửi; `files={tên: (tên tệp, bytes, loại)}` |
+| `f.read(css)`, `f.value(css)`, `f.select(css)`, `f.options(tên)`, `f.fields()`, `f.name(tên)` | đọc trang / form |
+
+- **Bảng mã.** Hệ thống ASP.NET cũ (và Mono) hay trả `Content-Type: text/html` **không có charset**: `requests` đoán
+  ISO-8859-1 ⇒ vỡ dấu. `WebForm` tự giải theo charset trong header ⇒ `<meta charset>` ⇒ UTF-8. Tự gọi `run.get()` trên hệ
+  thống như vậy thì giải `r.content` cho đúng, đừng dùng `r.text`.
+- **Phiên.** Bị chuyển về trang đăng nhập (`ReturnUrl=`) ⇒ `SessionExpired` ⇒ `Vala.run` tự xin phiên mới rồi chạy lại
+  `crawl` một lần. Chuyển hướng khác sau khi gửi form thì đi theo (khác `run.get/post`, coi mọi 3xx là hỏng phiên).
+- **Lỗi trang ASP.NET** (EventValidation, ViewState…) ⇒ `SourceResponseError` kèm câu lỗi; ô kiểm tra dữ liệu báo sai ⇒
+  `WebFormError('du_lieu_khong_hop_le')`.
+- **Đọc đủ.** Adapter có `close_missing: true` ⇒ văn bản không thấy trong lượt chạy bị đóng lại. Spider phải đi hết mọi
+  trang; nên đối chiếu với tổng trên trang (`lblTong`) và báo `SchemaDrift` nếu lệch, thay vì lưu thiếu.
+- **Khoá của bản ghi** phải trùng `source` trong `output_schema` của adapter. Ngày `dd/MM/yyyy` ⇒ khai `format: "DD/MM/YYYY"`.
+
+Test: `python3 -m unittest discover -s crawlers/_sdk -p 'test_*.py'` (cần `requests` + `beautifulsoup4`, cùng bản Crawlab;
+dữ liệu: `crawlers/_sdk/test_fixtures`).
+
+## 4. Đưa một hệ thống vào Vala (ví dụ: hệ thống giả lập)
+
+`tools/qlvb-webforms/nap-vao-vala.mjs` làm trọn bộ qua API quản trị, chạy lại được:
+
+1. **Hệ thống nguồn + adapter** (`adapter.yaml`): `cookies_required: [.ASPXAUTH, ASP.NET_SessionId]`; `session_probe` mở
+   trang danh sách — bị chuyển về đăng nhập là hết phiên, có tên đăng nhập trên trang là còn (lấy làm `puid`). Kết nối
+   mặc định gồm `extension` ⇒ Vala Desktop gửi phiên được. Capability có `sink` (bảng `records`) và đủ `steps` (bắt buộc
+   theo khuôn adapter dù spider mới là bên lấy dữ liệu).
+2. **Spider** (`spider.py`) + **Đồng bộ Crawlab** (bắt buộc sau mỗi lần sửa spider).
+3. **Báo cáo** — tạo SAU spider (báo cáo tự gắn spider đầu tiên của nguồn). Danh sách văn bản ⇒ `default_period: tat_ca`
+   (mặc định là tháng hiện tại).
+4. **Gói kịch bản Desktop** gắn với nguồn (để "Chạy thử trên máy chủ").
+
+```bash
+docker compose --profile qlvb up -d qlvb-webforms
+VALA_PASSWORD=… node tools/qlvb-webforms/nap-vao-vala.mjs
+```
+
+Người dùng: đồng ý cho Vala dùng tài khoản (Tài khoản nguồn trên cổng) ⇒ mở hệ thống trong Vala Desktop, đăng nhập ⇒ app
+gửi phiên ⇒ "Lấy dữ liệu ngay" ⇒ báo cáo "Văn bản (QLVB thử nghiệm)".
+
+## Lỗi thường gặp
+
+| Hiện tượng | Nguyên nhân | Cách xử lý |
+|---|---|---|
+| `Invalid postback or callback argument` | EventValidation: gửi giá trị không có trong ô chọn của trang đó, hoặc bỏ bước gửi lại form làm nạp lựa chọn | gửi đủ chuỗi postback như bản ghi thao tác; chọn bằng `options()` của đúng trang vừa trả về |
+| `Validation of viewstate MAC failed` | ViewState của trang khác / đã hỏng / hết hạn (máy chủ khởi động lại với khoá khác) | luôn lấy ViewState từ trang vừa trả về (`webform` tự làm); mở lại trang |
+| Bị về `Login.aspx?ReturnUrl=` | hết phiên (Forms auth hoặc Session) | `het_phien` / `SessionExpired`; Vala Desktop gửi phiên mới khi người dùng đăng nhập lại |
+| Sau "Chuyển" vẫn ở trang cũ, có `<ul><li>` đỏ | ô kiểm tra dữ liệu báo sai | `du_lieu_khong_hop_le` + danh sách câu lỗi |
+| UpdatePanel trả cả trang HTML / lỗi | thiếu header `X-MicrosoftAjax`, trường ScriptManager hoặc sai UpdatePanel | dùng `{ async: true }` (`async_=True`); Mono không khai UpdatePanel ⇒ truyền `panel` nếu tự tìm sai |
+| Vỡ dấu tiếng Việt (`Tá»•ng`) | máy chủ không gửi charset | `WebForm` tự xử lý; tự đọc thì giải `r.content` theo `<meta charset>` |
+| Báo cáo ít dòng hơn trên hệ thống | báo cáo lọc mặc định "tháng hiện tại" | `default_period: tat_ca` cho báo cáo danh sách |

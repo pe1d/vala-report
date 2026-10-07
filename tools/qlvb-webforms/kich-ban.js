@@ -1,5 +1,5 @@
 // Gói kịch bản "QLVB Thử nghiệm" (hệ thống ASP.NET WebForms giả lập, T07). Bản MẪU: bản chạy thật lưu trong CSDL
-// (Quản trị → Kịch bản Desktop, mã qlvb_thu) — nạp bằng `node tools/qlvb-webforms/nap-kich-ban.mjs`.
+// (Quản trị → Kịch bản Desktop, mã qlvb_thu) — nạp bằng `node tools/qlvb-webforms/nap-vao-vala.mjs`.
 // Áp dụng cho trang: http://localhost:4030/*
 //
 // Gửi form trực tiếp bằng vala.webform (docs/tich-hop-aspnet.md): không bấm trên giao diện, không đổi trang đang xem ⇒ chạy

@@ -1,0 +1,112 @@
+
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"/><title>
+	QLVB Thử nghiệm
+</title><style>
+    body { font: 13px Tahoma, Arial, sans-serif; margin: 0; background: #eef2f7; color: #222 }
+    .top { background: #1f4e8c; color: #fff; padding: 8px 16px } .top a { color: #fff; margin-left: 16px }
+    .user { float: right } .main { background: #fff; margin: 12px; padding: 12px 16px; border: 1px solid #c9d3e0 }
+    table.grid { border-collapse: collapse; width: 100% } .grid th, .grid td { border: 1px solid #c9d3e0; padding: 4px 6px }
+    .grid th { background: #dfe7f2 } .loi { color: #b00020 } .tb { color: #0a6b2c } label { margin-right: 8px }
+    .o { margin: 6px 0 } .o > span.nhan { display: inline-block; width: 120px }
+  </style>
+</head>
+<body>
+  <form method="post" action="VanBan.aspx" id="ctl00_form1">
+<script type="text/javascript">//<![CDATA[
+	var theForm;
+	if (document.getElementById) { theForm = document.getElementById ('ctl00_form1'); }
+	else { theForm = document.ctl00_form1; }
+//]]></script>
+
+<div class="aspNetHidden">
+
+
+<input type="hidden" name="__EVENTARGUMENT" id="__EVENTARGUMENT" value="" /><input type="hidden" name="__VIEWSTATE" id="__VIEWSTATE" value="/wEMDAwQAgAADgEMBQAMEAIAAA4BDAUDDBACAAAOAgwFAwwQAgwPAQEEVGV4dAEhTmd1eeG7hW4gVGjhu4sgVsSDbiBUaMawICh2YW50aHUpAAAADAUHDBACAAAOBAwFAQwQAgwADwEBC3BsYWNlaG9sZGVyAR1T4buRIGvDvSBoaeG7h3UsIHRyw61jaCB54bq/dQAADAUFDBACDAAMCBAFEAUAARLigJQgVOG6pXQgY+G6oyDigJQBAAgIEAUAAQtE4buxIHRo4bqjbwIGAAkIEAUAAQ7EkGFuZyB44butIGzDvQIHAAkIEAUAARDEkMOjIGvhur90IHRow7pjAggACQgQBQABEMSQw6MgcGjDoXQgaMOgbmgCCQAJCAAADAUHDBACDA8BAgAAARVU4buVbmc6IDM1IHbEg24gYuG6o24PAQEFc3R5bGUBEG1hcmdpbi1sZWZ0OjE2cHgAAAwFCQwQAhAQDA8CAQtfIUl0ZW1Db3VudAUjAQlEYXRhQm91bmQIAAAAAAAAAAAAAAAAAAAAAAAOAQwFAAwQAgAADgYMBQEMEAIAAA4HDAUADBACDA8BAgAAAQE1AAAADAUBDBACDA8BAgAAAQYmbmJzcDsAAAAMBQIMEAIAAA4BDAUADBACDA8CAQtOYXZpZ2F0ZVVybAERQ2hpVGlldC5hc3B4P2lkPTUCAAABJ1YvdiDEkWnhu4F1IGNo4buJbmggZOG7sSB0b8OhbiAoc+G7kSA1KQAAAAwFAwwQAgwPAQIAAAEPUXV54bq/dCDEkeG7i25oAAAADAUEDBACDA8BAgAAARLEkGFuZyB44butIGwmIzI1MzsAAAAMBQUMEAIMDwECAAABCjA2LzA5LzIwMjYAAAAMBQYMEAIMDwECAAABFlRy4bqnbiBWxINuIENoJiMyMjU7bmgAAAAMBQIMEAIAAA4HDAUADBACDA8BAgAAAQE0AAAADAUBDBACDA8BAgAAAhAAAAAADAUCDBACAAAOAQwFAAwQAgwPAgIRAAERQ2hpVGlldC5hc3B4P2lkPTQCAAABN1YvdiBraeG7g20gdHJhIGPDtG5nIHTDoWMgdsSDbiB0aMawIGzGsHUgdHLhu68gKHPhu5EgNCkAAAAMBQMMEAIMDwECAAABDkMmIzI0NDtuZyB2xINuAAAADAUEDBACDA8BAgAAAgYAAAAADAUFDBACDA8BAgAAAQowNS8wOS8yMDI2AAAADAUGDBACDA8BAgAAAhAAAAAADAUDDBACAAAOBwwFAAwQAgwPAQIAAAEBMwAAAAwFAQwQAgwPAQIAAAEOMy8yMDI2L0JDLVVCTkQAAAAMBQIMEAIAAA4BDAUADBACDA8CAhEAARFDaGlUaWV0LmFzcHg/aWQ9MwIAAAE1Vi92IHBow7JuZyBjaOG7kW5nIHRoacOqbiB0YWkgbcO5YSBtxrBhIGLDo28gKHPhu5EgMykAAAAMBQMMEAIMDwECAAABEUImIzIyNTtvIGMmIzIyNTtvAAAADAUEDBACDA8BAgAAARzEkCYjMjI3OyBwaCYjMjI1O3QgaCYjMjI0O25oAAAADAUFDBACDA8BAgAAAQowNC8wOS8yMDI2AAAADAUGDBACDA8BAgAAAhAAAAAADAUEDBACAAAOBwwFAAwQAgwPAQIAAAEBMgAAAAwFAQwQAgwPAQIAAAIQAAAAAAwFAgwQAgAADgEMBQAMEAIMDwICEQABEUNoaVRpZXQuYXNweD9pZD0yAgAAAShWL3YgdHV54buDbiBk4bulbmcgY8O0bmcgY2jhu6ljIChz4buRIDIpAAAADAUDDBACDA8BAgAAAQ9U4budIHRyJiMyMzY7bmgAAAAMBQQMEAIMDwECAAABGMSQJiMyMjc7IGvhur90IHRoJiMyNTA7YwAAAAwFBQwQAgwPAQIAAAEKMDMvMDkvMjAyNgAAAAwFBgwQAgwPAQIAAAIQAAAAAAwFBQwQAgAADgcMBQAMEAIMDwECAAABATEAAAAMBQEMEAIMDwECAAACEAAAAAAMBQIMEAIAAA4BDAUADBACDA8CAhEAARFDaGlUaWV0LmFzcHg/aWQ9MQIAAAEyVi92IGLDoW8gY8OhbyB0w6xuaCBow6xuaCB0aHUgbmfDom4gc8OhY2ggKHPhu5EgMSkAAAAMBQMMEAIMDwECAAACFAAAAAAMBQQMEAIMDwECAAACFQAAAAAMBQUMEAIMDwECAAABCjAyLzA5LzIwMjYAAAAMBQYMEAIMDwECAAABH1Bo4bqhbSBWxINuIFQmIzIyNDtpIENoJiMyMzc7bmgAAAAMBQYMEAIMDwEBB1Zpc2libGUJAAAAAAwQARAMAAUDBP////8E/////wAZGidTeXN0ZW0uV2ViLlVJLldlYkNvbnRyb2xzLlNvcnREaXJlY3Rpb25NU3lzdGVtLldlYiwgVmVyc2lvbj00LjAuMC4wLCBDdWx0dXJlPW5ldXRyYWwsIFB1YmxpY0tleVRva2VuPWIwM2Y1ZjdmMTFkNTBhM2EFABwaDVN5c3RlbS5TdHJpbmdLbXNjb3JsaWIsIFZlcnNpb249NC4wLjAuMCwgQ3VsdHVyZT1uZXV0cmFsLCBQdWJsaWNLZXlUb2tlbj1iNzdhNWM1NjE5MzRlMDg5ABAFAAAAAAAABQQAABABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAzvyE5G47pBsfIbPgbYpyHO68tiMun4EUyXCb0Y37oFw==" /><input type="hidden" name="__EVENTTARGET" id="__EVENTTARGET" value="" />
+</div>
+
+<script type="text/javascript">//<![CDATA[
+window._form = theForm;
+window.__doPostBack = function (eventTarget, eventArgument) {
+	if(theForm.onsubmit && theForm.onsubmit() == false) return;
+	theForm.__EVENTTARGET.value = eventTarget;
+	theForm.__EVENTARGUMENT.value = eventArgument;
+	theForm.submit();
+}
+//]]></script>
+
+<script src="/WebResource.axd?d=14M53jeZxJoIHxMZEgulmvx5Aa7d5qQafCErYBZfA5k%3d_Yuqg4BrPfCpnDgcC7mUQlxN9FxvGHaMjEc716ZjYP6Y%3d_f&t=637908411900000000" type="text/javascript"></script>
+<script type="text/javascript">//<![CDATA[
+WebForm_Initialize(window);
+//]]></script>
+
+<script src="/ScriptResource.axd?d=14M53jeZxJoIHxMZEgulmvx5Aa7d5qQafCErYBZfA5k%3d_LaCmOA2Ke%2brbVL1azZLxCa6LQ9925AEYkln01gbN%2fqc%3dfd_t&t=637908411900000000&n=f" type="text/javascript"></script>
+<script type="text/javascript">//<![CDATA[
+if (typeof(Sys) === 'undefined') throw new Error('ASP.NET Ajax client-side framework failed to load.');
+//]]></script>
+<script src="/ScriptResource.axd?d=14M53jeZxJoIHxMZEgulmvx5Aa7d5qQafCErYBZfA5k%3d_LD9iU%2boxg%2bRZZjuo%2b8Pje4eumyV8dp3P5aOFIXUP1WI%3dfd_t&t=637908411900000000&n=f" type="text/javascript"></script>
+
+    <script type="text/javascript">
+//<![CDATA[
+Sys.WebForms.PageRequestManager._initialize('ctl00$sm', document.getElementById('ctl00_form1'));
+Sys.WebForms.PageRequestManager.getInstance()._updateControls([], [], [], 90);
+//]]
+</script>
+
+    <div class="top">
+      <b>QLVB Thử nghiệm</b>
+      <a href="VanBan.aspx">Văn bản</a> <a href="DuThao.aspx">Tạo dự thảo</a>
+      <span class="user">Xin chào, <span id="ctl00_lblUser">Nguyễn Thị Văn Thư (vanthu)</span> ·
+        <a id="ctl00_lnkThoat" href="javascript:__doPostBack(&#39;ctl00$lnkThoat&#39;,&#39;&#39;)">Đăng xuất</a></span>
+    </div>
+    <div class="main">
+  <h3>Danh sách văn bản</h3>
+  <div class="o">
+    <input type="text" name="ctl00$MainContent$txtTuKhoa" id="ctl00_MainContent_txtTuKhoa" placeholder="Số ký hiệu, trích yếu" style="width:260px;" />
+    <input type="submit" name="ctl00$MainContent$btnTim" value="Tìm" id="ctl00_MainContent_btnTim" />
+    Trạng thái: <select name="ctl00$MainContent$ddlTrangThai" onchange="setTimeout(&#39;__doPostBack(\&#39;ctl00$MainContent$ddlTrangThai\&#39;,\&#39;\&#39;)&#39;, 0)" id="ctl00_MainContent_ddlTrangThai">
+	<option selected="selected" value="">— Tất cả —</option>
+	<option value="Dự thảo">Dự thảo</option>
+	<option value="Đang xử lý">Đang xử l&#253;</option>
+	<option value="Đã kết thúc">Đ&#227; kết th&#250;c</option>
+	<option value="Đã phát hành">Đ&#227; ph&#225;t h&#224;nh</option>
+
+</select>
+    <span id="ctl00_MainContent_lblTong" style="margin-left:16px">Tổng: 35 văn bản</span>
+  </div>
+  <div>
+	<table class="grid" cellspacing="0" rules="all" border="1" id="ctl00_MainContent_gvVanBan" style="border-collapse:collapse;">
+		<tr>
+			<th scope="col">Mã</th><th scope="col">Số ký hiệu</th><th scope="col">Trích yếu</th><th scope="col">Loại</th><th scope="col">Trạng thái</th><th scope="col">Ngày tạo</th><th scope="col">Người đang xử lý</th>
+		</tr><tr>
+			<td>5</td><td>&nbsp;</td><td><a href="ChiTiet.aspx?id=5">V/v điều chỉnh dự toán (số 5)</a></td><td>Quyết định</td><td>Đang xử l&#253;</td><td>06/09/2026</td><td>Trần Văn Ch&#225;nh</td>
+		</tr><tr>
+			<td>4</td><td>&nbsp;</td><td><a href="ChiTiet.aspx?id=4">V/v kiểm tra công tác văn thư lưu trữ (số 4)</a></td><td>C&#244;ng văn</td><td>Dự thảo</td><td>05/09/2026</td><td>&nbsp;</td>
+		</tr><tr>
+			<td>3</td><td>3/2026/BC-UBND</td><td><a href="ChiTiet.aspx?id=3">V/v phòng chống thiên tai mùa mưa bão (số 3)</a></td><td>B&#225;o c&#225;o</td><td>Đ&#227; ph&#225;t h&#224;nh</td><td>04/09/2026</td><td>&nbsp;</td>
+		</tr><tr>
+			<td>2</td><td>&nbsp;</td><td><a href="ChiTiet.aspx?id=2">V/v tuyển dụng công chức (số 2)</a></td><td>Tờ tr&#236;nh</td><td>Đ&#227; kết th&#250;c</td><td>03/09/2026</td><td>&nbsp;</td>
+		</tr><tr>
+			<td>1</td><td>&nbsp;</td><td><a href="ChiTiet.aspx?id=1">V/v báo cáo tình hình thu ngân sách (số 1)</a></td><td>Quyết định</td><td>Đang xử l&#253;</td><td>02/09/2026</td><td>Phạm Văn T&#224;i Ch&#237;nh</td>
+		</tr><tr>
+			<td colspan="7"><table>
+				<tr>
+					<td><a href="javascript:__doPostBack(&#39;ctl00$MainContent$gvVanBan&#39;,&#39;Page$1&#39;)">1</a></td><td><a href="javascript:__doPostBack(&#39;ctl00$MainContent$gvVanBan&#39;,&#39;Page$2&#39;)">2</a></td><td><a href="javascript:__doPostBack(&#39;ctl00$MainContent$gvVanBan&#39;,&#39;Page$3&#39;)">3</a></td><td><span>4</span></td>
+				</tr>
+			</table></td>
+		</tr>
+	</table>
+</div>
+</div>
+  
+<div class="aspNetHidden">
+<input type="hidden" name="__EVENTVALIDATION" id="__EVENTVALIDATION" value="/wEdAAEAAAD/////AQAAAAAAAAAPAQAAAAsAAAAIK9F0v4dDK1ukqDWYj89Nn4+vXpHvtC6AgdyM/NNcZaGQj1CxDLnZ97fQf48LAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADzkLnzsbJ6qkm9WKvlb7weNY/hmWdGAyKC09GOn2uLT" />
+</div>
+
+<script type="text/javascript">//<![CDATA[
+Sys.Application.initialize();
+//]]></script>
+</form>
+</body>
+</html>

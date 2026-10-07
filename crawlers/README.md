@@ -10,3 +10,7 @@ Mã spider (`main.py`) **không nằm trong repo nữa**: quản trị viết/s�
 3. **Đồng bộ Crawlab** → mã được đẩy lên Crawlab và tạo lịch cho mọi preset.
 
 Không cần sửa code hay triển khai lại. Spider cũ từng nằm ở đây đã được chép vào CSDL (xem lịch sử git nếu cần).
+
+Hệ thống không có API (ASP.NET WebForms…): dùng `run.webform(…)` của `vala_sdk` — đọc bảng, sang trang bằng gửi lại form
+(`__doPostBack`). Hướng dẫn: `docs/tich-hop-aspnet.md` mục 3; ví dụ: `tools/qlvb-webforms/spider.py`; test:
+`python3 -m unittest discover -s crawlers/_sdk -p 'test_*.py'` (cần `requests`, `beautifulsoup4`).
