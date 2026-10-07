@@ -14,6 +14,7 @@ import { join } from 'node:path';
 import { app, BrowserWindow, ipcMain, session, shell, WebContentsView, type HandlerDetails, type Input, type IpcMainInvokeEvent, type Menu, type WebContents } from 'electron';
 import { APP_NAME, ICON, IS_DEV } from './channel';
 import { messages, normLang } from './i18n';
+import { attachPackages, injectAll, packageEvents } from './scripts';
 import { getSettings, setSettings } from './settings';
 import { cachedSources, events, statusOf, type SourceFull } from './sync';
 import { openTarget, tabStatus, type TabStatus } from './tabs-model';
@@ -166,6 +167,8 @@ function createView(t: Tab): WebContentsView {
     if (f && f !== t.favicon) { t.favicon = f; push(); }
   });
   wc.on('before-input-event', (e, input) => { if (shortcut(input)) e.preventDefault(); });
+  // Gói kịch bản của quản trị (sửa giao diện, thao tác có tên) — chèn vào trang khớp mẫu địa chỉ (scripts.ts).
+  attachPackages(wc);
   void wc.loadURL(t.url);
   layout();
   return view;
@@ -354,7 +357,11 @@ export function initBrowser(h: BrowserHooks): void {
   hooks = h;
   registerIpc();
   events.on('status', refreshBrowser);
+  packageEvents.on('changed', () => { for (const t of tabs.values()) if (t.view) injectAll(t.view.webContents); });
 }
+
+/** Tab đang mở của một hệ thống nguồn (để chạy thao tác trong đó). */
+export const sourceWebContents = (code: string): WebContents | undefined => tabs.get(sourceTabKey(code))?.view?.webContents;
 
 /** "Tăng Xuân Điệp" ⇒ "TĐ" (chữ đầu của họ và tên); một từ ⇒ chữ đầu. */
 function initialsOf(name: string): string {

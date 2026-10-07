@@ -10,6 +10,7 @@ import { accountEvents, logoutDevice } from './account';
 import { openSettingsWindow } from './settings-window';
 import { getSettings } from './settings';
 import { syncAll } from './sync';
+import { forgetPackages, refreshPackages } from './scripts';
 import { forgetPortalLogin, initBrowser, refreshBrowser } from './browser';
 import { createMenus, moreMenu, profileMenu, refreshMenus } from './menu';
 import { refreshHomeFromServer } from './homepage';
@@ -34,7 +35,8 @@ const refreshHome = () => refreshHomeFromServer().then((changed) => { if (change
 
 function startSync() {
   void syncAll().then(refreshAll, refreshAll);
-  if (!syncTimer) syncTimer = setInterval(() => { void syncAll(); void refreshHome(); }, SYNC_INTERVAL_MS);
+  void refreshPackages();
+  if (!syncTimer) syncTimer = setInterval(() => { void syncAll(); void refreshHome(); void refreshPackages(); }, SYNC_INTERVAL_MS);
 }
 
 /** Đăng xuất cả ứng dụng (thu hồi token thiết bị) lẫn cổng (xoá phiên cổng — không thì cổng lại tự cấp token mới). */
@@ -46,7 +48,7 @@ async function signOut() {
 
 // Đăng nhập cổng ở tab Báo cáo ⇒ cổng cấp token thiết bị qua cầu nối (account.ts) ⇒ bắt đầu giữ/gửi phiên.
 accountEvents.on('login', () => { refreshAll(); startSync(); });
-accountEvents.on('logout', refreshAll);
+accountEvents.on('logout', () => { forgetPackages(); refreshAll(); });
 
 function openSettings() {
   openSettingsWindow({

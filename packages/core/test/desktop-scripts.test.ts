@@ -27,6 +27,11 @@ describe('ký gói kịch bản', () => {
   });
   it('chuỗi ký cố định (bên ứng dụng kiểm theo đúng định dạng này)', () => {
     expect(canonicalPackage(pkg)).toBe('["vala-desktop-package/1","egov_sua_giao_dien",3,["https://egov.bkav.com/*"],".x{display:none}","vala.log(1)"]');
+    // Cùng chữ ký mẫu với apps/desktop/test/scripts-verify.test.ts (ứng dụng kiểm bằng bản sao của hàm này).
+    const fixed = packageSigner({ signingKey: Buffer.alloc(32, 7).toString('base64'), jwtSecret: 'x' });
+    const p = { ...pkg, script: "vala.log('xin chào')" };
+    expect(fixed.publicKey).toBe('6kpsY+KcUgq+9VB7Ey7F+ZVHdq6+vnuSQh7qaRRG0iw=');
+    expect(fixed.sign(p)).toBe('tVZC2ciQkrOV/G9/8teyyTlnO8rHfznIVy0pLNoY5Hrkb+Or6JDGEJx6w/BJ5aLjXehz3ULan9i5DH7P6KvaCA==');
     expect(keyFingerprint(s.publicKey)).toMatch(/^[0-9a-f]{4}(:[0-9a-f]{4}){3}$/);
   });
 });
