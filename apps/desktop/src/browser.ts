@@ -15,6 +15,7 @@ import { app, BrowserWindow, ipcMain, session, shell, WebContentsView, type Hand
 import { APP_NAME, ICON, IS_DEV } from './channel';
 import { messages, normLang } from './i18n';
 import { attachPackages, injectAll, packageEvents } from './scripts';
+import { isPortalUrl, mapToUi, UI_ORIGIN, uiEvents, uiPortalUrl } from './ui-cache';
 import { currentPrefs, prefsEvents, setPrefs } from './prefs';
 import { getSettings } from './settings';
 import { cachedSources, events, statusOf, type SourceFull } from './sync';
@@ -82,7 +83,8 @@ function pinnedDefs(): PinnedDef[] {
   const t = M[s.lang];
   const defs: PinnedDef[] = [{ key: 'home', label: t.home, url: s.homeUrl }];
   // Tab Báo cáo luôn có — kể cả khi chưa đăng nhập: đó là nơi đăng nhập (cổng cấp quyền cho ứng dụng qua cầu nối).
-  if (s.serverUrl) defs.push({ key: 'portal', label: t.reports, url: s.serverUrl });
+  // Giao diện cổng chạy từ bản trong máy khi đã tải được (ui-cache.ts), không thì nạp thẳng từ máy chủ.
+  if (s.serverUrl) defs.push({ key: 'portal', label: t.reports, url: uiPortalUrl() ?? s.serverUrl });
   return defs;
 }
 
@@ -110,6 +112,13 @@ function syncPinned(): void {
       if (t.view) void t.view.webContents.loadURL(d.url);
     }
   }
+}
+
+/** Tab Báo cáo chưa nạp trang: cập nhật địa chỉ sẽ nạp (bản trong máy vừa có / vừa đổi). */
+function syncPinnedPortalUrl(): void {
+  const t = tabs.get('portal');
+  const def = pinnedDefs().find((d) => d.key === 'portal');
+  if (t && def && !t.view) t.url = def.url;
 }
 
 function ensureWindow(): BrowserWindow {
@@ -169,6 +178,18 @@ function createView(t: Tab): WebContentsView {
   wc.on('before-input-event', (e, input) => { if (shortcut(input)) e.preventDefault(); });
   // Gói kịch bản của quản trị (sửa giao diện, thao tác có tên) — chèn vào trang khớp mẫu địa chỉ (scripts.ts).
   attachPackages(wc);
+  // Tab Báo cáo chạy bản giao diện trong máy: trang của cổng trên máy chủ (vd SSO đăng nhập xong chuyển về
+  // https://<máy chủ>/#token…) ⇒ mở cùng đường dẫn trong bản trong máy, giữ nguyên query và #.
+  if (t.key === 'portal') {
+    const toUi = (e: { preventDefault(): void }, url: string) => {
+      const m = mapToUi(url);
+      if (!m) return;
+      e.preventDefault();
+      void wc.loadURL(m);
+    };
+    wc.on('will-redirect', (e, url) => toUi(e, url));
+    wc.on('will-navigate', (e, url) => toUi(e, url));
+  }
   void wc.loadURL(t.url);
   layout();
   return view;
@@ -377,19 +398,24 @@ export function initBrowser(h: BrowserHooks): void {
   registerIpc();
   events.on('status', refreshBrowser);
   packageEvents.on('changed', () => { for (const t of tabs.values()) if (t.view) injectAll(t.view.webContents); });
+  // Vừa tải xong bản giao diện cổng mới: tab Báo cáo đang không xem thì chuyển ngay sang bản mới (giữ trang đang mở);
+  // đang xem thì để lần mở sau — không nạp lại giữa lúc người dùng thao tác.
+  uiEvents.on('updated', () => {
+    const t = tabs.get('portal');
+    syncPinnedPortalUrl();
+    const wc = t?.view?.webContents;
+    if (!t || !wc || wc.isDestroyed() || active === 'portal') return;
+    void wc.loadURL(mapToUi(wc.getURL()) ?? (wc.getURL().startsWith(UI_ORIGIN) ? wc.getURL() : t.url));
+  });
   // Ngôn ngữ / sáng-tối đổi (ở thanh tab, Cài đặt hay trong cổng) ⇒ vẽ lại thanh tab, báo cổng đổi theo.
   prefsEvents.on('changed', () => { pushState(); pushPrefsToPortal(); });
 }
 
 /** Gửi tin cho các tab đang mở cổng (chỉ trang đúng origin máy chủ — trang khác không nhận). */
 export function sendToPortal(msg: Record<string, unknown>): void {
-  const s = getSettings();
-  let origin: string;
-  try { origin = new URL(s.serverUrl).origin; } catch { return; }
   for (const t of tabs.values()) {
     const wc = t.view?.webContents;
-    if (!wc || wc.isDestroyed()) continue;
-    try { if (new URL(wc.getURL()).origin !== origin) continue; } catch { continue; }
+    if (!wc || wc.isDestroyed() || !isPortalUrl(wc.getURL())) continue;
     wc.send('vala:event', msg);
   }
 }
@@ -418,9 +444,9 @@ export async function forgetPortalLogin(): Promise<void> {
   if (wc && !wc.isDestroyed()) {
     // vala.noAutoSso: trang đăng nhập cổng không tự chuyển sang SSO ngay lần này (phiên SSO còn sống sẽ đăng nhập lại luôn).
     try { await wc.executeJavaScript("localStorage.removeItem('vala.token'); sessionStorage.setItem('vala.noAutoSso', '1'); 1", true); } catch { /* trang đang tải */ }
-    void wc.loadURL(s.serverUrl);
+    void wc.loadURL(uiPortalUrl() ?? s.serverUrl);
   } else {
-    await session.defaultSession.clearStorageData({ origin: new URL(s.serverUrl).origin, storages: ['localstorage'] });
+    for (const origin of [new URL(s.serverUrl).origin, UI_ORIGIN]) await session.defaultSession.clearStorageData({ origin, storages: ['localstorage'] });
   }
   pushState();
 }

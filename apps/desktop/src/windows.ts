@@ -22,6 +22,7 @@ import { listActions, refreshPackages, runAction, type ActionResult } from './sc
 import { currentPrefs, setPrefs } from './prefs';
 import { setPortalUser } from './portal-state';
 import { getSettings } from './settings';
+import { isPortalUrl } from './ui-cache';
 import { cachedSources, events, refreshSources, statusOf, syncSource, type SourceFull } from './sync';
 
 const M = messages({
@@ -67,14 +68,9 @@ export const openSourceTab = (src: SourceFull, relogin = false): void => {
   showSourceTab(src, relogin ? { reloadTo: src.login_url } : {});
 };
 
-/** Trang trong khung gọi IPC có thuộc đúng origin máy chủ Vala Reporting không. */
+/** Khung gọi IPC có phải trang cổng Vala Reporting không (bản trong máy hoặc đúng origin máy chủ). */
 function fromPortal(e: IpcMainInvokeEvent): boolean {
-  const s = getSettings();
-  try {
-    return !!s.serverUrl && !!e.senderFrame && new URL(e.senderFrame.url).origin === new URL(s.serverUrl).origin;
-  } catch {
-    return false;
-  }
+  return !!e.senderFrame && isPortalUrl(e.senderFrame.url);
 }
 
 // ---------------------------------------------------------------------------------------------

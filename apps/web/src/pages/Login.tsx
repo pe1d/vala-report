@@ -3,6 +3,7 @@ import { ApiProblem, api } from '../api';
 import { useAsync } from '../hooks';
 import { startLogin } from '../reauth';
 import { useValaExtension } from '../extension';
+import { useInDesktop } from '../desktopPrefs';
 import { ErrorBox, Loading } from '../components/States';
 import { Banner, Button, Field, Input, LangToggle, ThemeToggle } from '../components/ui';
 import { BrandMark, useBranding } from '../branding';
@@ -53,6 +54,7 @@ const M = messages({
 });
 
 export function LoginPage({ onLogin }: { onLogin: (token: string) => void }) {
+  const inDesktop = useInDesktop();
   const t = useT(M);
   const brand = useBranding();
   const ssoErr = new URLSearchParams(window.location.search).get('loi');
@@ -101,7 +103,8 @@ export function LoginPage({ onLogin }: { onLogin: (token: string) => void }) {
             {brand.ten_don_vi && <div className="text-sm text-slate-600 dark:text-slate-300">{brand.ten_don_vi}</div>}
           </div>
         </div>
-        <div className="flex shrink-0 items-center gap-2"><LangToggle /><ThemeToggle /></div>
+        {/* Trong Vala Desktop thanh tab của app đã có ngôn ngữ / sáng-tối (đồng bộ với cổng). */}
+        {!inDesktop && <div className="flex shrink-0 items-center gap-2"><LangToggle /><ThemeToggle /></div>}
       </div>
       <p className="mb-6 text-slate-500 dark:text-slate-400">{brand.mo_ta ?? t.defaultTagline}</p>
 

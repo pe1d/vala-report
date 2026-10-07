@@ -13,6 +13,7 @@ import { syncAll } from './sync';
 import { forgetPackages, refreshPackages } from './scripts';
 import { applyTheme, prefsEvents } from './prefs';
 import { setPortalUser } from './portal-state';
+import { installUiProtocol, refreshUi, registerUiScheme } from './ui-cache';
 import { forgetPortalLogin, initBrowser, refreshBrowser } from './browser';
 import { createMenus, moreMenu, profileMenu, refreshMenus } from './menu';
 import { refreshHomeFromServer } from './homepage';
@@ -38,7 +39,7 @@ const refreshHome = () => refreshHomeFromServer().then((changed) => { if (change
 function startSync() {
   void syncAll().then(refreshAll, refreshAll);
   void refreshPackages();
-  if (!syncTimer) syncTimer = setInterval(() => { void syncAll(); void refreshHome(); void refreshPackages(); }, SYNC_INTERVAL_MS);
+  if (!syncTimer) syncTimer = setInterval(() => { void syncAll(); void refreshHome(); void refreshPackages(); void refreshUi(); }, SYNC_INTERVAL_MS);
 }
 
 /** Đăng xuất cả ứng dụng (thu hồi token thiết bị) lẫn cổng (xoá phiên cổng — không thì cổng lại tự cấp token mới). */
@@ -67,6 +68,8 @@ function openSettings() {
 // Bản dev ⇒ tên, thư mục dữ liệu riêng (channel.ts). Phải chạy trước khi đọc cấu hình / xin khoá "chỉ một bản".
 setupChannel();
 app.userAgentFallback = cleanUserAgent(app.userAgentFallback);
+// vala-ui:// — giao diện cổng chạy từ bản trong máy (ui-cache.ts); phải đăng ký trước app ready.
+registerUiScheme();
 
 if (!app.requestSingleInstanceLock()) {
   app.quit();
@@ -83,6 +86,7 @@ if (!app.requestSingleInstanceLock()) {
       else app.setLoginItemSettings({ openAtLogin: true, args: ['--hidden'] });
     }
     applyTheme();
+    installUiProtocol();
     registerBridge();
     watchCookies();
     createMenus({ showMain, showPortal, openSettings, signOut: () => void signOut(), changePassword: changePortalPassword });
@@ -91,6 +95,7 @@ if (!app.requestSingleInstanceLock()) {
     initUpdater(refreshAll);
 
     void refreshHome();
+    void refreshUi();
     // Không bật cửa sổ Cài đặt: chưa đăng nhập thì thanh tab có nút "Đăng nhập" (sang tab Báo cáo đăng nhập cổng).
     if (getSettings().deviceToken) startSync();
     if (!HIDDEN) showMain();
