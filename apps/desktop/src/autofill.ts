@@ -10,9 +10,9 @@
  *   - Người dùng tự đăng nhập ⇒ hỏi "Lưu mật khẩu?" (như trình duyệt); preload chỉ gửi khi host là host đăng nhập của nguồn.
  *   - Phiên hết hạn ⇒ windows.ts gọi tryAutoRelogin: mở nền trang đăng nhập, phần trên tự điền, cookie mới tự gửi lên Vala.
  */
-import { BrowserWindow, dialog, ipcMain, Notification, type IpcMainInvokeEvent, type WebContents, type WebFrameMain } from 'electron';
-import { ICON } from './channel';
-import { backgroundSourceTab } from './browser';
+import { BrowserWindow, dialog, ipcMain, type IpcMainInvokeEvent, type WebContents, type WebFrameMain } from 'electron';
+import { notify } from './notify';
+import { backgroundSourceTab, showSourceTab } from './browser';
 import { neverSave, sameAsSaved, saveCredential, savedCredential, secureStorageAvailable, setNeverSave, useCredential } from './credentials';
 import { messages } from './i18n';
 import { runAction } from './scripts';
@@ -126,7 +126,8 @@ async function maybeFill(wc: WebContents, frame: WebFrameMain | null | undefined
     const last = lastAttempt.get(src.code);
     if ((last && Date.now() - last < RETRY_WINDOW_MS) || !allowAttempt(src.code)) {
       failed.add(src.code);
-      if (Notification.isSupported()) new Notification({ title: T().failedTitle(src.ten), body: T().failedBody, icon: ICON }).show();
+      // Bấm ⇒ mở tab hệ thống đó để người dùng đăng nhập tay (rồi được hỏi lưu mật khẩu mới).
+      notify(T().failedTitle(src.ten), T().failedBody, () => showSourceTab(src));
       return;
     }
     const cred = await useCredential(src.code);

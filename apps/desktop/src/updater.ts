@@ -8,11 +8,11 @@
  * dùng bấm "Cập nhật", không tự cài lúc thoát (tránh bị hỏi mật khẩu bất ngờ khi tắt máy).
  * Phát hành: chép file cài + .blockmap lên thư mục /desktop/ của máy chủ trước, latest.yml sau cùng (docs/trien-khai-k3s.md).
  */
-import { app, Notification } from 'electron';
+import { app } from 'electron';
+import { notify } from './notify';
 import { autoUpdater } from 'electron-updater';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { ICON } from './channel';
 import { messages } from './i18n';
 import { getSettings, updateFeedUrl } from './settings';
 
@@ -50,9 +50,6 @@ export const canUpdate = (): boolean => {
   return existsSync(join(process.resourcesPath, 'app-update.yml'));
 };
 
-function notify(title: string, body = '') {
-  if (Notification.isSupported()) new Notification({ title, body, icon: ICON }).show();
-}
 
 function check() {
   autoUpdater.setFeedURL({ provider: 'generic', url: updateFeedUrl(getSettings().serverUrl) });

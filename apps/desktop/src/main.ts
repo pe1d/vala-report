@@ -16,7 +16,8 @@ import { setPortalUser } from './portal-state';
 import { registerAutofill } from './autofill';
 import { lockCredentials } from './credentials';
 import { installUiProtocol, refreshUi, registerUiScheme } from './ui-cache';
-import { forgetPortalLogin, initBrowser, refreshBrowser } from './browser';
+import { forgetPortalLogin, initBrowser, refreshBrowser, revealWindow } from './browser';
+import { setNotifyReveal } from './notify';
 import { createMenus, moreMenu, profileMenu, refreshMenus, tabContextMenu } from './menu';
 import { refreshHomeFromServer } from './homepage';
 import { enableLinuxAutostart } from './linux';
@@ -88,6 +89,7 @@ if (!app.requestSingleInstanceLock()) {
       else app.setLoginItemSettings({ openAtLogin: true, args: ['--hidden'] });
     }
     applyTheme();
+    setNotifyReveal(revealWindow);
     installUiProtocol();
     registerBridge();
     registerAutofill();

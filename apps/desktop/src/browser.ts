@@ -213,10 +213,22 @@ function destroyTab(key: string): void {
 }
 
 /** Đưa cửa sổ lên — chỉ khi đang ẩn/thu nhỏ/không được chọn (gọi show/focus thừa làm cửa sổ giật trên vài trình quản lý cửa sổ). */
-function reveal(w: BrowserWindow) {
+function reveal(w: BrowserWindow, force = false) {
   if (w.isMinimized()) w.restore();
   if (!w.isVisible()) w.show();
-  if (!w.isFocused()) w.focus();
+  if (force && process.platform === 'linux') {
+    // Bấm thông báo: trình quản lý cửa sổ (GNOME…) chặn ứng dụng tự giành focus ⇒ đưa tạm lên trên cùng rồi trả lại.
+    w.setAlwaysOnTop(true);
+    w.focus();
+    w.setAlwaysOnTop(false);
+  } else if (!w.isFocused()) w.focus();
+  if (force) w.moveTop();
+}
+
+/** Bấm thông báo: hiện cửa sổ ở tab đang chọn (chưa có tab nào ⇒ tab Vala), kể cả khi ứng dụng đang ẩn ở khay. */
+export function revealWindow(): void {
+  showTab(active ?? 'home');
+  if (win && !win.isDestroyed()) reveal(win, true);
 }
 
 /** Chọn một tab (tạo cửa sổ / nạp trang nếu cần) và đưa cửa sổ lên trước. */

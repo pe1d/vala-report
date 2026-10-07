@@ -10,7 +10,8 @@
  * Mọi lời gọi IPC từ trang chỉ được nhận khi khung gọi thuộc đúng origin máy chủ Vala đã cấu hình.
  */
 import { join } from 'node:path';
-import { app, ipcMain, Notification, session, shell, type IpcMainInvokeEvent, type WebContents } from 'electron';
+import { app, ipcMain, session, shell, type IpcMainInvokeEvent, type WebContents } from 'electron';
+import { notify } from './notify';
 import { adoptDeviceToken, DEVICE_TOKEN, deviceName } from './account';
 import { api } from './api';
 import { EventEmitter } from 'node:events';
@@ -171,12 +172,6 @@ function checkExpiry(src: SourceFull) {
   notify(T().expiredTitle(src.ten), T().expiredBody, () => { void startConnect(src.code); });
 }
 
-function notify(title: string, body: string, onClick?: () => void) {
-  if (!Notification.isSupported()) return;
-  const n = new Notification({ title, body, icon: ICON });
-  if (onClick) n.on('click', onClick);
-  n.show();
-}
 
 // ---------------------------------------------------------------------------------------------
 /** Cookie phiên của một nguồn đổi (vừa đăng nhập, phiên được gia hạn) ⇒ gửi lại, gộp các thay đổi liền nhau. */
