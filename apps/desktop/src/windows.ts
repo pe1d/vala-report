@@ -13,12 +13,14 @@ import { join } from 'node:path';
 import { app, ipcMain, Notification, session, shell, type IpcMainInvokeEvent, type WebContents } from 'electron';
 import { adoptDeviceToken, DEVICE_TOKEN, deviceName } from './account';
 import { api } from './api';
-import { backgroundSourceTab, showSourceTab, showTab, showWebContents, sourceTabKey } from './browser';
+import { EventEmitter } from 'node:events';
+import { backgroundSourceTab, sendToPortal, showSourceTab, showTab, showWebContents, sourceTabKey } from './browser';
 import { matchesSessionDomain, sessionDomain } from './cookies';
 import { ICON } from './channel';
 import { messages } from './i18n';
 import { listActions, refreshPackages, runAction, type ActionResult } from './scripts';
 import { currentPrefs, setPrefs } from './prefs';
+import { setPortalUser } from './portal-state';
 import { getSettings } from './settings';
 import { cachedSources, events, refreshSources, statusOf, syncSource, type SourceFull } from './sync';
 
@@ -53,6 +55,12 @@ export const showMain = (): void => { showTab('home'); };
 
 /** Tab Báo cáo: cổng Vala Reporting (chỉ có khi đã đăng nhập thiết bị). */
 export const showPortal = (): void => { showTab('portal'); };
+
+/** 'changed' — cổng báo thông tin người đăng nhập đổi (menu hồ sơ vẽ lại). */
+export const portalUserEvents = new EventEmitter();
+
+/** Menu hồ sơ → "Đổi mật khẩu": chuyển sang tab Báo cáo và bảo cổng mở hộp đổi mật khẩu. */
+export const changePortalPassword = (): void => { showTab('portal'); sendToPortal({ type: 'command', name: 'change-password' }); };
 
 /** Tab của một hệ thống nguồn (mở mới nếu đang đóng); `relogin` ⇒ đưa về trang đăng nhập (luồng kết nối). */
 export const openSourceTab = (src: SourceFull, relogin = false): void => {
@@ -245,6 +253,11 @@ export function registerBridge(): void {
     const ho_ten = typeof a.user?.ho_ten === 'string' ? a.user.ho_ten.slice(0, 200) : '';
     const email = typeof a.user?.email === 'string' ? a.user.email.slice(0, 200) : '';
     await adoptDeviceToken(a.token, { ho_ten, email });
+    return true;
+  });
+  ipcMain.handle('vala:portal-user', (e, u: { has_password?: unknown } | null) => {
+    if (!fromPortal(e)) return false;
+    if (setPortalUser(u)) portalUserEvents.emit('changed');
     return true;
   });
   // Người dùng đổi ngôn ngữ / sáng-tối ngay trong cổng ⇒ cả ứng dụng đổi theo.

@@ -381,8 +381,8 @@ export function initBrowser(h: BrowserHooks): void {
   prefsEvents.on('changed', () => { pushState(); pushPrefsToPortal(); });
 }
 
-/** Gửi ngôn ngữ + sáng/tối cho các tab đang mở cổng (chỉ trang đúng origin máy chủ — trang khác không cần biết). */
-function pushPrefsToPortal(): void {
+/** Gửi tin cho các tab đang mở cổng (chỉ trang đúng origin máy chủ — trang khác không nhận). */
+export function sendToPortal(msg: Record<string, unknown>): void {
   const s = getSettings();
   let origin: string;
   try { origin = new URL(s.serverUrl).origin; } catch { return; }
@@ -390,9 +390,12 @@ function pushPrefsToPortal(): void {
     const wc = t.view?.webContents;
     if (!wc || wc.isDestroyed()) continue;
     try { if (new URL(wc.getURL()).origin !== origin) continue; } catch { continue; }
-    wc.send('vala:event', { type: 'prefs', ...currentPrefs() });
+    wc.send('vala:event', msg);
   }
 }
+
+/** Ngôn ngữ + sáng/tối cho cổng đổi theo. */
+const pushPrefsToPortal = () => sendToPortal({ type: 'prefs', ...currentPrefs() });
 
 /** Tab đang mở của một hệ thống nguồn (để chạy thao tác trong đó). */
 export const sourceWebContents = (code: string): WebContents | undefined => tabs.get(sourceTabKey(code))?.view?.webContents;

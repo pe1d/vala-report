@@ -11,6 +11,7 @@ import { LangToggle, ThemeToggle } from './ui';
 import { ChangePasswordForm } from './ChangePassword';
 import { BrandMark, useBranding } from '../branding';
 import { messages, useT } from '../i18n';
+import { onDesktopCommand, reportPortalUser, useInDesktop } from '../desktopPrefs';
 
 const NAV_VI = {
   reports: 'Báo cáo', overview: 'Tổng quan', catalog: 'Danh mục báo cáo', schedules: 'Lịch cập nhật',
@@ -90,6 +91,24 @@ export function Shell({ me, onLogout, children }: { me: Me; onLogout: () => void
   const location = useLocation();
   useEffect(() => setDrawer(false), [location.pathname]);
   const rail = collapsed && !drawer;   // ngăn kéo trên điện thoại luôn hiện đủ chữ
+  // Trong Vala Desktop: thanh tab của ứng dụng đã có ngôn ngữ, sáng/tối, hồ sơ, đăng xuất ⇒ bỏ header của cổng, sidebar
+  // luôn hiện (cửa sổ app không hẹp như điện thoại). "Đổi mật khẩu" mở từ menu hồ sơ của app (lệnh qua cầu nối).
+  const desktop = useInDesktop();
+  const [pw, setPw] = useState<'form' | 'done' | null>(null);
+  useEffect(() => { reportPortalUser({ has_password: me.has_password }); return () => reportPortalUser(null); }, [me.has_password]);
+  useEffect(() => onDesktopCommand((name) => { if (name === 'change-password' && me.has_password) setPw('form'); }), [me.has_password]);
+  if (desktop) {
+    return (
+      <div className={`grid min-h-screen transition-[grid-template-columns] duration-200 ${collapsed ? 'grid-cols-[64px_minmax(0,1fr)]' : 'grid-cols-[240px_minmax(0,1fr)]'}`}>
+        <aside id="sidebar" className="sticky top-0 flex h-screen flex-col overflow-y-auto overflow-x-hidden border-r border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
+          <Sidebar isAdmin={me.is_ops_admin} rail={collapsed} />
+          <CollapseButton collapsed={collapsed} rail={collapsed} onClick={toggleCollapsed} />
+        </aside>
+        <main className="w-full min-w-0 p-4 md:px-8 md:py-6">{children}</main>
+        <PasswordDialog state={pw} onState={setPw} />
+      </div>
+    );
+  }
   return (
     <div className="min-h-screen">
       <Header me={me} onLogout={onLogout} onMenu={() => setDrawer(!drawer)} drawer={drawer} collapsed={collapsed} onCollapse={toggleCollapsed} />
@@ -99,16 +118,48 @@ export function Shell({ me, onLogout, children }: { me: Me; onLogout: () => void
           className={`${drawer ? 'fixed inset-y-0 left-0 top-14 z-40 w-64 shadow-xl' : 'hidden'} flex-col overflow-y-auto overflow-x-hidden border-r border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900
             md:sticky md:top-14 md:flex md:h-[calc(100vh-3.5rem)] md:w-auto md:shadow-none ${drawer ? 'flex' : ''}`}>
           <Sidebar isAdmin={me.is_ops_admin} rail={rail} />
-          <button type="button" onClick={toggleCollapsed} title={`${collapsed ? t.expandMenu : t.collapseMenu} (Ctrl+B)`}
-            aria-label={collapsed ? t.expandMenu : t.collapseMenu} aria-expanded={!collapsed}
-            className={`mt-auto hidden items-center gap-2.5 border-t border-slate-200 px-5 py-3 text-sm text-slate-500 hover:bg-slate-50 hover:text-slate-900 md:flex dark:border-slate-800 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-100 ${rail ? 'justify-center px-0' : ''}`}>
-            {I(collapsed ? 'm13 17 5-5-5-5M6 17l5-5-5-5' : 'm11 17-5-5 5-5M18 17l-5-5 5-5')}
-            {!rail && <span>{t.collapse}</span>}
-          </button>
+          <CollapseButton collapsed={collapsed} rail={rail} onClick={toggleCollapsed} className="hidden md:flex" />
         </aside>
         <main className="w-full min-w-0 p-4 md:px-8 md:py-6">{children}</main>
       </div>
     </div>
+  );
+}
+
+/** Nút thu gọn / mở rộng sidebar ở chân sidebar. */
+function CollapseButton({ collapsed, rail, onClick, className = 'flex' }: { collapsed: boolean; rail: boolean; onClick: () => void; className?: string }) {
+  const t = useT(M);
+  return (
+    <button type="button" onClick={onClick} title={`${collapsed ? t.expandMenu : t.collapseMenu} (Ctrl+B)`}
+      aria-label={collapsed ? t.expandMenu : t.collapseMenu} aria-expanded={!collapsed}
+      className={`mt-auto ${className} items-center gap-2.5 border-t border-slate-200 px-5 py-3 text-sm text-slate-500 hover:bg-slate-50 hover:text-slate-900 dark:border-slate-800 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-100 ${rail ? 'justify-center px-0' : ''}`}>
+      {I(collapsed ? 'm13 17 5-5-5-5M6 17l5-5-5-5' : 'm11 17-5-5 5-5M18 17l-5-5 5-5')}
+      {!rail && <span>{t.collapse}</span>}
+    </button>
+  );
+}
+
+/** Hộp đổi mật khẩu (mở từ menu người dùng, hoặc từ menu hồ sơ của Vala Desktop). Portal ra body. */
+function PasswordDialog({ state, onState }: { state: 'form' | 'done' | null; onState: (s: 'form' | 'done' | null) => void }) {
+  const t = useT(M);
+  if (!state) return null;
+  return createPortal(
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/50 p-4 dark:bg-black/60" role="dialog" aria-modal="true" aria-labelledby="doi-mk"
+      onKeyDown={(e) => e.key === 'Escape' && onState(null)}>
+      <div className="mx-auto mt-16 w-full max-w-md rounded-xl border border-slate-200 bg-white p-5 shadow-xl dark:border-slate-800 dark:bg-slate-950">
+        <h2 id="doi-mk" className="mb-4 text-base font-semibold">{t.changePassword}</h2>
+        {state === 'form'
+          ? <ChangePasswordForm onDone={() => onState('done')} onCancel={() => onState(null)} />
+          : (
+            <div className="grid gap-4">
+              <p className="text-sm text-emerald-800 dark:text-emerald-300">{t.passwordChanged}</p>
+              <div className="flex justify-end"><button type="button" onClick={() => onState(null)}
+                className="rounded-md border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-700">{t.close}</button></div>
+            </div>
+          )}
+      </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -189,24 +240,7 @@ function UserMenu({ me, onLogout }: { me: Me; onLogout: () => void }) {
         </div>
       )}
       {/* Portal ra body: header có backdrop-blur nên mọi phần tử fixed bên trong bị giới hạn theo khung header. */}
-      {pw && createPortal(
-        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/50 p-4 dark:bg-black/60" role="dialog" aria-modal="true" aria-labelledby="doi-mk"
-          onKeyDown={(e) => e.key === 'Escape' && setPw(null)}>
-          <div className="mx-auto mt-16 w-full max-w-md rounded-xl border border-slate-200 bg-white p-5 shadow-xl dark:border-slate-800 dark:bg-slate-950">
-            <h2 id="doi-mk" className="mb-4 text-base font-semibold">{t.changePassword}</h2>
-            {pw === 'form'
-              ? <ChangePasswordForm onDone={() => setPw('done')} onCancel={() => setPw(null)} />
-              : (
-                <div className="grid gap-4">
-                  <p className="text-sm text-emerald-800 dark:text-emerald-300">{t.passwordChanged}</p>
-                  <div className="flex justify-end"><button type="button" onClick={() => setPw(null)}
-                    className="rounded-md border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-700">{t.close}</button></div>
-                </div>
-              )}
-          </div>
-        </div>,
-        document.body,
-      )}
+      <PasswordDialog state={pw} onState={setPw} />
     </div>
   );
 }

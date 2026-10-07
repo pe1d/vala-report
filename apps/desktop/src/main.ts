@@ -12,12 +12,13 @@ import { getSettings } from './settings';
 import { syncAll } from './sync';
 import { forgetPackages, refreshPackages } from './scripts';
 import { applyTheme, prefsEvents } from './prefs';
+import { setPortalUser } from './portal-state';
 import { forgetPortalLogin, initBrowser, refreshBrowser } from './browser';
 import { createMenus, moreMenu, profileMenu, refreshMenus } from './menu';
 import { refreshHomeFromServer } from './homepage';
 import { enableLinuxAutostart } from './linux';
 import { initUpdater } from './updater';
-import { onTabLeave, registerBridge, showMain, showPortal, watchCookies } from './windows';
+import { changePortalPassword, onTabLeave, portalUserEvents, registerBridge, showMain, showPortal, watchCookies } from './windows';
 
 const SYNC_INTERVAL_MS = 15 * 60_000;
 /** Mở lúc Windows khởi động ⇒ chỉ chạy nền, không bật cửa sổ. */
@@ -49,9 +50,10 @@ async function signOut() {
 
 // Đăng nhập cổng ở tab Báo cáo ⇒ cổng cấp token thiết bị qua cầu nối (account.ts) ⇒ bắt đầu giữ/gửi phiên.
 accountEvents.on('login', () => { refreshAll(); startSync(); });
-accountEvents.on('logout', () => { forgetPackages(); refreshAll(); });
+accountEvents.on('logout', () => { forgetPackages(); setPortalUser(null); refreshAll(); });
 // Đổi ngôn ngữ / sáng-tối ở bất kỳ đâu ⇒ menu, khay, thanh tab theo (browser.ts tự báo cổng).
 prefsEvents.on('changed', refreshAll);
+portalUserEvents.on('changed', refreshAll);
 
 function openSettings() {
   openSettingsWindow({
@@ -83,7 +85,7 @@ if (!app.requestSingleInstanceLock()) {
     applyTheme();
     registerBridge();
     watchCookies();
-    createMenus({ showMain, showPortal, openSettings, signOut: () => void signOut() });
+    createMenus({ showMain, showPortal, openSettings, signOut: () => void signOut(), changePassword: changePortalPassword });
     initBrowser({ onLeave: onTabLeave, menu: moreMenu, profileMenu, signIn: showPortal });
     // Bản mới tải xong ⇒ hiện nút "Cập nhật" trên thanh tab và trong menu.
     initUpdater(refreshAll);

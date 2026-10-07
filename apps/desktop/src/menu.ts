@@ -9,6 +9,7 @@
 import { app, BrowserWindow, Menu, nativeImage, Tray, type BaseWindow, type MenuItemConstructorOptions } from 'electron';
 import { APP_NAME, ICON } from './channel';
 import { messages } from './i18n';
+import { portalHasPassword } from './portal-state';
 import { getSettings } from './settings';
 import { cachedSources, events, statusOf, syncAll, type SyncResult } from './sync';
 import { checkNow, installNow, pendingUpdate } from './updater';
@@ -20,7 +21,7 @@ const M = messages({
   sources: 'Hệ thống nguồn', noSources: '(chưa có hệ thống nào)', signInFirst: '(đăng nhập ở tab Báo cáo trước)',
   syncNow: 'Đồng bộ phiên ngay',
   view: 'Xem', reload: 'Tải lại', back: 'Quay lại', forward: 'Tiến tới', zoomIn: 'Phóng to', zoomOut: 'Thu nhỏ', zoomReset: 'Cỡ gốc',
-  settingsMenu: 'Cài đặt', settings: 'Cài đặt…', signIn: 'Đăng nhập…', signOut: 'Đăng xuất', quit: 'Thoát',
+  settingsMenu: 'Cài đặt', settings: 'Cài đặt…', signIn: 'Đăng nhập…', signOut: 'Đăng xuất', quit: 'Thoát', changePassword: 'Đổi mật khẩu…',
   checkUpdate: 'Kiểm tra cập nhật', installUpdate: (v: string) => `Cập nhật lên bản ${v}`, version: (v: string) => `Phiên bản ${v}`,
   result: {
     sent: 'đã kết nối', unchanged: 'đã kết nối', managed: 'hệ thống tự đăng nhập', not_logged_in: 'chưa đăng nhập',
@@ -32,7 +33,7 @@ const M = messages({
   sources: 'Source systems', noSources: '(no systems yet)', signInFirst: '(sign in on the Reports tab first)',
   syncNow: 'Sync sessions now',
   view: 'View', reload: 'Reload', back: 'Back', forward: 'Forward', zoomIn: 'Zoom in', zoomOut: 'Zoom out', zoomReset: 'Actual size',
-  settingsMenu: 'Settings', settings: 'Settings…', signIn: 'Sign in…', signOut: 'Sign out', quit: 'Quit',
+  settingsMenu: 'Settings', settings: 'Settings…', signIn: 'Sign in…', signOut: 'Sign out', quit: 'Quit', changePassword: 'Change password…',
   checkUpdate: 'Check for updates', installUpdate: (v: string) => `Update to version ${v}`, version: (v: string) => `Version ${v}`,
   result: {
     sent: 'connected', unchanged: 'connected', managed: 'signed in automatically', not_logged_in: 'not signed in',
@@ -40,7 +41,11 @@ const M = messages({
   } as Record<SyncResult, string>,
 });
 
-export interface MenuActions { showMain: () => void; showPortal: () => void; openSettings: () => void; signOut: () => void }
+export interface MenuActions {
+  showMain: () => void; showPortal: () => void; openSettings: () => void; signOut: () => void;
+  /** Mở hộp đổi mật khẩu của cổng (cổng ẩn header trong app — mục này thay cho menu người dùng của cổng). */
+  changePassword: () => void;
+}
 
 let tray: Tray | null = null;
 let actions: MenuActions;
@@ -99,6 +104,8 @@ export function trayMenu(): Menu {
     s.deviceToken ? { label: t.openPortal, click: actions.showPortal } : { label: t.signIn, click: actions.showPortal },
     { label: t.sources, submenu: sourceItems() },
     { type: 'separator' },
+    // Tài khoản đăng nhập bằng mật khẩu (không phải SSO) ⇒ đổi mật khẩu ngay trong cổng.
+    ...(s.deviceToken && portalHasPassword() ? [{ label: t.changePassword, click: actions.changePassword }] : []),
     { label: t.settings, click: actions.openSettings },
     updateItem(t),
     { label: t.version(app.getVersion()), enabled: false },
@@ -117,6 +124,7 @@ export function profileMenu(): Menu {
       ...(s.user.ho_ten ? [{ label: s.user.email, enabled: false }] : []),
       { type: 'separator' as const },
     ] : []),
+    ...(s.deviceToken && portalHasPassword() ? [{ label: t.changePassword, click: actions.changePassword }] : []),
     { label: t.settings, click: actions.openSettings },
     updateItem(t),
     { label: t.version(app.getVersion()), enabled: false },

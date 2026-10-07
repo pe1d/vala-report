@@ -34,6 +34,10 @@ window.addEventListener('message', (e) => {
       (r: Record<string, unknown>) => post({ ...r, type: 'action-result', id }),
       (err: Error) => post({ type: 'action-result', id, ok: false, error: String(err?.message ?? err) }));
   }
+  // Người đăng nhập cổng có mật khẩu không (menu hồ sơ của app hiện "Đổi mật khẩu").
+  if (d.type === 'portal-user') {
+    void ipcRenderer.invoke('vala:portal-user', { has_password: (d as { has_password?: unknown }).has_password });
+  }
   // Cổng đổi ngôn ngữ / sáng-tối ⇒ báo ứng dụng (tiến trình chính kiểm origin, giá trị lạ bị bỏ qua).
   if (d.type === 'set-prefs') {
     const p = d as { lang?: unknown; theme?: unknown };
@@ -48,5 +52,5 @@ window.addEventListener('message', (e) => {
 });
 
 ipcRenderer.on('vala:event', (_e, m: { type?: string }) => {
-  if (m?.type === 'connected' || m?.type === 'connect-failed' || m?.type === 'prefs') post(m as Record<string, unknown>);
+  if (m?.type === 'connected' || m?.type === 'connect-failed' || m?.type === 'prefs' || m?.type === 'command') post(m as Record<string, unknown>);
 });
