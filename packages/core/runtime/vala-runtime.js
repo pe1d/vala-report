@@ -147,6 +147,370 @@
     console.info.apply(console, ['[vala]'].concat(a));
   }
 
+  // ---------------------------------------------------------------------------------------------
+  // vala.webform — gửi form ASP.NET WebForms trực tiếp (T07, docs/tich-hop-aspnet.md)
+  //
+  // Tải trang NGẦM (fetch, cookie của trang), đọc HTML bằng DOMParser và giữ trang đó làm trạng thái form. postback() /
+  // submit() dựng thân như trình duyệt (trạng thái hiện tại + trường đè), gửi, rồi lấy trang trả về làm trạng thái mới — nên
+  // __VIEWSTATE / __EVENTVALIDATION luôn đúng qua nhiều lần gửi. Không đụng trang người dùng đang xem.
+  // ---------------------------------------------------------------------------------------------
+
+  /** Lỗi có mã (het_phien, loi_may_chu, du_lieu_khong_hop_le, khong_tim_thay_truong, truong_trung_ten, khong_co_form). */
+  function vErr(code, message, chiTiet) {
+    var e = new Error(message);
+    e.code = code;
+    if (chiTiet) e.chi_tiet = chiTiet;
+    return e;
+  }
+  function clean(s) { return (s || '').replace(/\s+/g, ' ').trim(); }
+  function isHidden(e) {
+    var st = (e.getAttribute('style') || '').replace(/\s/g, '').toLowerCase();
+    return e.hidden || st.indexOf('display:none') >= 0 || st.indexOf('visibility:hidden') >= 0;
+  }
+  function pathOf(u) { try { return new URL(u, location.href).pathname.toLowerCase(); } catch (_) { return ''; } }
+
+  /** Trang lỗi ASP.NET / HTTP ≥ 500 ⇒ câu lỗi ngắn; không phải ⇒ null. */
+  function serverError(doc, status, text) {
+    var title = clean(doc && doc.title);
+    var body = clean(doc && doc.body ? doc.body.textContent : text);
+    if (status < 500 && !/Server Error in|Runtime Error|^Error \d{3}$/i.test(title)) return null;
+    var known = /(Invalid postback or callback argument|Validation of viewstate MAC failed|The state information is invalid for this page)/i.exec(body);
+    if (known) return known[1];
+    var exc = /(System\.[A-Za-z.]+Exception)\s*:?\s*([^\r\n]{0,200})/.exec(text || body);
+    if (exc) return clean(exc[1] + (exc[2] ? ': ' + exc[2] : ''));
+    return title || ('HTTP ' + status);
+  }
+
+  /** Lỗi kiểm tra dữ liệu đang hiện: ValidationSummary (<ul><li>) hoặc validator có thông báo. */
+  function validationErrors(doc) {
+    var out = [];
+    $$('div, span', doc).forEach(function (e) {
+      if (isHidden(e) || !/color:\s*red/i.test(e.getAttribute('style') || '')) return;
+      var lis = $$('ul > li', e);
+      if (lis.length) lis.forEach(function (li) { var t = clean(li.textContent); if (t && out.indexOf(t) < 0) out.push(t); });
+    });
+    if (out.length) return out;
+    $$('span[id]', doc).forEach(function (e) {
+      var t = clean(e.textContent);
+      if (!isHidden(e) && /color:\s*red/i.test(e.getAttribute('style') || '') && t && t !== '*' && out.indexOf(t) < 0) out.push(t);
+    });
+    return out;
+  }
+
+  /** Phản hồi UpdatePanel `độ dài|loại|id|nội dung|` ⇒ mảng mục; không đúng dạng ⇒ null. */
+  function parseDelta(text) {
+    var items = [];
+    var i = 0;
+    function until() { var j = text.indexOf('|', i); if (j < 0) throw new Error('x'); var v = text.slice(i, j); i = j + 1; return v; }
+    try {
+      while (i < text.length) {
+        var len = until();
+        if (!/^\d+$/.test(len)) return null;
+        var type = until();
+        var id = until();
+        var content = text.substr(i, Number(len));
+        if (text.charAt(i + Number(len)) !== '|') return null;
+        i += Number(len) + 1;
+        items.push({ type: type, id: id, content: content });
+      }
+    } catch (_) { return null; }
+    return items.length ? items : null;
+  }
+
+  function WebForm(opts) { this._opts = opts || {}; }
+
+  WebForm.prototype._load = function (url, status, text, redirected, sentPath) {
+    var doc = new DOMParser().parseFromString(text, 'text/html');
+    var lp = pathOf(url);
+    if (/[?&]ReturnUrl=/i.test(url) || (/login/i.test(lp) && !/login/i.test(sentPath))) {
+      throw vErr('het_phien', 'Phiên đăng nhập hệ thống đã hết — đăng nhập lại rồi thử lại');
+    }
+    var err = serverError(doc, status, text);
+    if (err) throw vErr('loi_may_chu', 'Hệ thống báo lỗi: ' + err);
+    this.doc = doc;
+    this.url = url;
+    this.status = status;
+    this.redirected = redirected;
+    this.form = this._opts.form ? $(this._opts.form, doc)
+      : (($('input[name="__VIEWSTATE"]', doc) || {}).form || doc.forms[0] || null);
+  };
+
+  WebForm.prototype._script = function () {
+    return $$('script', this.doc).map(function (s) { return s.textContent; }).join('\n');
+  };
+
+  /**
+   * Mọi tên trường của form (cả tên gốc CheckBoxList `tên` của `tên$0`, `tên$1`…) và mọi ĐÍCH postback trên trang (GridView,
+   * LinkButton… không phải ô nhập: tên chỉ có trong `__doPostBack('…')` / `WebForm_PostBackOptions("…")`).
+   */
+  WebForm.prototype._names = function () {
+    var names = [];
+    var add = function (n) { if (n && names.indexOf(n) < 0) names.push(n); };
+    if (this.form) {
+      Array.prototype.forEach.call(this.form.elements, function (e) {
+        if (!e.name) return;
+        add(e.name);
+        var base = /^(.*)\$\d+$/.exec(e.name);
+        if (base) add(base[1]);
+      });
+    }
+    $$('[href], [onclick], [onchange]', this.doc).forEach(function (e) {
+      ['href', 'onclick', 'onchange'].forEach(function (k) {
+        var v = e.getAttribute(k) || '';
+        var re = /__doPostBack\(\\?['"]([^'"\\]+)\\?['"]|WebForm_PostBackOptions\(\s*\\?["']([^"'\\]+)/g;
+        for (var m = re.exec(v); m; m = re.exec(v)) add(m[1] || m[2]);
+      });
+    });
+    return names;
+  };
+
+  /** Tên ngắn ⇒ tên đầy đủ (khớp đúng, hoặc khớp đuôi `$tên`). Trường `__…` giữ nguyên. */
+  WebForm.prototype.name = function (ten) {
+    if (/^__/.test(ten)) return ten;
+    var names = this._names();
+    if (names.indexOf(ten) >= 0) return ten;
+    var hit = names.filter(function (n) { return n.slice(-(ten.length + 1)) === '$' + ten; });
+    if (hit.length === 1) return hit[0];
+    if (!hit.length) throw vErr('khong_tim_thay_truong', 'Trang không có trường ' + ten);
+    throw vErr('truong_trung_ten', 'Có nhiều trường tên ' + ten + ': ' + hit.join(', ') + ' — dùng tên đầy đủ');
+  };
+
+  /** Các cặp [tên, giá trị] như trình duyệt sẽ gửi (không gồm nút, không gồm tệp). */
+  WebForm.prototype._pairs = function () {
+    var out = [];
+    if (!this.form) return out;
+    Array.prototype.forEach.call(this.form.elements, function (e) {
+      if (!e.name || e.disabled) return;
+      var tag = e.tagName;
+      var type = (e.getAttribute('type') || '').toLowerCase();
+      if (tag === 'BUTTON' || (tag === 'INPUT' && /^(submit|button|image|reset|file)$/.test(type))) return;
+      if (tag === 'INPUT' && (type === 'checkbox' || type === 'radio')) {
+        if (e.hasAttribute('checked')) out.push([e.name, e.hasAttribute('value') ? e.getAttribute('value') : 'on']);
+        return;
+      }
+      if (tag === 'SELECT') {
+        var opts = $$('option', e);
+        var sel = opts.filter(function (o) { return o.hasAttribute('selected'); });
+        if (!sel.length && !e.multiple && opts.length) sel = [opts[0]];
+        sel.forEach(function (o) { out.push([e.name, o.hasAttribute('value') ? o.getAttribute('value') : o.textContent]); });
+        return;
+      }
+      if (tag === 'TEXTAREA') { out.push([e.name, e.textContent.replace(/^\r?\n/, '')]); return; }
+      out.push([e.name, e.hasAttribute('value') ? e.getAttribute('value') : '']);
+    });
+    return out;
+  };
+
+  /** Trạng thái form ⇒ object (trường lặp ⇒ mảng). */
+  WebForm.prototype.fields = function () {
+    var o = {};
+    this._pairs().forEach(function (p) {
+      if (p[0] in o) o[p[0]] = [].concat(o[p[0]], p[1]); else o[p[0]] = p[1];
+    });
+    return o;
+  };
+
+  /**
+   * Lựa chọn của ô chọn / CheckBoxList / RadioButtonList: [{ value, text, selected, field }]. Ô chưa có mục nào (vd danh
+   * sách người nhận trước khi chọn đơn vị — WebForms không vẽ ô nào) ⇒ [].
+   */
+  WebForm.prototype.options = function (ten) {
+    var full;
+    try { full = this.name(ten); } catch (e) { if (e.code === 'khong_tim_thay_truong') return []; throw e; }
+    var doc = this.doc;
+    var sel = $$('select', this.form || doc).filter(function (e) { return e.name === full; })[0];
+    if (sel) {
+      return $$('option', sel).map(function (o) {
+        return { value: o.hasAttribute('value') ? o.getAttribute('value') : clean(o.textContent), text: clean(o.textContent), selected: o.hasAttribute('selected'), field: full };
+      });
+    }
+    var re = new RegExp('^' + full.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(\\$\\d+)?$');
+    return $$('input[type=checkbox], input[type=radio]', this.form || doc).filter(function (e) { return re.test(e.name); }).map(function (e, i) {
+      var label = e.id ? doc.querySelector('label[for="' + e.id + '"]') : null;
+      return { value: e.hasAttribute('value') ? e.getAttribute('value') : String(i), text: clean(label ? label.textContent : ''), selected: e.hasAttribute('checked'), field: e.name };
+    });
+  };
+
+  /** Đè trường vào danh sách cặp. Mảng ⇒ CheckBoxList (tích đúng các mục) / ô chọn nhiều. */
+  WebForm.prototype._apply = function (pairs, fields) {
+    var self = this;
+    Object.keys(fields || {}).forEach(function (k) {
+      var v = fields[k];
+      var full = self.name(k);
+      if (Array.isArray(v)) {
+        var items = self.options(full);
+        var isList = items.length && items[0].field !== full;            // CheckBoxList: tên$i
+        pairs = pairs.filter(function (p) { return isList ? items.every(function (it) { return it.field !== p[0]; }) : p[0] !== full; });
+        v.forEach(function (x) {
+          var it = items.filter(function (o) { return o.value === String(x); })[0]
+            || items.filter(function (o) { return o.text.toLowerCase() === clean(String(x)).toLowerCase(); })[0];
+          if (!it) throw vErr('khong_tim_thay_truong', 'Ô ' + k + ' không có lựa chọn ' + x);
+          if (isList) {
+            var input = $$('input', self.form).filter(function (e) { return e.name === it.field; })[0];
+            pairs.push([it.field, input && input.hasAttribute('value') ? input.getAttribute('value') : 'on']);
+          } else pairs.push([full, it.value]);
+        });
+        return;
+      }
+      // Ô chọn / RadioButtonList: nhận cả chữ hiển thị (không phân biệt hoa thường) ⇒ đổi sang mã.
+      var opts = self.options(full).filter(function (o) { return o.field === full; });
+      if (opts.length && !opts.some(function (o) { return o.value === String(v); })) {
+        var byText = opts.filter(function (o) { return o.text.toLowerCase() === clean(String(v)).toLowerCase(); })[0];
+        if (!byText) throw vErr('khong_tim_thay_truong', 'Ô ' + k + ' không có lựa chọn ' + v);
+        v = byText.value;
+      }
+      var i = -1;
+      pairs.forEach(function (p, j) { if (i < 0 && p[0] === full) i = j; });
+      if (i >= 0) pairs[i] = [full, String(v)]; else pairs.push([full, String(v)]);
+      pairs = pairs.filter(function (p, j) { return p[0] !== full || j === (i >= 0 ? i : pairs.length - 1); });
+    });
+    return pairs;
+  };
+
+  /** UpdatePanel chứa control `target` (tên đầy đủ). */
+  WebForm.prototype._panel = function (target, explicit) {
+    if (explicit) return explicit.indexOf('$') >= 0 ? explicit : explicit.replace(/_/g, '$');
+    var listed = (/_updateControls\(\[([^\]]*)\]/.exec(this._script()) || [])[1] || '';
+    var panels = (listed.match(/'[tf]([^']+)'/g) || []).map(function (x) { return x.slice(2, -1); });
+    var e = $$('[name]', this.doc).filter(function (x) { return x.getAttribute('name') === target; })[0]
+      || this.doc.getElementById(target.replace(/\$/g, '_'));
+    for (var a = e && e.parentElement; a; a = a.parentElement) {
+      if (!a.id || a.tagName === 'FORM') continue;
+      var hit = panels.filter(function (u) { return u.replace(/\$/g, '_') === a.id; })[0];
+      if (hit) return hit;
+      // Mono không liệt kê UpdatePanel ⇒ khối cha gần nhất có id.
+      if (!panels.length && a.tagName === 'DIV') return a.id.replace(/_/g, '$');
+    }
+    if (panels.length) return panels[0];
+    throw vErr('khong_tim_thay_truong', 'Không tìm thấy UpdatePanel chứa ' + target + ' — truyền { panel }');
+  };
+
+  WebForm.prototype._send = async function (pairs, opts) {
+    if (!this.form) throw vErr('khong_co_form', 'Trang ' + this.url + ' không có form');
+    opts = opts || {};
+    var action = new URL(this.form.getAttribute('action') || this.url, this.url).toString();
+    var init = { method: 'POST', credentials: 'include', headers: {} };
+    if (opts.async) {
+      var sm = (/PageRequestManager\._initialize\('([^']+)'/.exec(this._script()) || [])[1];
+      if (!sm) throw vErr('khong_tim_thay_truong', 'Trang không có ScriptManager (không gửi kiểu UpdatePanel được)');
+      var target = (pairs.filter(function (p) { return p[0] === '__EVENTTARGET'; })[0] || [])[1] || opts.button;
+      pairs = [[sm, this._panel(target, opts.panel) + '|' + target]].concat(pairs, [['__ASYNCPOST', 'true']]);
+      init.headers['X-MicrosoftAjax'] = 'Delta=true';
+      init.headers['X-Requested-With'] = 'XMLHttpRequest';
+    }
+    var files = opts.files ? Object.keys(opts.files) : [];
+    if (files.length || /multipart/i.test(this.form.getAttribute('enctype') || '')) {
+      var fd = new FormData();
+      pairs.forEach(function (p) { fd.append(p[0], p[1]); });
+      var self = this;
+      files.forEach(function (k) {
+        var t = opts.files[k];
+        var bin = atob(t.base64 || '');
+        var bytes = new Uint8Array(bin.length);
+        for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+        fd.append(self.name(k), new Blob([bytes], { type: t.loai || 'application/octet-stream' }), t.ten);
+      });
+      init.body = fd;
+    } else {
+      init.headers['Content-Type'] = 'application/x-www-form-urlencoded; charset=UTF-8';
+      init.body = pairs.map(function (p) { return encodeURIComponent(p[0]) + '=' + encodeURIComponent(p[1]); }).join('&');
+    }
+    var res = await fetch(action, init);
+    var text = await res.text();
+    if (opts.async) return this._delta(res, text);
+    var before = pathOf(this.url);
+    this._load(res.url, res.status, text, res.redirected, pathOf(action));
+    if (pathOf(this.url) === before) {
+      var bad = validationErrors(this.doc);
+      if (bad.length) throw vErr('du_lieu_khong_hop_le', 'Dữ liệu không hợp lệ: ' + bad.join('; '), bad);
+    }
+    return this;
+  };
+
+  /** Áp phản hồi UpdatePanel vào trang đang giữ. */
+  WebForm.prototype._delta = async function (res, text) {
+    var items = res.status < 500 ? parseDelta(text) : null;
+    if (!items) {
+      var doc = new DOMParser().parseFromString(text, 'text/html');
+      throw vErr('loi_may_chu', 'Hệ thống báo lỗi: ' + (serverError(doc, Math.max(res.status, 500), text) || 'phản hồi UpdatePanel không đúng dạng'));
+    }
+    var self = this;
+    for (var i = 0; i < items.length; i++) {
+      var it = items[i];
+      if (it.type === 'error') throw vErr('loi_may_chu', 'Hệ thống báo lỗi: ' + clean(it.content || it.id));
+      if (it.type === 'pageRedirect') {
+        var to = new URL(decodeURIComponent(it.content), this.url).toString();
+        var r = await fetch(to, { credentials: 'include' });
+        this._load(r.url, r.status, await r.text(), true, pathOf(to));
+        return this;
+      }
+      if (it.type === 'updatePanel') {
+        var el = self.doc.getElementById(it.id);
+        if (el) el.innerHTML = it.content;
+      } else if (it.type === 'hiddenField' && self.form) {
+        var h = $$('input', self.form).filter(function (x) { return x.name === it.id; })[0];
+        if (!h) { h = self.doc.createElement('input'); h.type = 'hidden'; h.name = it.id; self.form.appendChild(h); }
+        h.setAttribute('value', it.content);
+      }
+    }
+    this.form = this._opts.form ? $(this._opts.form, this.doc) : (($('input[name="__VIEWSTATE"]', this.doc) || {}).form || this.doc.forms[0] || null);
+    var bad = validationErrors(this.doc);
+    if (bad.length) throw vErr('du_lieu_khong_hop_le', 'Dữ liệu không hợp lệ: ' + bad.join('; '), bad);
+    return this;
+  };
+
+  /** Như __doPostBack(target, đối số): AutoPostBack, LinkButton, phân trang GridView (đối số Page$2). */
+  WebForm.prototype.postback = function (target, fields, opts) {
+    opts = opts || {};
+    var t = this.name(target);
+    fields = Object.assign({}, fields || {});
+    var arg = opts.argument !== undefined ? opts.argument : (fields.__EVENTARGUMENT || '');
+    delete fields.__EVENTARGUMENT;
+    var pairs = this._apply(this._pairs(), fields).filter(function (p) { return p[0] !== '__EVENTTARGET' && p[0] !== '__EVENTARGUMENT'; });
+    pairs.unshift(['__EVENTTARGET', t], ['__EVENTARGUMENT', String(arg)]);
+    return this._send(pairs, opts);
+  };
+
+  /** Bấm nút gửi `button` (null ⇒ gửi form không qua nút). */
+  WebForm.prototype.submit = function (button, fields, opts) {
+    opts = opts || {};
+    var pairs = this._apply(this._pairs(), fields).map(function (p) { return p[0] === '__EVENTTARGET' || p[0] === '__EVENTARGUMENT' ? [p[0], ''] : p; });
+    if (button) {
+      var b = this.name(button);
+      var el = $$('input, button', this.form).filter(function (e) { return e.name === b; })[0];
+      if (el && (el.getAttribute('type') || '').toLowerCase() === 'image') pairs.push([b + '.x', '0'], [b + '.y', '0']);
+      else pairs.push([b, el ? (el.getAttribute('value') || clean(el.textContent)) : '']);
+      opts = Object.assign({ button: b }, opts);
+    }
+    return this._send(pairs, opts);
+  };
+
+  WebForm.prototype.$ = function (sel) { return $(sel, this.doc); };
+  WebForm.prototype.read = function (sel) { return read($(sel, this.doc)); };
+  /** Bảng ⇒ mảng object theo tiêu đề (hàng có th); bỏ hàng số trang của GridView (chứa bảng lồng). */
+  WebForm.prototype.table = function (sel) {
+    var t = $(sel, this.doc);
+    if (!t || !t.rows) return [];
+    var rows = Array.prototype.filter.call(t.rows, function (r) { return !r.querySelector('table'); });
+    var head = rows.length && rows[0].querySelector('th') ? $$('th,td', rows.shift()).map(function (c) { return clean(c.textContent); }) : null;
+    return rows.map(function (r) {
+      var cells = Array.prototype.map.call(r.cells, function (c) { return clean(c.textContent); });
+      if (!head) return cells;
+      var o = {};
+      head.forEach(function (k, i) { o[k || ('cot_' + (i + 1))] = cells[i]; });
+      return o;
+    });
+  };
+
+  /** Mở trang có form ASP.NET để gửi trực tiếp (không đổi trang đang xem). opts.form: CSS chọn form. */
+  async function webform(url, opts) {
+    var f = new WebForm(opts);
+    var u = new URL(url, location.href).toString();
+    var res = await fetch(u, { credentials: 'include' });
+    f._load(res.url, res.status, await res.text(), res.redirected, pathOf(u));
+    return f;
+  }
+
   /** Khai báo thao tác có tên: vala.action(ten, fn) hoặc vala.action(ten, { mo_ta, params }, fn). */
   function action(name, meta, fn) {
     if (typeof meta === 'function') { fn = meta; meta = {}; }
@@ -156,7 +520,7 @@
 
   var vala = Object.freeze({
     sleep: sleep, $: $, $$: $$, waitFor: waitFor, click: click, fill: fill, read: read, table: table, form: form,
-    request: request, css: css, log: log, action: action,
+    request: request, css: css, log: log, action: action, webform: webform,
   });
 
   Object.defineProperty(window, '__vala', {
@@ -186,7 +550,12 @@
       run: async function (name, args) {
         var a = actions.get(name);
         if (!a) return { ok: false, error: 'Trang này không có thao tác ' + name };
-        try { return { ok: true, result: await a.fn(args || {}) }; } catch (e) { return { ok: false, error: String(e && e.message || e) }; }
+        try { return { ok: true, result: await a.fn(args || {}) }; } catch (e) {
+          var out = { ok: false, error: String(e && e.message || e) };
+          if (e && e.code) out.code = e.code;            // lỗi có mã (vala.webform: het_phien, du_lieu_khong_hop_le…)
+          if (e && e.chi_tiet) out.chi_tiet = e.chi_tiet;
+          return out;
+        }
       },
       loaded: function () { return Object.fromEntries(loaded); },
       logs: function () { return logs.slice(); },

@@ -72,3 +72,57 @@ Bản ghi chỉ nằm trên máy, không gửi lên máy chủ; tắt app là m�
   một đoạn script đọc form ngay lúc gửi (`FormData`, kể cả `form.submit()` của `__doPostBack`), và gỡ khi dừng ghi.
   Không đọc được thì bước ghi chú "không đọc được thân request".
 - Đóng tab hoặc tắt app ⇒ dừng ghi và báo.
+
+## 2. Viết thao tác ghi: `vala.webform`
+
+`vala.webform(url)` mở ngầm một trang (fetch, kèm cookie của phiên), đọc form của trang đó và giữ nó làm trạng thái. Các lần
+gửi sau tự mang đúng `__VIEWSTATE` / `__EVENTVALIDATION` mới nhất. Hàm không làm đổi trang người dùng đang xem, và chạy giống
+nhau trong Vala Desktop lẫn trên runner. Ví dụ đầy đủ: `tools/qlvb-webforms/kich-ban.js` (7 thao tác).
+
+```js
+vala.action('chuyen_van_ban', { mo_ta: 'Chuyển văn bản', params: { id: '', don_vi: '', nguoi_nhan: '[]' } }, async (p) => {
+  const f = await vala.webform(`/Chuyen.aspx?id=${p.id}`);
+  await f.postback('ddlDonVi', { ddlDonVi: p.don_vi });          // AutoPostBack: nạp người nhận của đơn vị
+  await f.submit('btnChuyen', { cblNguoiNhan: p.nguoi_nhan, txtYKien: p.y_kien ?? '' },
+    { files: { fuDinhKem: { ten: 'to-trinh.pdf', loai: 'application/pdf', base64: p.tep_base64 } } });
+  return { url: f.url, trang_thai: f.read('[id$="_lblTrangThai"]') };   // đã theo chuyển hướng sang trang chi tiết
+});
+```
+
+| Hàm của `f` | Dùng để |
+|---|---|
+| `postback(đích, trường?, { async, panel, argument })` | như `__doPostBack`: ô AutoPostBack, LinkButton, phân trang GridView (`{ __EVENTARGUMENT: 'Page$2' }`) |
+| `submit(nút \| null, trường?, { files })` | bấm nút gửi; `files: { tên: { ten, loai, base64 } }` ⇒ gửi multipart |
+| `options(tên)` | lựa chọn của ô chọn / CheckBoxList / RadioButtonList: `[{ value, text, selected }]`; ô chưa có mục ⇒ `[]` |
+| `fields()` | trạng thái form như trình duyệt sẽ gửi |
+| `name(tên)` | tên ngắn ⇒ tên đầy đủ (`ddlDonVi` ⇒ `ctl00$MainContent$ddlDonVi`), kể cả đích postback như GridView |
+| `$`, `read`, `table` | đọc trang hiện tại; `table` bỏ dòng số trang của GridView |
+| `url`, `status`, `redirected`, `doc` | trang hiện tại sau lần gửi gần nhất |
+
+- **Tên trường:** dùng tên ngắn hoặc tên đầy đủ. Tên ngắn trùng nhiều trường ⇒ lỗi, khi đó phải dùng tên đầy đủ.
+- **Giá trị chọn:** ô chọn nhận cả mã lẫn chữ hiển thị. CheckBoxList nhận **mảng** mã hoặc chữ; hàm tự tích đúng ô
+  `tên$<thứ tự>` và bỏ tích các ô còn lại.
+- **UpdatePanel:** `postback(…, …, { async: true })`. Hàm tự tìm ScriptManager và UpdatePanel chứa control đó. Mono không
+  khai danh sách UpdatePanel, nên khi không tìm được thì phải truyền `{ panel: 'ctl00$MainContent$upSo' }`.
+- **Chọn phần tử theo đuôi id** (`[id$="_lblTong"]`): id kiểu cũ là `ctl00_MainContent_lblTong`, ASP.NET 4 là
+  `MainContent_lblTong`.
+- **Xác nhận sau khi ghi:** đọc lại trang (ví dụ lịch sử có dòng mới chưa). Không xác nhận được thì ném lỗi, đừng báo
+  thành công. Thao tác ghi **không tự thử lại**, để tránh chuyển hoặc phát hành hai lần.
+
+### Lỗi
+
+Lỗi ném ra có `code`. `__vala.run` trả về `{ ok: false, error, code, chi_tiet }`.
+
+| `code` | Khi nào |
+|---|---|
+| `het_phien` | bị đưa về trang đăng nhập (`ReturnUrl=`) — phiên hết hạn |
+| `loi_may_chu` | HTTP ≥ 500 hoặc trang lỗi ASP.NET; `error` gồm câu lỗi, ví dụ *Invalid postback or callback argument* (EventValidation: giá trị không có trong ô, hoặc thiếu bước gửi lại form), *Validation of viewstate MAC failed* (ViewState hỏng hoặc của trang khác), hoặc `System.…Exception: …` |
+| `du_lieu_khong_hop_le` | sau khi gửi, trang hiện lỗi kiểm tra dữ liệu (ValidationSummary / validator); `chi_tiet` là danh sách câu lỗi |
+| `khong_tim_thay_truong` / `truong_trung_ten` | tên trường hoặc lựa chọn không có / trùng nhiều |
+
+### Nạp gói vào CSDL dev
+
+    VALA_PASSWORD=… node tools/qlvb-webforms/nap-kich-ban.mjs     # tạo / cập nhật gói qlvb_thu (máy chủ ký khi lưu)
+
+Test tích hợp (Chrome thật, bộ hàm được chèn đúng như Desktop và runner):
+`pnpm --filter @vala/qlvb-webforms test` (`test/kich-ban.test.ts`).

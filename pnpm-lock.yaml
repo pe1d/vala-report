@@ -379,6 +379,9 @@ importers:
 
   tools/qlvb-webforms:
     devDependencies:
+      playwright-core:
+        specifier: ~1.49.1
+        version: 1.49.1
       vitest:
         specifier: ^2.1.9
         version: 2.1.9(@types/node@20.19.43)(supports-color@7.2.0)

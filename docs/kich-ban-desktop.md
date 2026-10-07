@@ -53,6 +53,7 @@ Các hàm của `vala`:
 | `table(selector)` | đọc bảng thành mảng object theo tiêu đề |
 | `form(selector)` | đọc các trường của form thành object |
 | `request(url, { method, form, json, headers })` | gọi HTTP kèm cookie của trang; trả `{ ok, status, url, text, json }` |
+| `webform(url, { form })` | mở ngầm một trang ASP.NET WebForms để gửi form trực tiếp: `postback`, `submit`, UpdatePanel, tệp đính kèm, báo lỗi có mã — xem `docs/tich-hop-aspnet.md` |
 | `css(text)` | thêm CSS |
 | `log(...)` | ghi nhật ký |
 | `sleep(ms)` | chờ |
