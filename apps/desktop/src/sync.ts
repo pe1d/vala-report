@@ -72,7 +72,16 @@ function setStatus(code: string, result: SyncResult, message: string): SyncResul
   return result;
 }
 
-export async function syncSource(src: SourceFull, force = false): Promise<SyncResult> {
+/** Máy chủ cho gửi phiên mỗi nguồn 1 lần / 5 giây ⇒ bị chặn (429) thì đợi chừng này rồi gửi lại. */
+const RATE_RETRY_MS = 6000;
+
+/**
+ * `retried`: đã gửi lại một lần sau khi bị chặn vì gửi quá dày. Chuyện này xảy ra mỗi lần mở app: companyId của eTask là cookie
+ * phiên (JS của trang đặt, tắt app là mất) ⇒ lượt đồng bộ đầu gửi thiếu nó (máy chủ tự điền), vài giây sau tab eTask tải xong
+ * ghi lại companyId ⇒ phiên "đổi" ⇒ gửi lần hai trong vòng 5 giây. Cũng gặp khi tiện ích trình duyệt vừa gửi phiên cùng
+ * nguồn. Không phải lỗi của phiên ⇒ không báo lỗi, chỉ gửi lại.
+ */
+export async function syncSource(src: SourceFull, force = false, retried = false): Promise<SyncResult> {
   const t = M[getSettings().lang];
   if (src.managed) return setStatus(src.code, 'managed', t.managed);
   // Kết nối LẦN ĐẦU cần người dùng xác nhận đồng ý trên cổng. Kết nối đang có vẫn gửi bình thường.
@@ -103,6 +112,10 @@ export async function syncSource(src: SourceFull, force = false): Promise<SyncRe
     return setStatus(src.code, 'sent', t.sent);
   } catch (e) {
     const err = e instanceof ApiError ? e : new ApiError(0, 'internal', t.unknownError);
+    if (err.type === 'rate_limited' && !retried) {
+      await new Promise((r) => setTimeout(r, RATE_RETRY_MS));
+      return syncSource(src, force, true);
+    }
     if (err.type === 'session_expired') {
       sent.set(src.code, { hash, ok: false });
       return setStatus(src.code, 'rejected', t.rejected(src.ten, err.detail ?? ''));
