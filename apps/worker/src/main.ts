@@ -5,7 +5,7 @@
 import { Worker } from 'bullmq';
 import {
   CRAWL_CONCURRENCY, CRAWL_QUEUE, ConnectionSessions, CrawlabClient, MAINTENANCE_QUEUE, SessionManager, SourceRegistry, SsoClient, TENANT, closeAllPools,
-  checkCrawlabHealth, checkSpiderLaunches, crawlUserSource, crawlQueue, crawlabConfigFromEnv, ensureRecordIndexes, heartbeat, markSourceMfa, runDueSchedules, maintenanceQueue, redisConnection, refreshExpiringSessions, secretStore,
+  checkCrawlabHealth, checkSpiderLaunches, crawlUserSource, crawlQueue, crawlabConfigFromEnv, ensureRecordIndexes, heartbeat, markSourceMfa, runDueSchedules, maintenanceQueue, redisConnection, keepAliveSessions, refreshExpiringSessions, secretStore,
   ssoConfigFromEnv, withTenant, writerDb, type CrawlJob,
 } from '@vala/core';
 import { loadAllSpecs, registerSpecs } from '@vala/core/adapter';
@@ -96,6 +96,12 @@ const maintenanceWorker = new Worker(
         if (r.checked) log.info('làm mới phiên', { ...r });
         return;
       }
+      case 'session_keepalive': {
+        // T10: giữ phiên các kết nối do Vala Desktop / tiện ích cấp (máy chủ không tự đăng nhập lại được).
+        const r = await keepAliveSessions(writer, connections, Number(process.env.SESSION_KEEPALIVE_MINUTES ?? 10));
+        if (r.checked) log.info('giữ phiên', { ...r });
+        return;
+      }
       case 'due_subscriptions': {
         // Bộ hẹn giờ lịch người dùng tự đặt: spider (qua Crawlab, --user) hoặc các bước lấy dữ liệu trong adapter.
         const r = await runDueSchedules(writer, crawl, crawlab, new Date(), (msg, meta) => log.warn(msg, meta));
@@ -124,6 +130,7 @@ const maintenanceWorker = new Worker(
 await maintenance.upsertJobScheduler('raw_partitions', { pattern: '0 2 * * *', tz: 'Asia/Ho_Chi_Minh' }, { name: 'raw_partitions' });
 await maintenance.upsertJobScheduler('session_refresh', { every: 10 * 60_000 }, { name: 'session_refresh' });
 await maintenance.upsertJobScheduler('due_subscriptions', { every: 60_000 }, { name: 'due_subscriptions' });
+await maintenance.upsertJobScheduler('session_keepalive', { every: 5 * 60_000 }, { name: 'session_keepalive' });
 await maintenance.upsertJobScheduler('crawlab_health', { every: 10 * 60_000 }, { name: 'crawlab_health' });
 // Ngay khi khởi động: báo còn sống + kiểm tra Crawlab (máy chủ vừa khởi động lại thì Crawlab hay mất mã spider).
 await heartbeat(writer, 'worker', { pid: process.pid, started: true }).catch(() => {});

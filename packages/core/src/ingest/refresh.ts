@@ -19,6 +19,41 @@ export interface RefreshSummary {
  *
  * Hết hạn hẳn (SSO từ chối, sai mật khẩu, cần OTP) ⇒ đánh dấu kết nối để quản trị / người dùng sửa.
  */
+export interface KeepAliveSummary { checked: number; alive: number; rotated: number; expired: number; unavailable: number }
+
+/**
+ * Giữ phiên các kết nối do Vala Desktop / tiện ích / cookie cấp (không tự đăng nhập lại được ở máy chủ) — T10, biên bản họp
+ * 10/2026 "đẩy phần duy trì phiên lên backend": mỗi `everyMinutes` gọi session_probe một lần bằng cookie đang lưu để phiên
+ * không hết hạn vì để lâu không dùng, kể cả khi máy người dùng tắt. Phiên chết ⇒ đánh dấu hết hạn ngay (Vala Desktop thấy và
+ * tự đăng nhập lại bằng mật khẩu lưu trong máy). Nguồn lỗi (5xx, mạng) ⇒ giữ nguyên trạng thái, lần sau thử lại.
+ */
+export async function keepAliveSessions(writer: Db, connections: ConnectionSessions, everyMinutes = 10): Promise<KeepAliveSummary> {
+  const out: KeepAliveSummary = { checked: 0, alive: 0, rotated: 0, expired: 0, unavailable: 0 };
+  if (everyMinutes <= 0) return out;
+  const grants = await withTenant(writer, (t) => t.any<{ id: number; app_user_id: number; source_system: string }>(
+    `SELECT id, app_user_id, source_system FROM source_grants
+      WHERE revoked_at IS NULL AND session_state = 'active' AND auth_method IN ('extension', 'cookie')
+        AND (last_keepalive_at IS NULL OR last_keepalive_at < now() - make_interval(mins => $1))
+      ORDER BY last_keepalive_at NULLS FIRST LIMIT 200`, [everyMinutes]));
+  for (const g of grants) {
+    out.checked++;
+    let r: Awaited<ReturnType<ConnectionSessions['keepAlive']>>;
+    try { r = await connections.keepAlive(g.app_user_id, g.source_system); } catch (e) {
+      r = { state: 'unavailable', rotated: 0, detail: (e as Error).message };   // vd adapter của nguồn chưa nạp
+    }
+    if (r.state === 'expired' || r.state === 'missing') {
+      await withTenant(writer, (t) => t.none(
+        `UPDATE source_grants SET session_state = 'expired', last_keepalive_at = now(), last_error = $2 WHERE id = $1`,
+        [g.id, `Giữ phiên: ${r.state === 'missing' ? 'kho bí mật không còn phiên' : 'hệ thống nguồn từ chối phiên'}${r.detail ? ` — ${r.detail}` : ''}`.slice(0, 300)]));
+      out.expired++;
+      continue;
+    }
+    await withTenant(writer, (t) => t.none('UPDATE source_grants SET last_keepalive_at = now() WHERE id = $1', [g.id]));
+    if (r.state === 'alive') { out.alive++; out.rotated += r.rotated; } else out.unavailable++;
+  }
+  return out;
+}
+
 export async function refreshExpiringSessions(
   writer: Db, connections: ConnectionSessions, withinMinutes = 60, onlyUserIds?: number[],
 ): Promise<RefreshSummary> {

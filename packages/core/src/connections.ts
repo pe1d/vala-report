@@ -201,6 +201,29 @@ export class ConnectionSessions {
     return this.renew(userId, source, method);
   }
 
+  /**
+   * Giữ phiên (T10): gọi session_probe bằng ĐÚNG cookie đang lưu — một request nhẹ làm phiên kiểu "trượt" (hết hạn khi để
+   * lâu không dùng) được gia hạn. Nguồn cấp cookie mới qua Set-Cookie ⇒ lưu đè. Không lấy phiên mới, không đăng nhập.
+   *   alive — phiên còn sống · expired — nguồn từ chối phiên · missing — kho bí mật không có phiên · unavailable — nguồn lỗi
+   */
+  async keepAlive(userId: number, source: string): Promise<{ state: 'alive' | 'expired' | 'missing' | 'unavailable'; rotated: number; detail?: string }> {
+    const ref = this.sessionRef(userId, source);
+    const cur = await this.o.secrets.get<SessionSecret>(ref);
+    if (!cur) return { state: 'missing', rotated: 0 };
+    const spec = this.spec(source);
+    const info = await this.o.sourceInfo(source);
+    const client = new GuardedHttpClient({ baseUrl: info.apiBaseUrl ?? spec.auth.api_base_url ?? info.baseUrl, cookies: cur.cookies, spec, fetchImpl: this.o.fetchImpl });
+    try {
+      await probeSession(spec, client);
+    } catch (e) {
+      if (e instanceof Problem && e.type === 'session_expired') return { state: 'expired', rotated: 0, detail: e.detail ?? e.title };
+      return { state: 'unavailable', rotated: 0, detail: e instanceof Problem ? e.detail ?? e.title : (e as Error).message };
+    }
+    const rotated = Object.keys(client.rotated).length;
+    if (rotated) await this.o.secrets.put(ref, { ...cur, cookies: { ...cur.cookies, ...client.rotated } });
+    return { state: 'alive', rotated };
+  }
+
   /** Phiên do tiện ích trình duyệt gửi về (đã qua verifyCookies). */
   async saveSession(userId: number, source: string, cookies: Record<string, string>): Promise<SessionSecret> {
     const secret: SessionSecret = { cookies, obtained_at: new Date().toISOString() };

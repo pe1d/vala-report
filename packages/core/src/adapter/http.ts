@@ -31,6 +31,11 @@ const defaultSleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
  */
 export class GuardedHttpClient {
   calls = 0;
+  /**
+   * Cookie phiên nguồn vừa cấp lại qua Set-Cookie (vd ASP.NET gia hạn .ASPXAUTH): chỉ cookie đang dùng trong phiên, có giá
+   * trị (không tính lệnh xoá cookie). Giữ phiên (keepAlive) lưu lại để lần sau dùng đúng cookie mới.
+   */
+  readonly rotated: Record<string, string> = {};
   private readonly allowed: Set<string>;
   private readonly recent: number[] = [];
   private lastCallAt = -Infinity;
@@ -54,6 +59,17 @@ export class GuardedHttpClient {
     this.apiHeaders = {};
     for (const [k, v] of Object.entries(opts.spec.auth.api_headers ?? {})) {
       try { this.apiHeaders[k] = String(render(v, { cookie: opts.cookies })); } catch { /* thiếu cookie ⇒ bỏ header */ }
+    }
+  }
+
+  private captureRotated(res: Response): void {
+    const lines = typeof res.headers.getSetCookie === 'function' ? res.headers.getSetCookie() : [];
+    for (const line of lines) {
+      const m = /^\s*([^=;\s]+)=([^;]*)/.exec(line);
+      if (!m || !(m[1]! in this.opts.cookies)) continue;
+      const value = m[2]!.trim();
+      const cleared = !value || /;\s*max-age=0/i.test(line) || /;\s*expires=([^;]+)/i.test(line) && Date.parse(/;\s*expires=([^;]+)/i.exec(line)![1]!) < this.now();
+      if (!cleared && value !== this.opts.cookies[m[1]!]) this.rotated[m[1]!] = value;
     }
   }
 
@@ -116,6 +132,7 @@ export class GuardedHttpClient {
       throw new Problem('source_unavailable', L('Hệ thống nguồn không phản hồi', 'Source system is not responding'), `${req.method} ${req.path}: ${(e as Error).name}`);
     }
 
+    this.captureRotated(res);
     // Phiên hết hạn trên hệ thống dùng SSO thường biểu hiện bằng chuyển hướng sang trang đăng nhập.
     if ((res.status >= 300 && res.status < 400) || res.status === 401 || res.status === 403) {
       let to = '';
