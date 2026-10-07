@@ -87,12 +87,25 @@ export function withDefaults(raw: Partial<Settings>): Settings {
 }
 
 export function getSettings(): Settings {
+  let s: Settings;
   try {
-    if (!existsSync(file())) return { ...DEFAULTS };
-    return withDefaults(JSON.parse(readFileSync(file(), 'utf8')) as Partial<Settings>);
+    s = existsSync(file()) ? withDefaults(JSON.parse(readFileSync(file(), 'utf8')) as Partial<Settings>) : { ...DEFAULTS };
   } catch {
-    return { ...DEFAULTS };
+    s = { ...DEFAULTS };
   }
+  return devServerOverride(s);
+}
+
+/**
+ * Bản dev: VALA_URL=… pnpm dev LUÔN chọn máy chủ (thắng địa chỉ đã lưu — trước đây bị bỏ qua khi settings.json đã có
+ * serverUrl). Đổi sang máy chủ khác ⇒ lưu lại và quên token thiết bị của máy chủ cũ (đăng nhập lại ở tab Báo cáo).
+ */
+function devServerOverride(s: Settings): Settings {
+  const env = isDevRun() && process.env.VALA_URL ? normalizeServer(process.env.VALA_URL) : null;
+  if (!env || env === s.serverUrl) return s;
+  const next = { ...s, serverUrl: env, deviceToken: null, user: null };
+  try { writeFileSync(file(), JSON.stringify(next, null, 2), { encoding: 'utf8', mode: 0o600 }); } catch { /* chỉ dùng trong phiên */ }
+  return next;
 }
 
 export function setSettings(patch: Partial<Settings>): Settings {
