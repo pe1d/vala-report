@@ -1,5 +1,5 @@
 import { useEffect, useState, type KeyboardEvent, type ReactNode } from 'react';
-import { ApiProblem, api, fmtDateTime, type AdminSource } from '../api';
+import { ApiProblem, api, fmtDateTime, type AdminSource, type AdminUser } from '../api';
 import { useAsync } from '../hooks';
 import { NoMatch, Pager, SearchBox, useTableView } from '../components/TableTools';
 import { Empty, ErrorBox, Loading } from '../components/States';
@@ -41,7 +41,6 @@ const M = messages({
   rollbackConfirm: (v: number) => `Quay về nội dung của bản ${v}? Hệ thống tạo một bản mới có nội dung đó (không xoá bản nào).`,
   rolledBack: (from: number, v: number) => `Đã quay về nội dung bản ${from} (thành bản ${v}).`,
   loadedVersion: (v: number) => `Đã nạp nội dung bản ${v} vào ô soạn — bấm Lưu để dùng.`,
-  test: 'Chạy thử trong Vala Desktop',
   testHint: 'Chạy bằng bản ĐÃ LƯU, trong tab của hệ thống nguồn trên máy này (tab chưa mở thì mở nền), bằng phiên bạn đang đăng nhập hệ thống đó.',
   testNeedDesktop: 'Chỉ chạy thử được khi mở cổng trong Vala Desktop.',
   testNeedSource: 'Gắn hệ thống nguồn và lưu gói để chạy thử.',
@@ -49,6 +48,9 @@ const M = messages({
   args: 'Tham số (JSON)', badJson: 'Tham số không phải JSON hợp lệ (dạng { "trang": 1 })',
   run: 'Chạy', running: 'Đang chạy…', result: 'Kết quả', failed: 'Lỗi',
   timeout: 'Vala Desktop không trả lời — kiểm tra ứng dụng còn chạy.',
+  test2: 'Chạy thử', where: 'Nơi chạy', whereDesktop: 'Vala Desktop trên máy này', whereServer: 'Máy chủ (trình duyệt tự động)',
+  serverHint: 'Chạy bằng bản ĐÃ LƯU trên máy chủ: trình duyệt không giao diện mở hệ thống nguồn bằng phiên đã lưu của người dùng được chọn — cùng kịch bản với Vala Desktop.',
+  forUser: 'Cho người dùng', pickUser: 'Chọn người dùng…',
 }, {
   title: 'Desktop scripts',
   subtitle: 'CSS + JavaScript packages that run inside source-system pages opened in Vala Desktop: fix display problems when embedding and declare named actions (list documents, create a draft…). Saving makes everyone’s app download the new version — no new app release needed.',
@@ -83,7 +85,6 @@ const M = messages({
   rollbackConfirm: (v: number) => `Restore the content of version ${v}? A new version with that content is created (nothing is deleted).`,
   rolledBack: (from: number, v: number) => `Restored the content of version ${from} (now version ${v}).`,
   loadedVersion: (v: number) => `Loaded version ${v} into the editor — click Save to use it.`,
-  test: 'Test in Vala Desktop',
   testHint: 'Runs the SAVED version, in the source system’s tab on this computer (opened in the background if needed), using the session you are signed in with.',
   testNeedDesktop: 'Testing only works when the portal is open in Vala Desktop.',
   testNeedSource: 'Link a source system and save the package to test it.',
@@ -91,6 +92,9 @@ const M = messages({
   args: 'Arguments (JSON)', badJson: 'Arguments are not valid JSON (e.g. { "page": 1 })',
   run: 'Run', running: 'Running…', result: 'Result', failed: 'Error',
   timeout: 'Vala Desktop did not answer — check that the app is still running.',
+  test2: 'Test run', where: 'Run on', whereDesktop: 'Vala Desktop on this computer', whereServer: 'Server (automated browser)',
+  serverHint: 'Runs the SAVED version on the server: a headless browser opens the source system with the selected user’s stored session — the same script as in Vala Desktop.',
+  forUser: 'For user', pickUser: 'Choose a user…',
 });
 
 interface PackageRow {
@@ -345,7 +349,7 @@ function PackageEditor({ code, canTest, onClose, onSaved }: {
 
               <Field label={t.note}><Input className="w-full !min-w-0" value={f.ghi_chu} placeholder={t.notePh} onChange={(e) => set({ ghi_chu: e.target.value })} /></Field>
 
-              {!isNew && <TestPanel source={savedSource} canTest={canTest} />}
+              {!isNew && <TestPanel code={code} source={savedSource} canTest={canTest} />}
 
               {!isNew && !!detail.data?.versions.length && (
                 <div>
@@ -385,9 +389,15 @@ function PackageEditor({ code, canTest, onClose, onSaved }: {
   );
 }
 
-/** Chạy thử thao tác của gói (bản đã lưu) trong Vala Desktop đang mở cổng này. */
-function TestPanel({ source, canTest }: { source: string | null; canTest: boolean }) {
+/**
+ * Chạy thử thao tác của gói (bản đã lưu): trong Vala Desktop đang mở cổng này, hoặc trên máy chủ (runner) bằng phiên đã lưu
+ * của một người dùng — cùng kịch bản, hai nơi chạy.
+ */
+function TestPanel({ code, source, canTest }: { code: string; source: string | null; canTest: boolean }) {
   const t = useT(M);
+  const [where, setWhere] = useState<'desktop' | 'server'>(canTest ? 'desktop' : 'server');
+  const users = useAsync(() => api.get<AdminUser[]>('/admin/users'), []);
+  const [userId, setUserId] = useState('');
   const [actions, setActions] = useState<DesktopActionInfo[] | null>(null);
   const [name, setName] = useState('');
   const [args, setArgs] = useState('{}');
@@ -395,17 +405,23 @@ function TestPanel({ source, canTest }: { source: string | null; canTest: boolea
   const [out, setOut] = useState<{ ok: boolean; text: string } | null>(null);
 
   const msg = (e: string) => (e === 'timeout' ? t.timeout : e);
+  /** Gọi nơi chạy đang chọn; không có name ⇒ liệt kê thao tác. */
+  const call = async (action?: string, a?: Record<string, unknown>): Promise<{ ok: boolean; result?: unknown; actions?: DesktopActionInfo[]; error?: string }> => {
+    if (where === 'desktop') return action ? desktopAction('run-action', source!, action, a ?? {}) : desktopAction('list-actions', source!);
+    try {
+      return await api.post(`/admin/desktop-packages/${code}/run-server`, { user_id: Number(userId), ...(action ? { action, args: a ?? {} } : {}) });
+    } catch (e) { return { ok: false, error: ERR(e) }; }
+  };
   const list = async () => {
-    if (!source) return;
     setBusy('list'); setOut(null);
-    const r = await desktopAction('list-actions', source);
+    const r = await call();
     setBusy(null);
-    if (!r.ok) { setOut({ ok: false, text: msg(r.error) }); return; }
+    if (!r.ok) { setOut({ ok: false, text: msg(r.error ?? '') }); return; }
     setActions(r.actions ?? []);
-    if (!name && r.actions?.length) setName(r.actions[0]!.name);
+    if (r.actions?.length && !r.actions.some((x) => x.name === name)) setName(r.actions[0]!.name);
   };
   const run = async () => {
-    if (!source || !name) return;
+    if (!name) return;
     let parsed: Record<string, unknown>;
     try {
       const v = JSON.parse(args.trim() || '{}') as unknown;
@@ -413,17 +429,31 @@ function TestPanel({ source, canTest }: { source: string | null; canTest: boolea
       parsed = v as Record<string, unknown>;
     } catch { setOut({ ok: false, text: t.badJson }); return; }
     setBusy('run'); setOut(null);
-    const r = await desktopAction('run-action', source, name, parsed);
+    const r = await call(name, parsed);
     setBusy(null);
-    setOut(r.ok ? { ok: true, text: JSON.stringify(r.result ?? null, null, 2) } : { ok: false, text: msg(r.error) });
+    setOut(r.ok ? { ok: true, text: JSON.stringify(r.result ?? null, null, 2) } : { ok: false, text: msg(r.error ?? '') });
   };
 
+  const ready = !!source && (where === 'desktop' ? canTest : !!userId);
+  const hint = !source ? t.testNeedSource : where === 'desktop' ? (canTest ? t.testHint : t.testNeedDesktop) : t.serverHint;
   const sel = actions?.find((a) => a.name === name);
   return (
     <Card>
-      <h3 className="text-sm font-semibold">{t.test}</h3>
-      <Muted className="mt-1 text-xs">{!canTest ? t.testNeedDesktop : !source ? t.testNeedSource : t.testHint}</Muted>
-      {canTest && source && (
+      <h3 className="text-sm font-semibold">{t.test2}</h3>
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <Select aria-label={t.where} value={where} onChange={(e) => { setWhere(e.target.value as 'desktop' | 'server'); setActions(null); setOut(null); }}>
+          <option value="desktop">{t.whereDesktop}</option>
+          <option value="server">{t.whereServer}</option>
+        </Select>
+        {where === 'server' && (
+          <Select aria-label={t.forUser} value={userId} onChange={(e) => { setUserId(e.target.value); setActions(null); setOut(null); }}>
+            <option value="">{t.pickUser}</option>
+            {users.data?.map((u) => <option key={u.id} value={u.id}>{u.ho_ten}</option>)}
+          </Select>
+        )}
+      </div>
+      <Muted className="mt-1 text-xs">{hint}</Muted>
+      {ready && (
         <div className="mt-3 space-y-3">
           <div className="flex flex-wrap items-center gap-2">
             <Button disabled={!!busy} onClick={() => void list()}>{busy === 'list' ? t.loadingActions : t.listActions}</Button>
@@ -444,12 +474,12 @@ function TestPanel({ source, canTest }: { source: string | null; canTest: boolea
               <Button variant="primary" disabled={!!busy || !name} onClick={() => void run()}>{busy === 'run' ? t.running : t.run}</Button>
             </>
           )}
-          {out && (
-            <div>
-              <div className={`mb-1 text-sm font-medium ${out.ok ? '' : 'text-red-700 dark:text-red-400'}`}>{out.ok ? t.result : t.failed}</div>
-              <pre className="max-h-80 overflow-auto rounded-md border border-slate-200 bg-slate-50 p-3 text-xs dark:border-slate-800 dark:bg-slate-900">{out.text}</pre>
-            </div>
-          )}
+        </div>
+      )}
+      {out && (
+        <div className="mt-3">
+          <div className={`mb-1 text-sm font-medium ${out.ok ? '' : 'text-red-700 dark:text-red-400'}`}>{out.ok ? t.result : t.failed}</div>
+          <pre className="max-h-80 overflow-auto whitespace-pre-wrap rounded-md border border-slate-200 bg-slate-50 p-3 text-xs dark:border-slate-800 dark:bg-slate-900">{out.text}</pre>
         </div>
       )}
     </Card>

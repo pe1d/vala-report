@@ -10,6 +10,8 @@
  * đổi định dạng ở đây thì đổi cả bên đó (test hai bên dùng chung một chữ ký mẫu).
  */
 import { createHash, createPrivateKey, createPublicKey, hkdfSync, sign, verify, type KeyObject } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 
 export interface SignedFields {
   code: string;
@@ -97,4 +99,23 @@ export function matchesUrl(patterns: readonly string[], url: string): boolean {
     const re = new RegExp(`^${path!.split('*').map((s) => s.replace(/[.+?^${}()|[\]\\]/g, '\\$&')).join('.*')}$`);
     return re.test(u.pathname + u.search);
   });
+}
+
+let runtimeCache: string | null = null;
+/** Bộ hàm `vala` chạy trong trang (packages/core/runtime/vala-runtime.js) — Vala Desktop đóng gói cùng tệp này. */
+export function valaRuntimeSource(): string {
+  return (runtimeCache ??= readFileSync(fileURLToPath(new URL('../runtime/vala-runtime.js', import.meta.url)), 'utf8'));
+}
+
+/**
+ * Mã chèn vào một khung: bộ hàm `vala` (cài một lần) + các gói khớp địa chỉ khung; null nếu không gói nào khớp. Kết quả
+ * khi chạy: { mã gói: { ok, error? } }. Cùng cách ghép với Vala Desktop (apps/desktop/src/scripts.ts injectionFor): kịch bản
+ * là thân hàm, ghép thẳng vào mã — không eval.
+ */
+export function injectionCode(packages: readonly SignedFields[], url: string, runtime = valaRuntimeSource()): string | null {
+  const match = packages.filter((p) => matchesUrl(p.matches, url));
+  if (!match.length) return null;
+  const loads = match.map((p) =>
+    `r[${JSON.stringify(p.code)}] = await window.__vala.load(${JSON.stringify({ code: p.code, version: p.version, css: p.css })}, async function (vala) {\n${p.script}\n});`);
+  return `${runtime}\n;(async () => { const r = {};\n${loads.join('\n')}\nreturn r; })()`;
 }

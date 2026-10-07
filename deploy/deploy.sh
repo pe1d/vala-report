@@ -22,6 +22,8 @@ echo "==> Migration CSDL"
 echo "==> Bật api, worker, web"
 "${C[@]}" up -d --wait api
 "${C[@]}" up -d worker web
+# Runner chạy kịch bản Vala Desktop trên máy chủ (Chromium) — không bắt buộc: build lỗi thì cổng vẫn chạy.
+"${C[@]}" up -d --build runner || echo "!! runner chưa chạy được — bỏ qua (xem: ${C[*]} logs runner)"
 
 echo "==> Kiểm tra"
 for i in $(seq 1 30); do

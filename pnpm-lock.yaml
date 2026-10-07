@@ -265,6 +265,25 @@ importers:
         specifier: ^5.4.21
         version: 5.4.21(@types/node@18.19.130)
 
+  apps/runner:
+    dependencies:
+      '@vala/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      playwright-core:
+        specifier: ~1.49.1
+        version: 1.49.1
+    devDependencies:
+      '@types/node':
+        specifier: ^18.19.130
+        version: 18.19.130
+      tsx:
+        specifier: ^4.23.15
+        version: 4.23.15
+      typescript:
+        specifier: ~5.9.3
+        version: 5.9.3
+
   apps/web:
     dependencies:
       echarts:
@@ -2610,6 +2629,11 @@ packages:
   pirates@4.0.7:
     resolution: {integrity: sha512-TfySrs/5nm8fQJDcBDuUng3VOUKsd7S+zqvbOTiGXHfxX4wK31ard+hoNuvkicM/2YFzlpDgABOevKSsB4G/FA==}
     engines: {node: '>= 6'}
+
+  playwright-core@1.49.1:
+    resolution: {integrity: sha512-BzmpVcs4kE2CH15rWfzpjzVGhWERJfmnXmniSyKeRZUs9Ws65m+RGIi7mjJK/euCegfn3i7jvqWeWyHe9y3Vgg==}
+    engines: {node: '>=18'}
+    hasBin: true
 
   plist@3.1.1:
     resolution: {integrity: sha512-ZIfcLJC+7E7FBFnDxm9MPmt7D+DidyQ26lewieO75AdhA2ayMtsJSES0iWzqJQbcVRSrTufQoy0DR94xHue0oA==}
@@ -5689,6 +5713,8 @@ snapshots:
       thread-stream: 3.2.0
 
   pirates@4.0.7: {}
+
+  playwright-core@1.49.1: {}
 
   plist@3.1.1:
     dependencies:

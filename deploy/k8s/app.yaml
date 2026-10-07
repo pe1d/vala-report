@@ -16,8 +16,10 @@ data:
   # Spider (chạy trong Crawlab, cùng namespace) gọi ngược về API trực tiếp, không qua nginx.
   SPIDER_API_URL: http://api:3000
   API_PORT: "3000"
-  NO_PROXY: api,crawlab,vault,postgres,redis,localhost,127.0.0.1,.svc,.cluster.local
-  no_proxy: api,crawlab,vault,postgres,redis,localhost,127.0.0.1,.svc,.cluster.local
+  # Runner chạy gói kịch bản Vala Desktop trên máy chủ (runner.yaml).
+  RUNNER_URL: http://runner:3100
+  NO_PROXY: api,crawlab,vault,postgres,redis,runner,localhost,127.0.0.1,.svc,.cluster.local
+  no_proxy: api,crawlab,vault,postgres,redis,runner,localhost,127.0.0.1,.svc,.cluster.local
 ---
 apiVersion: v1
 kind: Service

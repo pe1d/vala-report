@@ -1,0 +1,22 @@
+{
+  "name": "@vala/runner",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Chạy gói kịch bản Vala Desktop trên máy chủ bằng Chromium không giao diện (phương án 2 của biên bản họp 10/2026)",
+  "scripts": {
+    "dev": "tsx watch src/main.ts",
+    "start": "tsx src/main.ts",
+    "typecheck": "tsc -p .",
+    "test": "echo 'runner: kiểm thử bằng chạy thật (docs/kich-ban-desktop.md)'"
+  },
+  "dependencies": {
+    "@vala/core": "workspace:*",
+    "playwright-core": "~1.49.1"
+  },
+  "devDependencies": {
+    "@types/node": "^18.19.130",
+    "tsx": "^4.23.15",
+    "typescript": "~5.9.3"
+  }
+}

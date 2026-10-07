@@ -25,9 +25,11 @@ x-node: &node
     # Spider (chạy trong Crawlab) gọi ngược về API qua mạng Docker, không qua nginx.
     SPIDER_API_URL: http://api:3000
     API_PORT: "3000"
+    # Runner chạy gói kịch bản Vala Desktop trên máy chủ (dịch vụ runner bên dưới).
+    RUNNER_URL: http://runner:3100
     # Proxy công ty (nếu Docker tự thêm vào container): không đi proxy cho các dịch vụ nội bộ.
-    NO_PROXY: api,crawlab,vault,postgres,redis,localhost,127.0.0.1
-    no_proxy: api,crawlab,vault,postgres,redis,localhost,127.0.0.1
+    NO_PROXY: api,crawlab,vault,postgres,redis,runner,localhost,127.0.0.1
+    no_proxy: api,crawlab,vault,postgres,redis,runner,localhost,127.0.0.1
   depends_on:
     postgres: { condition: service_healthy }
     redis: { condition: service_started }
@@ -79,6 +81,16 @@ services:
     <<: *node
     working_dir: /app/apps/worker
     command: ["/app/apps/worker/node_modules/.bin/tsx", "src/main.ts"]
+
+  # Chạy gói kịch bản Vala Desktop trên máy chủ (Chromium không giao diện) — chỉ api gọi, không mở ra ngoài.
+  runner:
+    image: vala-report-runner:${VALA_VERSION:-latest}
+    build: { context: ., dockerfile: infra/runner.Dockerfile }
+    restart: unless-stopped
+    env_file: .env.prod
+    environment:
+      RUNNER_PORT: "3100"
+    shm_size: 256m
 
   # Lệnh quản trị một lần: docker compose -f docker-compose.prod.yml --env-file .env.prod run --rm tools <lệnh>
   tools:

@@ -5,7 +5,7 @@
  */
 import { Script } from 'node:vm';
 import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
-import { isValidMatch, keyFingerprint, L, langOf, Problem, withTenant, type SignedFields, type Tx } from '@vala/core';
+import { isValidMatch, keyFingerprint, L, langOf, Problem, withTenant, type AuthMethod, type SignedFields, type Tx } from '@vala/core';
 import { audit } from '../audit.js';
 import type { ApiDeps } from '../deps.js';
 
@@ -155,6 +155,53 @@ export const adminDesktopRoutes = (deps: ApiDeps): FastifyPluginAsync => async (
     await audit(t, req, 'source_change', { type: 'desktop_package', id: cur.code }, { op: 'rollback', from: old.version, version: next.version });
     return { code: cur.code, version: next.version };
   }));
+
+  /**
+   * Chạy thử trên MÁY CHỦ (runner, Chromium không giao diện) cho một người dùng: mở trang hệ thống nguồn của gói bằng phiên
+   * người đó trong kho bí mật, chèn cùng các gói như Vala Desktop, chạy thao tác (không có action ⇒ liệt kê thao tác).
+   * Chạy bằng bản đã lưu. Ghi audit (không ghi tham số / kết quả).
+   */
+  app.post<{ Params: { code: string }; Body: { user_id: number; action?: string; args?: Record<string, unknown> } }>('/admin/desktop-packages/:code/run-server', {
+    schema: { body: { type: 'object', required: ['user_id'], additionalProperties: false, properties: {
+      user_id: { type: 'integer' }, action: { type: 'string', pattern: '^[a-z][a-z0-9_]{0,62}$' }, args: { type: 'object' } } } },
+  }, async (req) => {
+    const runner = deps.config.runnerUrl;
+    if (!runner) {
+      throw new Problem('internal', L('Máy chủ chưa bật runner chạy kịch bản', 'The script runner is not enabled on the server'),
+        L('Đặt RUNNER_URL trong .env (xem docs/kich-ban-desktop.md)', 'Set RUNNER_URL in .env (see docs/kich-ban-desktop.md)'));
+    }
+    const { pkg, all, grant } = await withTenant(deps.writer, async (t) => {
+      const p = await getPackage(t, req.params.code);
+      if (!p.source_system) throw new Problem('invalid_params', L('Gói chưa gắn hệ thống nguồn', 'The package is not linked to a source system'));
+      const g = await t.oneOrNone<{ auth_method: AuthMethod }>(
+        `SELECT auth_method FROM source_grants WHERE app_user_id = $1 AND source_system = $2 AND revoked_at IS NULL`, [req.body.user_id, p.source_system]);
+      if (!g) throw new Problem('grant_required', L('Người dùng này chưa kết nối hệ thống nguồn của gói', 'This user has not connected the package’s source system'));
+      const others = await t.any<SignedFields>('SELECT code, version, matches, css, script FROM desktop_packages WHERE is_enabled AND code <> $1', [p.code]);
+      await audit(t, req, 'run_now', { type: 'desktop_package', id: p.code }, { where: 'server', user_id: req.body.user_id, action: req.body.action ?? null, version: p.version });
+      return { pkg: p, all: [p, ...others], grant: g };
+    });
+    const source = pkg.source_system!;
+    const session = await deps.connections.sessionFor(req.body.user_id, source, grant.auth_method);
+    const { baseUrl } = await deps.sourceInfo(source);
+    const domain = deps.connections.cookieDomain(source, baseUrl);
+    const host = new URL(baseUrl).hostname;
+    const cookies = Object.entries(session.cookies).map(([name, value]) => (domain !== host ? { name, value, domain: `.${domain}` } : { name, value, url: baseUrl }));
+    let res: Response;
+    try {
+      res = await fetch(`${runner}/run`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${deps.config.internalToken}` },
+        body: JSON.stringify({ url: baseUrl, cookies, packages: all.map((p) => ({ code: p.code, version: p.version, matches: p.matches, css: p.css, script: p.script })),
+          action: req.body.action, args: req.body.args ?? {}, timeout_ms: 90_000 }),
+        signal: AbortSignal.timeout(120_000),
+      });
+    } catch (e) {
+      throw new Problem('internal', L('Không gọi được runner', 'Could not reach the script runner'), (e as Error).message);
+    }
+    if (res.status === 429) throw new Problem('internal', L('Runner đang bận, thử lại sau ít phút', 'The runner is busy, try again in a few minutes'));
+    if (!res.ok) throw new Problem('internal', L('Runner lỗi', 'Runner error'), `HTTP ${res.status}`);
+    return res.json();
+  });
 
   app.delete<{ Params: { code: string } }>('/admin/desktop-packages/:code', async (req, reply) => {
     await withTenant(deps.writer, async (t) => {

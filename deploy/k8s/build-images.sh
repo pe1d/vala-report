@@ -38,10 +38,16 @@ for img in vala-report-node vala-report-web; do
   $SUDO rm -f "$IMAGES/$img-$VER.tar"
   has_image "$img" "$VER" || { echo "Nạp $img:$VER không thành công"; exit 1; }
 done
+# Runner (chạy kịch bản Vala Desktop trên máy chủ) không bắt buộc: build lỗi thì không có tệp, bỏ qua.
+if $SUDO test -s "$IMAGES/vala-report-runner-$VER.tar"; then
+  $CTR images import "$IMAGES/vala-report-runner-$VER.tar" >/dev/null && $SUDO rm -f "$IMAGES/vala-report-runner-$VER.tar"
+else
+  echo "(không có image runner bản $VER — bỏ qua; xem log build ở trên)"
+fi
 # Giữ image của 3 phiên bản build gần nhất (để quay lại được); chỉ xoá image của Vala.
 echo "$VER" | $SUDO tee -a "$DATA_DIR/versions.log" >/dev/null
 for old in $($SUDO tac "$DATA_DIR/versions.log" | awk '!seen[$0]++' | tail -n +4); do
-  for img in vala-report-node vala-report-web; do
+  for img in vala-report-node vala-report-web vala-report-runner; do
     has_image "$img" "$old" && $CTR images rm "docker.io/library/$img:$old" >/dev/null || true
   done
 done

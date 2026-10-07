@@ -77,6 +77,13 @@ k logs job/vala-migrate --tail=3
 echo "==> api, worker, web ($WEB_EXPOSE)"
 render "$K8S/app.yaml" "$K8S/web-$WEB_EXPOSE.yaml" | k apply -f - >/dev/null
 for d in api worker web; do k rollout status "deployment/$d" --timeout=300s >/dev/null; done
+# Runner chạy kịch bản trên máy chủ: chỉ khi build được image (không bắt buộc — lỗi thì cổng vẫn chạy bình thường).
+if has_image vala-report-runner "$VER"; then
+  render "$K8S/runner.yaml" | k apply -f - >/dev/null
+  k rollout status deployment/runner --timeout=300s >/dev/null || echo "!! runner chưa chạy — xem: $KUBECTL -n $NS logs deploy/runner"
+else
+  echo "(chưa có image runner bản $VER — bỏ qua runner)"
+fi
 
 echo "==> Kiểm tra"
 if [ "$WEB_EXPOSE" = istio ]; then

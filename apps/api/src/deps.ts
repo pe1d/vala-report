@@ -13,6 +13,8 @@ export interface ApiConfig {
   spiderApiUrl: string;
   /** Link giao diện Crawlab cho quản trị (chỉ kỹ sư vận hành). */
   crawlabWebUrl?: string;
+  /** Runner chạy gói kịch bản Vala Desktop trên máy chủ (apps/runner). Không có ⇒ chỉ chạy được trong Vala Desktop. */
+  runnerUrl?: string;
 }
 
 export interface RateLimiter {

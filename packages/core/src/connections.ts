@@ -191,6 +191,16 @@ export class ConnectionSessions {
     }
   }
 
+  /**
+   * Phiên dùng ngay cho một lượt chạy (vd runner chạy kịch bản trên máy chủ): phiên đang lưu còn hạn ⇒ dùng; không thì lấy
+   * phiên mới khi cách xác thực cho phép (mật khẩu / SSO), còn lại báo cần phiên mới từ người dùng.
+   */
+  async sessionFor(userId: number, source: string, method: AuthMethod): Promise<SessionSecret> {
+    const cur = await this.o.secrets.get<SessionSecret>(this.sessionRef(userId, source));
+    if (cur && (!cur.expires_at || new Date(cur.expires_at).getTime() > Date.now() + 60_000)) return cur;
+    return this.renew(userId, source, method);
+  }
+
   /** Phiên do tiện ích trình duyệt gửi về (đã qua verifyCookies). */
   async saveSession(userId: number, source: string, cookies: Record<string, string>): Promise<SessionSecret> {
     const secret: SessionSecret = { cookies, obtained_at: new Date().toISOString() };

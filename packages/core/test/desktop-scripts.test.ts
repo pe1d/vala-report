@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { canonicalPackage, isValidMatch, keyFingerprint, matchesUrl, packageSigner, verifyPackage } from '../src/desktopScripts';
+import { canonicalPackage, injectionCode, isValidMatch, keyFingerprint, matchesUrl, packageSigner, valaRuntimeSource, verifyPackage } from '../src/desktopScripts';
 
 const pkg = { code: 'egov_sua_giao_dien', version: 3, matches: ['https://egov.bkav.com/*'], css: '.x{display:none}', script: 'vala.log(1)' };
 
@@ -54,5 +54,16 @@ describe('mẫu địa chỉ trang', () => {
     for (const p of ['https://egov.bkav.com*', 'egov.bkav.com/*', 'https://*/*', 'https://a.*.com/*', 'javascript:alert(1)', 'https://a.com'])
       expect(isValidMatch(p)).toBe(false);
     expect(isValidMatch('https://*.bkav.com/qlvb/*')).toBe(true);
+  });
+});
+
+describe('mã chèn vào trang', () => {
+  it('chỉ gói khớp địa chỉ; kịch bản là thân hàm async; có bộ hàm vala', () => {
+    const other = { ...pkg, code: 'khac', matches: ['https://etask.bkav.com/*'] };
+    const code = injectionCode([pkg, other], 'https://egov.bkav.com/a')!;
+    expect(code).toContain('window.__vala.load({"code":"egov_sua_giao_dien","version":3,"css":".x{display:none}"}, async function (vala) {\nvala.log(1)\n});');
+    expect(code).not.toContain('"khac"');
+    expect(code.startsWith(valaRuntimeSource())).toBe(true);
+    expect(injectionCode([other], 'https://egov.bkav.com/a')).toBeNull();
   });
 });

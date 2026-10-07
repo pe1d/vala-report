@@ -1,5 +1,5 @@
 # Job build image — build-images.sh thay VALA_VERSION / SRC_DIR / IMAGES_DIR / CACHE_DIR rồi tạo.
-# Build 2 image (node + web) bằng BuildKit ngay trên máy chủ (máy chủ không có Docker/registry). Mã nguồn đọc từ
+# Build image node + web (+ runner, không bắt buộc) bằng BuildKit ngay trên máy chủ (máy chủ không có Docker/registry). Mã nguồn đọc từ
 # SRC_DIR (bản git clone trên máy chủ, chỉ đọc); kết quả là file .tar ở IMAGES_DIR, build-images.sh nạp vào containerd
 # của k3s. privileged: BuildKit cần để dựng image — Job chỉ chạy lúc build rồi bị xoá.
 apiVersion: batch/v1
@@ -35,6 +35,8 @@ spec:
               }
               build vala-report-node infra/node.Dockerfile
               build vala-report-web infra/web/Dockerfile
+              # Runner (Chromium) không bắt buộc: lỗi (vd không tải được gói Debian) thì bỏ qua, cổng vẫn triển khai được.
+              build vala-report-runner infra/runner.Dockerfile || { rm -f /out/vala-report-runner-VALA_VERSION.tar.part; echo "!! build runner lỗi — bỏ qua"; }
               echo "==> xong"
           env:
             # Máy chủ phải qua proxy mới ra Internet (tải image gốc, thư viện npm)? build-images.sh điền BUILD_HTTP_PROXY.

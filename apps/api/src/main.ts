@@ -87,6 +87,7 @@ const app = await buildApp({
     tenant: TENANT,
     spiderApiUrl: process.env.SPIDER_API_URL ?? `http://localhost:${port}`,
     crawlabWebUrl: process.env.CRAWLAB_WEB_URL ?? crawlabCfg?.url,
+    runnerUrl: process.env.RUNNER_URL?.trim().replace(/\/+$/, '') || undefined,
   },
 }, { logger: true });
 

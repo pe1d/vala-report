@@ -1,0 +1,48 @@
+# Runner — chạy gói kịch bản Vala Desktop trên máy chủ (Chromium không giao diện), chỉ api gọi (Bearer INTERNAL_TOKEN).
+# Image vala-report-runner build cùng lúc với node/web (build-job.yaml); build lỗi thì deploy.sh bỏ qua runner, cổng vẫn
+# chạy — chỉ thiếu "Chạy trên máy chủ" ở trang Kịch bản Desktop.
+apiVersion: v1
+kind: Service
+metadata:
+  name: runner
+spec:
+  selector: { app: runner }
+  ports: [{ name: http, port: 3100 }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: runner
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: runner }
+  template:
+    metadata:
+      labels: { app: runner }
+      annotations: { vala-report/config-hash: CONFIG_HASH }
+    spec:
+      enableServiceLinks: false
+      containers:
+        - name: runner
+          image: vala-report-runner:VALA_VERSION
+          imagePullPolicy: Never
+          envFrom:
+            - secretRef: { name: vala-env }       # INTERNAL_TOKEN, SOURCE_HTTP_PROXY
+          env:
+            - { name: RUNNER_PORT, value: "3100" }
+            - { name: RUNNER_CONCURRENCY, value: "3" }
+          ports: [{ containerPort: 3100 }]
+          readinessProbe:
+            exec:
+              command: [node, -e, "fetch('http://127.0.0.1:3100/healthz').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+            periodSeconds: 15
+            timeoutSeconds: 5
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { cpu: "2", memory: 1536Mi }
+          volumeMounts:
+            - { name: shm, mountPath: /dev/shm }     # Chromium cần /dev/shm lớn hơn 64 MB mặc định
+      volumes:
+        - name: shm
+          emptyDir: { medium: Memory, sizeLimit: 256Mi }
