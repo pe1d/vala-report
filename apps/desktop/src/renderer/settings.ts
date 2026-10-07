@@ -15,6 +15,7 @@ interface SettingsState {
 interface ValaSettingsApi {
   state(): Promise<SettingsState>;
   setLang(lang: string): Promise<SettingsState>;
+  setTheme(theme: string): Promise<SettingsState>;
   saveHome(url: string | null): Promise<{ ok: boolean; message?: string; state?: SettingsState }>;
   signIn(): Promise<void>;
   onChanged(cb: () => void): void;
@@ -27,23 +28,16 @@ interface ValaSettingsApi {
   const $ = <E extends HTMLElement>(id: string) => document.getElementById(id) as E;
   let st: SettingsState;
 
-  // ---- sáng / tối: lưu lựa chọn, mặc định theo hệ điều hành ----
-  const THEME_KEY = 'vala.theme';
-  const storedTheme = () => { try { return localStorage.getItem(THEME_KEY); } catch { return null; } };
-  const isDark = () => {
-    const s = storedTheme();
-    return s ? s === 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches;
-  };
+  // ---- sáng / tối: lựa chọn chung của ứng dụng (prefs.ts), áp qua prefers-color-scheme ----
+  const media = window.matchMedia('(prefers-color-scheme: dark)');
+  const isDark = () => media.matches;
   const applyTheme = () => {
     document.documentElement.classList.toggle('dark', isDark());
     const b = $('theme');
     if (st) { b.textContent = isDark() ? '☀' : '☾'; b.title = isDark() ? st.t.lightMode : st.t.darkMode; b.setAttribute('aria-label', b.title); }
   };
-  $('theme').addEventListener('click', () => {
-    try { localStorage.setItem(THEME_KEY, isDark() ? 'light' : 'dark'); } catch { /* bỏ qua */ }
-    applyTheme();
-  });
-  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme);
+  $('theme').addEventListener('click', () => void vala.setTheme(isDark() ? 'light' : 'dark'));
+  media.addEventListener('change', applyTheme);
 
   const note = (id: string, text: string, tone: 'ok' | 'err' | '') => {
     const el = $(id);

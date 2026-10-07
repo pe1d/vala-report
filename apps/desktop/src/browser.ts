@@ -15,7 +15,8 @@ import { app, BrowserWindow, ipcMain, session, shell, WebContentsView, type Hand
 import { APP_NAME, ICON, IS_DEV } from './channel';
 import { messages, normLang } from './i18n';
 import { attachPackages, injectAll, packageEvents } from './scripts';
-import { getSettings, setSettings } from './settings';
+import { currentPrefs, prefsEvents, setPrefs } from './prefs';
+import { getSettings } from './settings';
 import { cachedSources, events, statusOf, type SourceFull } from './sync';
 import { openTarget, tabStatus, type TabStatus } from './tabs-model';
 import { installNow, pendingUpdate } from './updater';
@@ -62,7 +63,6 @@ export interface BrowserHooks {
   profileMenu: () => Menu;
   /** Nút "Đăng nhập" (chưa đăng nhập): đưa sang tab Báo cáo. */
   signIn: () => void;
-  onLangChanged: () => void;
 }
 
 let hooks: BrowserHooks;
@@ -368,7 +368,8 @@ function registerIpc(): void {
   ipcMain.handle('tabs:sign-in', (e) => { own(e); hooks.signIn(); });
   ipcMain.handle('tabs:install-update', (e) => { own(e); installNow(); });
   ipcMain.on('tabs:resized', (e) => { if (win && e.sender === win.webContents) layout(); });
-  ipcMain.handle('tabs:lang', (e, l: unknown) => { own(e); setSettings({ lang: normLang(l) }); hooks.onLangChanged(); });
+  ipcMain.handle('tabs:lang', (e, l: unknown) => { own(e); setPrefs({ lang: normLang(l) }); });
+  ipcMain.handle('tabs:theme', (e, v: unknown) => { own(e); setPrefs({ theme: v }); });
 }
 
 export function initBrowser(h: BrowserHooks): void {
@@ -376,6 +377,21 @@ export function initBrowser(h: BrowserHooks): void {
   registerIpc();
   events.on('status', refreshBrowser);
   packageEvents.on('changed', () => { for (const t of tabs.values()) if (t.view) injectAll(t.view.webContents); });
+  // Ngôn ngữ / sáng-tối đổi (ở thanh tab, Cài đặt hay trong cổng) ⇒ vẽ lại thanh tab, báo cổng đổi theo.
+  prefsEvents.on('changed', () => { pushState(); pushPrefsToPortal(); });
+}
+
+/** Gửi ngôn ngữ + sáng/tối cho các tab đang mở cổng (chỉ trang đúng origin máy chủ — trang khác không cần biết). */
+function pushPrefsToPortal(): void {
+  const s = getSettings();
+  let origin: string;
+  try { origin = new URL(s.serverUrl).origin; } catch { return; }
+  for (const t of tabs.values()) {
+    const wc = t.view?.webContents;
+    if (!wc || wc.isDestroyed()) continue;
+    try { if (new URL(wc.getURL()).origin !== origin) continue; } catch { continue; }
+    wc.send('vala:event', { type: 'prefs', ...currentPrefs() });
+  }
 }
 
 /** Tab đang mở của một hệ thống nguồn (để chạy thao tác trong đó). */

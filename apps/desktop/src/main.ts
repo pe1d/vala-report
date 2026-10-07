@@ -11,6 +11,7 @@ import { openSettingsWindow } from './settings-window';
 import { getSettings } from './settings';
 import { syncAll } from './sync';
 import { forgetPackages, refreshPackages } from './scripts';
+import { applyTheme, prefsEvents } from './prefs';
 import { forgetPortalLogin, initBrowser, refreshBrowser } from './browser';
 import { createMenus, moreMenu, profileMenu, refreshMenus } from './menu';
 import { refreshHomeFromServer } from './homepage';
@@ -49,12 +50,13 @@ async function signOut() {
 // Đăng nhập cổng ở tab Báo cáo ⇒ cổng cấp token thiết bị qua cầu nối (account.ts) ⇒ bắt đầu giữ/gửi phiên.
 accountEvents.on('login', () => { refreshAll(); startSync(); });
 accountEvents.on('logout', () => { forgetPackages(); refreshAll(); });
+// Đổi ngôn ngữ / sáng-tối ở bất kỳ đâu ⇒ menu, khay, thanh tab theo (browser.ts tự báo cổng).
+prefsEvents.on('changed', refreshAll);
 
 function openSettings() {
   openSettingsWindow({
     signIn: showPortal,
     signOut,
-    onLangChanged: refreshAll,
     onHomeChanged: () => { void refreshHome().then(() => showMain()); },
     openPortal: showPortal,
   });
@@ -78,10 +80,11 @@ if (!app.requestSingleInstanceLock()) {
       if (process.platform === 'linux') enableLinuxAutostart();
       else app.setLoginItemSettings({ openAtLogin: true, args: ['--hidden'] });
     }
+    applyTheme();
     registerBridge();
     watchCookies();
     createMenus({ showMain, showPortal, openSettings, signOut: () => void signOut() });
-    initBrowser({ onLeave: onTabLeave, menu: moreMenu, profileMenu, signIn: showPortal, onLangChanged: refreshAll });
+    initBrowser({ onLeave: onTabLeave, menu: moreMenu, profileMenu, signIn: showPortal });
     // Bản mới tải xong ⇒ hiện nút "Cập nhật" trên thanh tab và trong menu.
     initUpdater(refreshAll);
 

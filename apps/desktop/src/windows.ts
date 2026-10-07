@@ -18,6 +18,7 @@ import { matchesSessionDomain, sessionDomain } from './cookies';
 import { ICON } from './channel';
 import { messages } from './i18n';
 import { listActions, refreshPackages, runAction, type ActionResult } from './scripts';
+import { currentPrefs, setPrefs } from './prefs';
 import { getSettings } from './settings';
 import { cachedSources, events, refreshSources, statusOf, syncSource, type SourceFull } from './sync';
 
@@ -235,6 +236,8 @@ export function registerBridge(): void {
       desktop: true, device: deviceName(),
       // Có gói kịch bản: cổng hiện "Chạy thử" thao tác trong trang quản trị Kịch bản Desktop.
       scripts: true,
+      // Ngôn ngữ + sáng/tối chung của ứng dụng: cổng dùng theo (prefs.ts).
+      ...currentPrefs(),
     };
   });
   ipcMain.handle('vala:device-token', async (e, a: { token?: unknown; user?: { ho_ten?: unknown; email?: unknown } }) => {
@@ -243,6 +246,11 @@ export function registerBridge(): void {
     const email = typeof a.user?.email === 'string' ? a.user.email.slice(0, 200) : '';
     await adoptDeviceToken(a.token, { ho_ten, email });
     return true;
+  });
+  // Người dùng đổi ngôn ngữ / sáng-tối ngay trong cổng ⇒ cả ứng dụng đổi theo.
+  ipcMain.handle('vala:set-prefs', (e, p: { lang?: unknown; theme?: unknown }) => {
+    if (!fromPortal(e) || !p || typeof p !== 'object') return false;
+    return setPrefs({ lang: p.lang, theme: p.theme });
   });
   ipcMain.handle('vala:list-actions', (e, code: unknown) => {
     if (!fromPortal(e) || typeof code !== 'string' || !/^[a-z0-9_]{1,40}$/.test(code)) return { ok: false, error: 'forbidden' };

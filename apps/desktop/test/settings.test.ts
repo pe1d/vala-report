@@ -15,7 +15,11 @@ describe('withDefaults (đọc settings.json)', () => {
   });
   it('thiếu trường / ngôn ngữ lạ ⇒ mặc định', () => {
     const s = withDefaults({ lang: 'fr' });
-    expect(s).toMatchObject({ serverUrl: DEFAULT_SERVER, homeUrl: DEFAULT_HOME, deviceToken: null, user: null, lang: 'vi' });
+    expect(s).toMatchObject({ serverUrl: DEFAULT_SERVER, homeUrl: DEFAULT_HOME, deviceToken: null, user: null, lang: 'vi', theme: 'system' });
+  });
+  it('sáng/tối: giữ light/dark, giá trị lạ ⇒ theo hệ điều hành', () => {
+    expect(withDefaults({ theme: 'dark' }).theme).toBe('dark');
+    expect(withDefaults({ theme: 'tim' as never }).theme).toBe('system');
   });
 });
 

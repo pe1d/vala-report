@@ -8,6 +8,9 @@ import { join } from 'node:path';
 import { app } from 'electron';
 import { normLang, type Lang } from './i18n';
 
+export type ThemeMode = 'light' | 'dark' | 'system';
+export const normTheme = (v: unknown): ThemeMode => (v === 'light' || v === 'dark' ? v : 'system');
+
 export interface Settings {
   /** Trang hiển thị trong cửa sổ chính — mỗi đơn vị một trang riêng (vd https://vala.bkav.com/). */
   homeUrl: string;
@@ -16,6 +19,8 @@ export interface Settings {
   deviceToken: string | null;
   user: { ho_ten: string; email: string } | null;
   lang: Lang;
+  /** Sáng / tối / theo hệ điều hành — chung cho thanh tab, Cài đặt và cổng (prefs.ts). */
+  theme: ThemeMode;
   /** Chỉ bản dev: trang chính tự đặt để thử (đè trang quản trị đặt trên cổng). Bản cho người dùng bỏ qua trường này. */
   devHomeUrl?: string | null;
 }
@@ -70,7 +75,7 @@ export function normalizeServer(raw: string): string | null {
 
 const file = () => join(app.getPath('userData'), 'settings.json');
 // Máy chủ cấu hình sẵn theo bản build (người dùng không nhập): đăng nhập cổng ngay ở tab Báo cáo.
-const DEFAULTS: Settings = { homeUrl: DEFAULT_HOME, serverUrl: DEFAULT_SERVER, deviceToken: null, user: null, lang: 'vi' };
+const DEFAULTS: Settings = { homeUrl: DEFAULT_HOME, serverUrl: DEFAULT_SERVER, deviceToken: null, user: null, lang: 'vi', theme: 'system' };
 
 /**
  * Ghép settings.json với mặc định. Chuỗi rỗng coi như chưa đặt: file của bản cũ lưu serverUrl = '' (mặc định khi đó) —
@@ -78,7 +83,7 @@ const DEFAULTS: Settings = { homeUrl: DEFAULT_HOME, serverUrl: DEFAULT_SERVER, d
  */
 export function withDefaults(raw: Partial<Settings>): Settings {
   const s = { ...DEFAULTS, ...raw };
-  return { ...s, serverUrl: s.serverUrl || DEFAULT_SERVER, homeUrl: s.homeUrl || DEFAULT_HOME, lang: normLang(s.lang) };
+  return { ...s, serverUrl: s.serverUrl || DEFAULT_SERVER, homeUrl: s.homeUrl || DEFAULT_HOME, lang: normLang(s.lang), theme: normTheme(s.theme) };
 }
 
 export function getSettings(): Settings {

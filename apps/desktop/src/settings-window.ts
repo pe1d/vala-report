@@ -10,6 +10,7 @@ import { BrowserWindow, ipcMain, type IpcMainInvokeEvent } from 'electron';
 import { accountEvents } from './account';
 import { ICON, IS_DEV } from './channel';
 import { messages, normLang } from './i18n';
+import { prefsEvents, setPrefs } from './prefs';
 import { DEFAULT_SERVER, getSettings, normalizeHome, setSettings } from './settings';
 
 const M = messages({
@@ -47,7 +48,6 @@ export interface SettingsHooks {
   signIn: () => void;
   /** Đăng xuất cả ứng dụng lẫn cổng. */
   signOut: () => Promise<void>;
-  onLangChanged: () => void;
   /** Bản dev đổi trang chính tự đặt ⇒ nạp lại tab Vala. */
   onHomeChanged: () => void;
   openPortal: () => void;
@@ -69,6 +69,7 @@ function state() {
 const pushState = () => { if (win && !win.isDestroyed()) win.webContents.send('vala:settings-changed'); };
 accountEvents.on('login', pushState);
 accountEvents.on('logout', pushState);
+prefsEvents.on('changed', pushState);
 
 export function openSettingsWindow(hooks: SettingsHooks): void {
   if (win && !win.isDestroyed()) { win.show(); win.focus(); return; }
@@ -82,7 +83,8 @@ export function openSettingsWindow(hooks: SettingsHooks): void {
   const own = (e: IpcMainInvokeEvent) => { if (e.sender !== w.webContents) throw new Error('forbidden'); };
 
   ipcMain.handle('vala:settings-state', (e) => { own(e); return state(); });
-  ipcMain.handle('vala:set-lang', (e, l: unknown) => { own(e); setSettings({ lang: normLang(l) }); hooks.onLangChanged(); return state(); });
+  ipcMain.handle('vala:set-lang', (e, l: unknown) => { own(e); setPrefs({ lang: normLang(l) }); return state(); });
+  ipcMain.handle('vala:set-theme', (e, v: unknown) => { own(e); setPrefs({ theme: v }); return state(); });
   ipcMain.handle('vala:save-home', (e, raw: unknown) => {
     own(e);
     if (!IS_DEV) return { ok: false };
@@ -100,7 +102,7 @@ export function openSettingsWindow(hooks: SettingsHooks): void {
 
   w.once('ready-to-show', () => w.show());
   w.on('closed', () => {
-    for (const ch of ['vala:settings-state', 'vala:set-lang', 'vala:save-home', 'vala:sign-in', 'vala:logout', 'vala:open-portal']) ipcMain.removeHandler(ch);
+    for (const ch of ['vala:settings-state', 'vala:set-lang', 'vala:set-theme', 'vala:save-home', 'vala:sign-in', 'vala:logout', 'vala:open-portal']) ipcMain.removeHandler(ch);
     if (win === w) win = null;
   });
   void w.loadFile(join(__dirname, '../resources/settings.html'));

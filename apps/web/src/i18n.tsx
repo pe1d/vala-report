@@ -23,14 +23,19 @@ let current: Lang = read();
 const listeners = new Set<() => void>();
 document.documentElement.lang = current;
 
+/** Theo dõi thay đổi: external = đổi theo lựa chọn của Vala Desktop (không báo ngược lại). */
+const watchers = new Set<(l: Lang, external: boolean) => void>();
+
 export const getLang = (): Lang => current;
-export function setLang(l: Lang) {
+export function setLang(l: Lang, external = false) {
   if (l === current) return;
   current = l;
   document.documentElement.lang = l;
   try { localStorage.setItem(KEY, l); } catch { /* trình duyệt chặn lưu trữ: vẫn đổi được trong phiên */ }
   listeners.forEach((f) => f());
+  watchers.forEach((f) => f(l, external));
 }
+export const onLangChange = (f: (l: Lang, external: boolean) => void) => { watchers.add(f); return () => { watchers.delete(f); }; };
 const subscribe = (f: () => void) => { listeners.add(f); return () => { listeners.delete(f); }; };
 export const useLang = (): Lang => useSyncExternalStore(subscribe, getLang);
 

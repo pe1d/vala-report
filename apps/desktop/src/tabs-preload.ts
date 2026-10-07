@@ -7,6 +7,7 @@ contextBridge.exposeInMainWorld('valaTabs', {
   close: (key: string) => ipcRenderer.invoke('tabs:close', key),
   menu: (x: number, y: number) => ipcRenderer.invoke('tabs:menu', { x, y }),
   setLang: (lang: string) => ipcRenderer.invoke('tabs:lang', lang),
+  setTheme: (theme: string) => ipcRenderer.invoke('tabs:theme', theme),
   resized: () => ipcRenderer.send('tabs:resized'),
   installUpdate: () => ipcRenderer.invoke('tabs:install-update'),
   profile: (x: number, y: number) => ipcRenderer.invoke('tabs:profile', { x, y }),

@@ -34,6 +34,11 @@ window.addEventListener('message', (e) => {
       (r: Record<string, unknown>) => post({ ...r, type: 'action-result', id }),
       (err: Error) => post({ type: 'action-result', id, ok: false, error: String(err?.message ?? err) }));
   }
+  // Cổng đổi ngôn ngữ / sáng-tối ⇒ báo ứng dụng (tiến trình chính kiểm origin, giá trị lạ bị bỏ qua).
+  if (d.type === 'set-prefs') {
+    const p = d as { lang?: unknown; theme?: unknown };
+    void ipcRenderer.invoke('vala:set-prefs', { lang: p.lang, theme: p.theme });
+  }
   if (d.type === 'connect' && typeof d.code === 'string' && /^[a-z0-9_]{1,40}$/.test(d.code)) {
     const code = d.code;
     ipcRenderer.invoke('vala:connect', code).then(
@@ -43,5 +48,5 @@ window.addEventListener('message', (e) => {
 });
 
 ipcRenderer.on('vala:event', (_e, m: { type?: string }) => {
-  if (m?.type === 'connected' || m?.type === 'connect-failed') post(m as Record<string, unknown>);
+  if (m?.type === 'connected' || m?.type === 'connect-failed' || m?.type === 'prefs') post(m as Record<string, unknown>);
 });

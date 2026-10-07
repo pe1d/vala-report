@@ -32,6 +32,7 @@ interface ValaTabsApi {
   close(key: string): Promise<void>;
   menu(x: number, y: number): Promise<void>;
   setLang(lang: string): Promise<void>;
+  setTheme(theme: string): Promise<void>;
   resized(): void;
   installUpdate(): Promise<void>;
   profile(x: number, y: number): Promise<void>;
@@ -44,19 +45,23 @@ interface ValaTabsApi {
   const $ = <E extends HTMLElement>(id: string) => document.getElementById(id) as E;
   let st: TabsState | null = null;
 
-  // ---- sáng / tối: dùng chung lựa chọn với trang Cài đặt (cùng localStorage), mặc định theo hệ điều hành ----
-  const THEME_KEY = 'vala.theme';
-  const stored = () => { try { return localStorage.getItem(THEME_KEY); } catch { return null; } };
-  const isDark = () => { const s = stored(); return s ? s === 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches; };
+  // ---- sáng / tối: lựa chọn chung của ứng dụng (prefs.ts) — tiến trình chính đặt nativeTheme nên prefers-color-scheme
+  // của trang này (và của cổng, Cài đặt…) luôn đúng lựa chọn đó ----
+  const media = window.matchMedia('(prefers-color-scheme: dark)');
+  const isDark = () => media.matches;
+  // Bản cũ lưu lựa chọn trong localStorage của trang này ⇒ chuyển một lần sang cấu hình chung.
+  try {
+    const old = localStorage.getItem('vala.theme');
+    if (old) { localStorage.removeItem('vala.theme'); void api.setTheme(old); }
+  } catch { /* bỏ qua */ }
   const applyTheme = () => {
     document.documentElement.classList.toggle('dark', isDark());
     const b = $('theme');
     b.textContent = isDark() ? '☀' : '☾';
     if (st) { b.title = isDark() ? st.t.lightMode : st.t.darkMode; b.setAttribute('aria-label', b.title); }
   };
-  $('theme').addEventListener('click', () => { try { localStorage.setItem(THEME_KEY, isDark() ? 'light' : 'dark'); } catch { /* bỏ qua */ } applyTheme(); });
-  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme);
-  window.addEventListener('storage', (e) => { if (e.key === THEME_KEY) applyTheme(); });
+  $('theme').addEventListener('click', () => void api.setTheme(isDark() ? 'light' : 'dark'));
+  media.addEventListener('change', applyTheme);
 
   const DOT: Record<'ok' | 'warn' | 'off', string> = {
     ok: 'bg-emerald-500', warn: 'bg-amber-500', off: 'bg-slate-400 dark:bg-slate-500',
