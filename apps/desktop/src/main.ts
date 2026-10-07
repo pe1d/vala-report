@@ -7,7 +7,7 @@ import { app } from 'electron';
 import { setupChannel } from './channel';
 import { cleanUserAgent } from './ua';
 import { accountEvents, logoutDevice } from './account';
-import { openSettingsWindow } from './settings-window';
+import { registerSettingsPage } from './settings-page';
 import { getSettings } from './settings';
 import { syncAll } from './sync';
 import { forgetPackages, refreshPackages } from './scripts';
@@ -16,11 +16,11 @@ import { setPortalUser } from './portal-state';
 import { registerAutofill } from './autofill';
 import { lockCredentials } from './credentials';
 import { installUiProtocol, refreshUi, registerUiScheme } from './ui-cache';
-import { forgetPortalLogin, initBrowser, refreshBrowser, revealWindow } from './browser';
+import { forgetPortalLogin, initBrowser, isSettingsContents, openSettingsTab, pushSettings, refreshBrowser, revealWindow } from './browser';
 import { setNotifyReveal } from './notify';
 import { createMenus, moreMenu, profileMenu, refreshMenus, tabContextMenu } from './menu';
 import { refreshHomeFromServer } from './homepage';
-import { enableLinuxAutostart } from './linux';
+import { applyAutostart } from './autostart';
 import { initUpdater } from './updater';
 import { changePortalPassword, onTabLeave, portalUserEvents, registerBridge, showMain, showPortal, watchCookies } from './windows';
 
@@ -59,14 +59,8 @@ accountEvents.on('logout', () => { forgetPackages(); setPortalUser(null); lockCr
 prefsEvents.on('changed', refreshAll);
 portalUserEvents.on('changed', refreshAll);
 
-function openSettings() {
-  openSettingsWindow({
-    signIn: showPortal,
-    signOut,
-    onHomeChanged: () => { void refreshHome().then(() => showMain()); },
-    openPortal: showPortal,
-  });
-}
+/** Cài đặt mở thành tab (như chrome://settings); `section` ⇒ nhảy tới mục đó. */
+const openSettings = (section?: string) => openSettingsTab(section);
 
 // Bản dev ⇒ tên, thư mục dữ liệu riêng (channel.ts). Phải chạy trước khi đọc cấu hình / xin khoá "chỉ một bản".
 setupChannel();
@@ -84,15 +78,17 @@ if (!app.requestSingleInstanceLock()) {
   app.whenReady().then(() => {
     // Tự khởi động cùng máy — chỉ ở bản đã cài (bản dev chạy bằng binary electron chung). Linux không có
     // setLoginItemSettings ⇒ tự ghi mục autostart (linux.ts).
-    if (app.isPackaged) {
-      if (process.platform === 'linux') enableLinuxAutostart();
-      else app.setLoginItemSettings({ openAtLogin: true, args: ['--hidden'] });
-    }
+    applyAutostart();
     applyTheme();
     setNotifyReveal(revealWindow);
     installUiProtocol();
     registerBridge();
     registerAutofill();
+    registerSettingsPage({
+      signIn: showPortal, signOut, openPortal: showPortal,
+      onHomeChanged: () => { void refreshHome().then(() => showMain()); },
+      isSettings: (e) => isSettingsContents(e.sender), push: pushSettings,
+    });
     watchCookies();
     createMenus({ showMain, showPortal, openSettings, signOut: () => void signOut(), changePassword: changePortalPassword });
     initBrowser({ onLeave: onTabLeave, menu: moreMenu, profileMenu, signIn: showPortal, tabMenu: tabContextMenu });

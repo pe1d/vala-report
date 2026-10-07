@@ -1,0 +1,38 @@
+/** Chữ hiển thị của tab Cài đặt (settings-page.ts). Bản tiếng Anh phải đủ khoá như tiếng Việt. */
+const vi = {
+  title: 'Cài đặt',
+  navAccount: 'Tài khoản', navPasswords: 'Mật khẩu', navAppearance: 'Giao diện', navStartup: 'Khởi động', navAbout: 'Giới thiệu', navHome: 'Trang chính (dev)',
+  accountHint: 'Vala Desktop dùng tài khoản bạn đăng nhập ở tab Báo cáo để giữ phiên các hệ thống nguồn và gửi cho Vala lấy dữ liệu thay bạn.',
+  notSignedIn: 'Chưa đăng nhập.', signIn: 'Đăng nhập', signedInAs: 'Đã đăng nhập', serverIs: 'Máy chủ',
+  openPortal: 'Mở cổng báo cáo', logout: 'Đăng xuất',
+  pwHint: 'Mật khẩu các hệ thống (eGov, eTask, QLVB…) được lưu trong kho mật khẩu của hệ điều hành trên máy này. Xem, đổi, xoá hoặc bật/tắt tự đăng nhập: chuột phải lên tab của hệ thống đó, hoặc menu ⋯ ở góc phải thanh tab.',
+  langLabel: 'Ngôn ngữ', themeLabel: 'Chế độ màu', themeLight: 'Sáng', themeDark: 'Tối', themeSystem: 'Theo hệ thống',
+  autostartLabel: 'Chạy Vala Desktop cùng hệ điều hành, ẩn ở khay hệ thống',
+  autostartHint: 'Để Vala Desktop giữ phiên và tự đăng nhập lại ngay khi bật máy. Đóng cửa sổ chỉ ẩn xuống khay; muốn tắt hẳn thì chọn Thoát.',
+  autostartDev: 'Bản dev không đăng ký chạy cùng hệ điều hành.',
+  aboutVersion: 'Phiên bản', checkUpdate: 'Kiểm tra cập nhật', installUpdate: 'Cập nhật lên bản',
+  updateHint: 'Vala Desktop tự kiểm tra bản mới lúc mở và 4 giờ một lần.', noUpdate: 'Bản này không tự cập nhật được (bản dev hoặc bản zip).',
+  homeHint: 'Trang mở ở tab Vala để thử. Bản cho người dùng luôn dùng trang quản trị đặt trên cổng.',
+  homeLabel: 'Địa chỉ trang chính', homeSave: 'Lưu', homeUseServer: 'Dùng trang của máy chủ',
+  homeSaved: 'Đã lưu trang chính', homeServer: 'Đang dùng trang của máy chủ',
+  badHome: 'Địa chỉ không hợp lệ (cần https://, hoặc http://localhost)',
+};
+const en: typeof vi = {
+  title: 'Settings',
+  navAccount: 'Account', navPasswords: 'Passwords', navAppearance: 'Appearance', navStartup: 'Startup', navAbout: 'About', navHome: 'Home page (dev)',
+  accountHint: 'Vala Desktop uses the account you sign in with on the Reports tab to keep your source-system sessions and send them to Vala to fetch data for you.',
+  notSignedIn: 'Not signed in.', signIn: 'Sign in', signedInAs: 'Signed in as', serverIs: 'Server',
+  openPortal: 'Open reporting portal', logout: 'Sign out',
+  pwHint: 'Passwords for your systems (eGov, eTask, document systems…) are kept in the operating system’s password store on this computer. To view, change, delete or turn automatic sign-in on/off: right-click that system’s tab, or use the ⋯ menu at the right of the tab bar.',
+  langLabel: 'Language', themeLabel: 'Color mode', themeLight: 'Light', themeDark: 'Dark', themeSystem: 'System',
+  autostartLabel: 'Start Vala Desktop with the operating system, hidden in the system tray',
+  autostartHint: 'So Vala Desktop keeps sessions and signs in again as soon as the computer starts. Closing the window only hides it to the tray; choose Quit to exit.',
+  autostartDev: 'The dev build does not register to start with the operating system.',
+  aboutVersion: 'Version', checkUpdate: 'Check for updates', installUpdate: 'Update to version',
+  updateHint: 'Vala Desktop checks for a new version when it starts and every 4 hours.', noUpdate: 'This copy cannot update itself (dev or zip build).',
+  homeHint: 'The page opened in the Vala tab, for testing. The user build always uses the page the administrator sets on the portal.',
+  homeLabel: 'Home page address', homeSave: 'Save', homeUseServer: 'Use the server’s page',
+  homeSaved: 'Home page saved', homeServer: 'Using the server’s page',
+  badHome: 'Invalid address (must be https://, or http://localhost)',
+};
+export const strings = { vi, en };

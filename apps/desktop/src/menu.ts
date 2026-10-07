@@ -53,7 +53,7 @@ const M = messages({
 });
 
 export interface MenuActions {
-  showMain: () => void; showPortal: () => void; openSettings: () => void; signOut: () => void;
+  showMain: () => void; showPortal: () => void; openSettings: (section?: string) => void; signOut: () => void;
   /** Mở hộp đổi mật khẩu của cổng (cổng ẩn header trong app — mục này thay cho menu người dùng của cổng). */
   changePassword: () => void;
 }
@@ -146,7 +146,7 @@ function appMenu(): Menu {
       { label: t.zoomReset, role: 'resetZoom' },
     ] },
     { label: t.settingsMenu, submenu: [
-      { label: t.settings, click: actions.openSettings },
+      { label: t.settings, click: () => actions.openSettings() },
       updateItem(t),
       { label: t.version(app.getVersion()), enabled: false },
       { type: 'separator' },
@@ -166,7 +166,7 @@ export function trayMenu(): Menu {
     { type: 'separator' },
     // Tài khoản đăng nhập bằng mật khẩu (không phải SSO) ⇒ đổi mật khẩu ngay trong cổng.
     ...(s.deviceToken && portalHasPassword() ? [{ label: t.changePassword, click: actions.changePassword }] : []),
-    { label: t.settings, click: actions.openSettings },
+    { label: t.settings, click: () => actions.openSettings() },
     updateItem(t),
     { label: t.version(app.getVersion()), enabled: false },
     { type: 'separator' },
@@ -185,7 +185,7 @@ export function profileMenu(): Menu {
       { type: 'separator' as const },
     ] : []),
     ...(s.deviceToken && portalHasPassword() ? [{ label: t.changePassword, click: actions.changePassword }] : []),
-    { label: t.settings, click: actions.openSettings },
+    { label: t.settings, click: () => actions.openSettings() },
     updateItem(t),
     { label: t.version(app.getVersion()), enabled: false },
     { type: 'separator' },

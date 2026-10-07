@@ -155,7 +155,48 @@ function layout(): void {
   for (const t of tabs.values()) t.view?.setBounds(bounds);
 }
 
+// ---- tab Cài đặt (như chrome://settings): trang cục bộ, preload riêng, không điều hướng đi đâu ----
+const SETTINGS = 'settings';
+let settingsSection = '';
+
+function createSettingsView(t: Tab): WebContentsView {
+  const view = new WebContentsView({ webPreferences: { preload: join(__dirname, 'settings-preload.js') } });
+  t.view = view;
+  win!.contentView.addChildView(view);
+  view.setVisible(false);
+  const wc = view.webContents;
+  wc.setWindowOpenHandler(() => ({ action: 'deny' }));
+  wc.on('will-navigate', (e) => e.preventDefault());
+  wc.on('page-title-updated', () => pushState());
+  wc.on('before-input-event', (e, input) => { if (shortcut(input)) e.preventDefault(); });
+  void wc.loadFile(join(__dirname, '../resources/settings.html'), settingsSection ? { hash: settingsSection } : undefined);
+  layout();
+  return view;
+}
+
+/** Mở (hoặc chuyển tới) tab Cài đặt; `section` (vd 'mat-khau') ⇒ nhảy tới mục đó. */
+export function openSettingsTab(section = ''): void {
+  ensureWindow();
+  settingsSection = section;
+  if (!tabs.has(SETTINGS)) {
+    tabs.set(SETTINGS, { key: SETTINGS, pinned: false, url: '', view: null });
+    order.push(SETTINGS);
+  } else if (section) {
+    tabs.get(SETTINGS)!.view?.webContents.send('vala:settings-section', section);
+  }
+  showTab(SETTINGS);
+}
+
+export const isSettingsContents = (wc: WebContents): boolean => tabs.get(SETTINGS)?.view?.webContents === wc;
+
+/** Báo tab Cài đặt (nếu đang mở) vẽ lại. */
+export function pushSettings(): void {
+  const wc = tabs.get(SETTINGS)?.view?.webContents;
+  if (wc && !wc.isDestroyed()) wc.send('vala:settings-changed');
+}
+
 function createView(t: Tab): WebContentsView {
+  if (t.key === SETTINGS) return createSettingsView(t);
   const view = new WebContentsView({ webPreferences: { preload: TAB_PRELOAD } });
   t.view = view;
   win!.contentView.addChildView(view);

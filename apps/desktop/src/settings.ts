@@ -21,6 +21,8 @@ export interface Settings {
   lang: Lang;
   /** Sáng / tối / theo hệ điều hành — chung cho thanh tab, Cài đặt và cổng (prefs.ts). */
   theme: ThemeMode;
+  /** Chạy cùng hệ điều hành (ẩn ở khay). Không đặt ⇒ bật. Chỉ có tác dụng ở bản cài. */
+  autostart?: boolean;
   /** Chỉ bản dev: trang chính tự đặt để thử (đè trang quản trị đặt trên cổng). Bản cho người dùng bỏ qua trường này. */
   devHomeUrl?: string | null;
 }
