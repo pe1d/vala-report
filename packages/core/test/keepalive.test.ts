@@ -19,7 +19,7 @@ function setup(respond: (cookie: string) => Response) {
   const conn = new ConnectionSessions({
     secrets, tenant: 't', specs: [spec],
     sourceInfo: async () => ({ baseUrl: 'https://nguon.example', loginHosts: [] }),
-    fetchImpl: async (_url, init) => { const c = (init.headers as Record<string, string>).Cookie; seen.push(c); return respond(c); },
+    fetchImpl: async (_url, init) => { const c = (init.headers as Record<string, string>).Cookie ?? ''; seen.push(c); return respond(c); },
   });
   return { secrets, conn, seen, ref: vaultRef('t', 7, 'thu') };
 }
