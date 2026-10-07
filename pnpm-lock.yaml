@@ -377,6 +377,12 @@ importers:
         specifier: ^2.1.9
         version: 2.1.9(@types/node@18.19.130)(supports-color@7.2.0)
 
+  tools/qlvb-webforms:
+    devDependencies:
+      vitest:
+        specifier: ^2.1.9
+        version: 2.1.9(@types/node@20.19.43)(supports-color@7.2.0)
+
 packages:
 
   7zip-bin@5.2.0:

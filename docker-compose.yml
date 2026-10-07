@@ -141,6 +141,18 @@ services:
 
   # minio: thêm ở giai đoạn xuất file bất đồng bộ.
 
+  # Hệ thống ASP.NET WebForms giả lập cho T07 (tools/qlvb-webforms): http://localhost:4030
+  # Cán bộ: vanthu (văn thư), chanhvp, chuyenvien, truongtc, truongnv, canbonv — mật khẩu Qlvb@2026.
+  qlvb-webforms:
+    profiles: [dev, qlvb]
+    build:
+      context: ./tools/qlvb-webforms
+      args:
+        http_proxy: ${HTTP_PROXY:-}
+        https_proxy: ${HTTPS_PROXY:-}
+    restart: ${RESTART_POLICY:-no}
+    ports: ["4030:4030"]
+
 volumes:
   pgdata:
   crawlab-mongo:

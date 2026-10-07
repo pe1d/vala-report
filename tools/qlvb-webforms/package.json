@@ -1,0 +1,11 @@
+{
+  "name": "@vala/qlvb-webforms",
+  "private": true,
+  "description": "Hệ thống ASP.NET WebForms giả lập cho T07 — chỉ dùng để thử, không triển khai cho người dùng",
+  "scripts": {
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "vitest": "^2.1.9"
+  }
+}

@@ -1,0 +1,45 @@
+<%@ Master Language="C#" %>
+<script runat="server">
+  // Mọi trang (trừ Login) đi qua đây: thiếu Forms auth HOẶC Session ⇒ về trang đăng nhập, như hệ thống thật hết phiên.
+  protected void Page_Init(object sender, EventArgs e) {
+    if (Store.HienTai(Context) != null) return;
+    FormsAuthentication.SignOut();
+    Response.Redirect("~/Login.aspx?ReturnUrl=" + HttpUtility.UrlEncode(Request.RawUrl), true);
+  }
+  protected void Page_Load(object sender, EventArgs e) {
+    var cb = Store.HienTai(Context);
+    lblUser.Text = cb.HoTen + " (" + cb.TenDangNhap + ")";
+  }
+  protected void lnkThoat_Click(object sender, EventArgs e) {
+    Session.Abandon();
+    FormsAuthentication.SignOut();
+    Response.Redirect("~/Login.aspx");
+  }
+</script>
+<!DOCTYPE html>
+<html>
+<head runat="server">
+  <meta charset="utf-8" />
+  <title>QLVB Thử nghiệm</title>
+  <style>
+    body { font: 13px Tahoma, Arial, sans-serif; margin: 0; background: #eef2f7; color: #222 }
+    .top { background: #1f4e8c; color: #fff; padding: 8px 16px } .top a { color: #fff; margin-left: 16px }
+    .user { float: right } .main { background: #fff; margin: 12px; padding: 12px 16px; border: 1px solid #c9d3e0 }
+    table.grid { border-collapse: collapse; width: 100% } .grid th, .grid td { border: 1px solid #c9d3e0; padding: 4px 6px }
+    .grid th { background: #dfe7f2 } .loi { color: #b00020 } .tb { color: #0a6b2c } label { margin-right: 8px }
+    .o { margin: 6px 0 } .o > span.nhan { display: inline-block; width: 120px }
+  </style>
+</head>
+<body>
+  <form id="form1" runat="server">
+    <asp:ScriptManager ID="sm" runat="server" />
+    <div class="top">
+      <b>QLVB Thử nghiệm</b>
+      <a href="VanBan.aspx">Văn bản</a> <a href="DuThao.aspx">Tạo dự thảo</a>
+      <span class="user">Xin chào, <asp:Label ID="lblUser" runat="server" /> ·
+        <asp:LinkButton ID="lnkThoat" runat="server" OnClick="lnkThoat_Click" CausesValidation="false">Đăng xuất</asp:LinkButton></span>
+    </div>
+    <div class="main"><asp:ContentPlaceHolder ID="MainContent" runat="server" /></div>
+  </form>
+</body>
+</html>
