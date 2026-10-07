@@ -23,20 +23,26 @@ spec:
           args:
             - |
               set -e
+              # build <tên image> <Dockerfile> <phiên bản>
               build() {
-                echo "==> build $1 ($2)"
+                echo "==> build $1:$3 ($2)"
                 buildctl-daemonless.sh build --progress plain --frontend dockerfile.v0 \
                   --local context=/src --local dockerfile=/src --opt filename="$2" \
                   --opt build-arg:HTTP_PROXY="$HTTP_PROXY" --opt build-arg:HTTPS_PROXY="$HTTP_PROXY" \
                   --opt build-arg:http_proxy="$HTTP_PROXY" --opt build-arg:https_proxy="$HTTP_PROXY" \
                   --opt build-arg:VITE_BASE_PATH="WEB_BASE_PATH" \
-                  --output "type=docker,name=docker.io/library/$1:VALA_VERSION,dest=/out/$1-VALA_VERSION.tar.part"
-                mv "/out/$1-VALA_VERSION.tar.part" "/out/$1-VALA_VERSION.tar"
+                  --output "type=docker,name=docker.io/library/$1:$3,dest=/out/$1-$3.tar.part"
+                mv "/out/$1-$3.tar.part" "/out/$1-$3.tar"
               }
-              build vala-report-node infra/node.Dockerfile
-              build vala-report-web infra/web/Dockerfile
-              # Runner (Chromium) không bắt buộc: lỗi (vd không tải được gói Debian) thì bỏ qua, cổng vẫn triển khai được.
-              build vala-report-runner infra/runner.Dockerfile || { rm -f /out/vala-report-runner-VALA_VERSION.tar.part; echo "!! build runner lỗi — bỏ qua"; }
+              build vala-report-node infra/node.Dockerfile VALA_VERSION
+              build vala-report-web infra/web/Dockerfile VALA_VERSION
+              # Runner (Chromium) chỉ build khi mã của nó đổi (build-images.sh đặt BUILD_RUNNER), và không bắt buộc: lỗi (vd
+              # không tải được gói Debian) thì bỏ qua, cổng vẫn triển khai được.
+              if [ "BUILD_RUNNER" = 1 ]; then
+                build vala-report-runner infra/runner.Dockerfile RUNNER_VERSION || { rm -f /out/vala-report-runner-RUNNER_VERSION.tar.part; echo "!! build runner lỗi — bỏ qua"; }
+              else
+                echo "==> runner RUNNER_VERSION đã có — không build lại"
+              fi
               echo "==> xong"
           env:
             # Máy chủ phải qua proxy mới ra Internet (tải image gốc, thư viện npm)? build-images.sh điền BUILD_HTTP_PROXY.

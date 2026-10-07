@@ -17,6 +17,14 @@ version() {
   git -C "$ROOT" diff --quiet HEAD 2>/dev/null || v="$v-dirty"
   echo "$v"
 }
+# Phiên bản image runner (Chromium, ~1,8 GB): theo mã băm CHÍNH các tệp tạo nên nó, không theo commit ⇒ deploy chỉ sửa
+# api/web không build lại runner (build + xuất + nạp image lớn mất vài phút mỗi lần).
+RUNNER_PATHS=(infra/runner.Dockerfile apps/runner packages/core package.json pnpm-lock.yaml pnpm-workspace.yaml)
+runner_version() {
+  local v; v="r$(git -C "$ROOT" ls-tree -r HEAD -- "${RUNNER_PATHS[@]}" 2>/dev/null | sha256sum | cut -c1-12)"
+  git -C "$ROOT" diff --quiet HEAD -- "${RUNNER_PATHS[@]}" 2>/dev/null || v="$v-dirty"
+  echo "$v"
+}
 # KHÔNG dùng grep -q: với pipefail, grep thoát ngay khi thấy ⇒ ctr (danh sách image dài trên k3s dùng chung) bị SIGPIPE
 # ⇒ cả lệnh tính là lỗi ⇒ báo nhầm "Chưa có image" dù image đã có. Để grep đọc hết đầu ra.
 has_image() { $CTR images ls -q | grep -x "docker.io/library/$1:$2" >/dev/null; }

@@ -1,5 +1,6 @@
 # Runner — chạy gói kịch bản Vala Desktop trên máy chủ (Chromium không giao diện), chỉ api gọi (Bearer INTERNAL_TOKEN).
-# Image vala-report-runner build cùng lúc với node/web (build-job.yaml); build lỗi thì deploy.sh bỏ qua runner, cổng vẫn
+# Image vala-report-runner build cùng lúc với node/web nhưng CHỈ khi mã của runner đổi (tag theo mã băm, lib.sh
+# runner_version); build lỗi thì deploy.sh bỏ qua runner, cổng vẫn
 # chạy — chỉ thiếu "Chạy trên máy chủ" ở trang Kịch bản Desktop.
 apiVersion: v1
 kind: Service
@@ -25,7 +26,7 @@ spec:
       enableServiceLinks: false
       containers:
         - name: runner
-          image: vala-report-runner:VALA_VERSION
+          image: vala-report-runner:RUNNER_VERSION
           imagePullPolicy: Never
           envFrom:
             - secretRef: { name: vala-env }       # INTERNAL_TOKEN, SOURCE_HTTP_PROXY

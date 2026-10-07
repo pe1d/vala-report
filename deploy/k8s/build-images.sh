@@ -7,12 +7,14 @@
 # Thư mục trên máy chủ: /var/lib/vala-report/{images,buildkit} (image vừa build, cache build — xoá được bất cứ lúc nào).
 source "$(dirname "$0")/lib.sh"
 VER="${1:-$(version)}"
+RV="$(runner_version)"
+BUILD_RUNNER=1; has_image vala-report-runner "$RV" && BUILD_RUNNER=0
 DATA_DIR="${VALA_DATA_DIR:-/var/lib/vala-report}"
 IMAGES="$DATA_DIR/images"
 
 echo "==> Build image phiên bản $VER từ $ROOT"
 k delete job vala-build --ignore-not-found --wait=true >/dev/null
-sed -e "s|VALA_VERSION|$VER|g" -e "s|SRC_DIR|$ROOT|" -e "s|IMAGES_DIR|$IMAGES|" -e "s|CACHE_DIR|$DATA_DIR/buildkit|" \
+sed -e "s|VALA_VERSION|$VER|g" -e "s|RUNNER_VERSION|$RV|g" -e "s|BUILD_RUNNER|$BUILD_RUNNER|g" -e "s|SRC_DIR|$ROOT|" -e "s|IMAGES_DIR|$IMAGES|" -e "s|CACHE_DIR|$DATA_DIR/buildkit|" \
   -e "s|BUILD_PROXY|${BUILD_HTTP_PROXY:-}|g" -e "s|WEB_BASE_PATH|${WEB_BASE_PATH:-/}|g" \
   "$K8S/build-job.yaml" | k apply -f - >/dev/null
 # Theo log tới khi Job xong (lần build đầu 5–15 phút: tải image gốc + thư viện npm; sau đó có cache nhanh hơn).
@@ -39,15 +41,22 @@ for img in vala-report-node vala-report-web; do
   has_image "$img" "$VER" || { echo "Nạp $img:$VER không thành công"; exit 1; }
 done
 # Runner (chạy kịch bản Vala Desktop trên máy chủ) không bắt buộc: build lỗi thì không có tệp, bỏ qua.
-if $SUDO test -s "$IMAGES/vala-report-runner-$VER.tar"; then
-  $CTR images import "$IMAGES/vala-report-runner-$VER.tar" >/dev/null && $SUDO rm -f "$IMAGES/vala-report-runner-$VER.tar"
+if [ "$BUILD_RUNNER" = 0 ]; then
+  :
+elif $SUDO test -s "$IMAGES/vala-report-runner-$RV.tar"; then
+  $CTR images import "$IMAGES/vala-report-runner-$RV.tar" >/dev/null && $SUDO rm -f "$IMAGES/vala-report-runner-$RV.tar"
+  echo "$RV" | $SUDO tee -a "$DATA_DIR/runner-versions.log" >/dev/null
+  # Runner: giữ 2 bản gần nhất.
+  for old in $($SUDO tac "$DATA_DIR/runner-versions.log" | awk '!seen[$0]++' | tail -n +3); do
+    has_image vala-report-runner "$old" && $CTR images rm "docker.io/library/vala-report-runner:$old" >/dev/null || true
+  done
 else
-  echo "(không có image runner bản $VER — bỏ qua; xem log build ở trên)"
+  echo "(không có image runner $RV — bỏ qua; xem log build ở trên)"
 fi
 # Giữ image của 3 phiên bản build gần nhất (để quay lại được); chỉ xoá image của Vala.
 echo "$VER" | $SUDO tee -a "$DATA_DIR/versions.log" >/dev/null
 for old in $($SUDO tac "$DATA_DIR/versions.log" | awk '!seen[$0]++' | tail -n +4); do
-  for img in vala-report-node vala-report-web vala-report-runner; do
+  for img in vala-report-node vala-report-web; do
     has_image "$img" "$old" && $CTR images rm "docker.io/library/$img:$old" >/dev/null || true
   done
 done

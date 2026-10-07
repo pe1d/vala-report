@@ -54,7 +54,8 @@ fi
 has_image vala-report-node "$VER" && has_image vala-report-web "$VER" || { echo "Chưa có image $VER trong k3s"; exit 1; }
 
 # Điền phiên bản + mã băm cấu hình; nhiều file ⇒ ngăn bằng '---' (không thì YAML cuối file này dính vào đầu file sau).
-render() { for f; do sed -e "s|VALA_VERSION|$VER|g" -e "s|CONFIG_HASH|$CONFIG_HASH|g" "$f"; echo "---"; done; }
+RV="$(runner_version)"
+render() { for f; do sed -e "s|VALA_VERSION|$VER|g" -e "s|RUNNER_VERSION|$RV|g" -e "s|CONFIG_HASH|$CONFIG_HASH|g" "$f"; echo "---"; done; }
 
 echo "==> CSDL, Redis, Vault, Crawlab"
 render "$K8S/data.yaml" "$K8S/crawlab.yaml" | k apply -f - >/dev/null
@@ -78,11 +79,11 @@ echo "==> api, worker, web ($WEB_EXPOSE)"
 render "$K8S/app.yaml" "$K8S/web-$WEB_EXPOSE.yaml" | k apply -f - >/dev/null
 for d in api worker web; do k rollout status "deployment/$d" --timeout=300s >/dev/null; done
 # Runner chạy kịch bản trên máy chủ: chỉ khi build được image (không bắt buộc — lỗi thì cổng vẫn chạy bình thường).
-if has_image vala-report-runner "$VER"; then
+if has_image vala-report-runner "$RV"; then
   render "$K8S/runner.yaml" | k apply -f - >/dev/null
   k rollout status deployment/runner --timeout=300s >/dev/null || echo "!! runner chưa chạy — xem: $KUBECTL -n $NS logs deploy/runner"
 else
-  echo "(chưa có image runner bản $VER — bỏ qua runner)"
+  echo "(chưa có image runner $RV — bỏ qua runner; build lại: FORCE_BUILD=1 deploy/k8s/deploy.sh)"
 fi
 
 echo "==> Kiểm tra"
