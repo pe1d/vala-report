@@ -2,7 +2,8 @@
  * Tự điền / tự đăng nhập hệ thống nguồn bằng mật khẩu lưu trong máy (credentials.ts) — T08.
  *
  *   - Chỉ trên đúng các host của hệ thống đó: trang chính, trang đăng nhập (login_url) và host đăng nhập máy chủ khai
- *     (login_hosts, vd iam.bkav.com). Trang khác không bao giờ nhận mật khẩu.
+ *     (login_hosts, vd iam.bkav.com). Trang KHÔNG khai trên cổng (vd QLVB của đơn vị) thì lưu / điền theo đúng host của
+ *     trang đó, như trình duyệt (targetForUrl). Trang khác host không bao giờ nhận mật khẩu.
  *   - Trang có form đăng nhập (ô mật khẩu đang hiện) ⇒ gói kịch bản của hệ thống có thao tác `dang_nhap` thì gọi nó
  *     ({ username, password }), không thì tự tìm ô tên đăng nhập + mật khẩu, điền rồi bấm đăng nhập.
  *   - Đăng nhập tự động lỗi (form đăng nhập lại hiện trong 90 giây) ⇒ dừng tự đăng nhập hệ thống đó cho tới khi người dùng
@@ -18,6 +19,7 @@ import { messages } from './i18n';
 import { runAction } from './scripts';
 import { getSettings } from './settings';
 import { cachedSources, type SourceFull } from './sync';
+import { isPortalUrl } from './ui-cache';
 
 const M = messages({
   saveTitle: (ten: string) => `Lưu mật khẩu ${ten}?`,
@@ -55,6 +57,20 @@ export function sourceForUrl(url: string): SourceFull | null {
   try { const u = new URL(url); if (!/^https?:$/.test(u.protocol)) return null; host = u.host; } catch { return null; }
   if (!getSettings().deviceToken) return null;
   return cachedSources().find((s) => loginHostsOf(s).includes(host)) ?? null;
+}
+
+/**
+ * Đích lưu / điền mật khẩu của một trang: hệ thống nguồn khai trên cổng (khoá = mã nguồn, gồm cả host đăng nhập SSO của
+ * nó), hoặc BẤT KỲ trang nào khác mở trong ứng dụng (vd QLVB của một đơn vị) — khoá theo đúng host `site:<host>`, như
+ * trình duyệt. Trang cổng Vala Reporting thì không (mật khẩu cổng không lưu ở đây).
+ */
+export interface LoginTarget { key: string; ten: string; src: SourceFull | null }
+export function targetForUrl(url: string): LoginTarget | null {
+  let u: URL;
+  try { u = new URL(url); } catch { return null; }
+  if (!/^https?:$/.test(u.protocol) || isPortalUrl(url)) return null;
+  const src = sourceForUrl(url);
+  return src ? { key: src.code, ten: src.ten, src } : { key: `site:${u.host}`, ten: u.host, src: null };
 }
 
 /** Mã chạy trong trang: có form đăng nhập (ô mật khẩu đang hiện) không. */
@@ -109,35 +125,36 @@ const inFlight = new Set<string>();
 
 async function maybeFill(wc: WebContents, frame: WebFrameMain | null | undefined) {
   if (!frame) return;
-  const src = sourceForUrl(frame.url);
-  if (!src || failed.has(src.code) || inFlight.has(src.code)) return;
-  const saved = savedCredential(src.code);
+  const tg = targetForUrl(frame.url);
+  if (!tg || failed.has(tg.key) || inFlight.has(tg.key)) return;
+  const saved = savedCredential(tg.key);
   if (!saved?.auto) return;
-  inFlight.add(src.code);
+  inFlight.add(tg.key);
   try {
     const form = await hasLoginForm(frame);
     if (form === 'unknown') return;
     if (form === 'no') {
       // Trang của nguồn chắc chắn không còn form đăng nhập ⇒ lần tự đăng nhập trước (nếu có) đã thành công.
-      lastAttempt.delete(src.code);
+      lastAttempt.delete(tg.key);
       return;
     }
     // Vừa tự đăng nhập mà form lại hiện ⇒ mật khẩu sai / đổi: dừng, báo người dùng một lần.
-    const last = lastAttempt.get(src.code);
-    if ((last && Date.now() - last < RETRY_WINDOW_MS) || !allowAttempt(src.code)) {
-      failed.add(src.code);
+    const last = lastAttempt.get(tg.key);
+    if ((last && Date.now() - last < RETRY_WINDOW_MS) || !allowAttempt(tg.key)) {
+      failed.add(tg.key);
       // Bấm ⇒ mở tab hệ thống đó để người dùng đăng nhập tay (rồi được hỏi lưu mật khẩu mới).
-      notify(T().failedTitle(src.ten), T().failedBody, () => showSourceTab(src));
+      const src = tg.src;
+      notify(T().failedTitle(tg.ten), T().failedBody, src ? () => showSourceTab(src) : undefined);
       return;
     }
-    const cred = await useCredential(src.code);
+    const cred = await useCredential(tg.key);
     if (!cred) return;
-    lastAttempt.set(src.code, Date.now());
+    lastAttempt.set(tg.key, Date.now());
     const pkg = await frame.executeJavaScript(`!!(window.__vala && window.__vala.has('dang_nhap'))`).catch(() => false);
     if (pkg) { await runAction(wc, 'dang_nhap', cred); return; }
     await frame.executeJavaScript(fillScript(cred.username, cred.password)).catch(() => { /* trang vừa chuyển */ });
   } finally {
-    inFlight.delete(src.code);
+    inFlight.delete(tg.key);
   }
 }
 
@@ -172,27 +189,27 @@ const asking = new Set<string>();
 
 async function offerSave(e: IpcMainInvokeEvent, username: unknown, password: unknown) {
   if (typeof username !== 'string' || typeof password !== 'string' || !password || password.length > 500 || username.length > 200) return;
-  const src = e.senderFrame ? sourceForUrl(e.senderFrame.url) : null;
-  if (!src || !secureStorageAvailable() || neverSave(src.code) || asking.has(src.code)) return;
+  const tg = e.senderFrame ? targetForUrl(e.senderFrame.url) : null;
+  if (!tg || !secureStorageAvailable() || neverSave(tg.key) || asking.has(tg.key)) return;
   const user = username.trim();
   // Trùng mật khẩu đã lưu (gồm cả cú bấm do chính phần tự điền) ⇒ không hỏi, KHÔNG xoá trạng thái lỗi / bộ đếm — nếu
   // xoá, mật khẩu sai sẽ bị thử lại liên tục (khoá tài khoản nguồn).
-  if (!user || sameAsSaved(src.code, user, password)) return;
-  asking.add(src.code);
+  if (!user || sameAsSaved(tg.key, user, password)) return;
+  asking.add(tg.key);
   try {
     const t = T();
     const win = BrowserWindow.fromWebContents(e.sender) ?? BrowserWindow.getAllWindows()[0];
     const opts = { type: 'question' as const, buttons: [t.save, t.later, t.never], defaultId: 0, cancelId: 1, noLink: true,
-      title: t.saveTitle(src.ten), message: t.saveMessage(src.ten, user), detail: t.saveDetail };
+      title: t.saveTitle(tg.ten), message: t.saveMessage(tg.ten, user), detail: t.saveDetail };
     const r = win ? await dialog.showMessageBox(win, opts) : await dialog.showMessageBox(opts);
-    if (r.response === 0 && saveCredential(src.code, user, password)) clearFailure(src.code);
-    if (r.response === 2) setNeverSave(src.code, true);
-  } finally { asking.delete(src.code); }
+    if (r.response === 0 && saveCredential(tg.key, user, password)) clearFailure(tg.key);
+    if (r.response === 2) setNeverSave(tg.key, true);
+  } finally { asking.delete(tg.key); }
 }
 
 export function registerAutofill() {
-  // Preload hỏi: trang này có phải trang đăng nhập của một nguồn không (chỉ khi đó mới theo dõi form đăng nhập).
-  ipcMain.handle('vala:login-host', (e) => !!(e.senderFrame && sourceForUrl(e.senderFrame.url)) && secureStorageAvailable());
+  // Preload hỏi: trang này có lưu được mật khẩu không (mọi trang http(s) trừ cổng Vala) — chỉ khi đó mới theo dõi form.
+  ipcMain.handle('vala:login-host', (e) => !!(e.senderFrame && targetForUrl(e.senderFrame.url)) && secureStorageAvailable());
   ipcMain.handle('vala:login-captured', (e, a: { username?: unknown; password?: unknown }) => offerSave(e, a?.username, a?.password));
 }
 

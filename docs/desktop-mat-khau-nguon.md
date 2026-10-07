@@ -18,6 +18,13 @@ bằng **kho mật khẩu của hệ điều hành** và tự đăng nhập lạ
   - Bấm Huỷ thì app không dùng mật khẩu trong phiên đó.
 - Đăng xuất app thì app khoá lại. Mật khẩu đã lưu vẫn giữ trong máy.
 
+## Trang không khai trên cổng
+
+Ngoài hệ thống nguồn khai trên cổng, **mọi trang** mở trong app (ví dụ QLVB của một đơn vị) cũng lưu được mật khẩu. Mật
+khẩu lưu theo đúng host của trang (`site:<host>`), giống trình duyệt, và chỉ được điền lại trên đúng host đó. Quản lý ở
+chuột phải lên tab của trang đó, hoặc ở menu ⋯ → **Mật khẩu đã lưu cho trang khác**. Trang cổng Vala Reporting không
+lưu ở đây.
+
 ## Tự điền và tự đăng nhập
 
 - App chỉ điền trên đúng các host của hệ thống đó: trang chính, `login_url`, và `login_hosts` do máy chủ gửi qua

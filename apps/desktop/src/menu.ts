@@ -12,7 +12,8 @@ import { messages } from './i18n';
 import { portalHasPassword } from './portal-state';
 import { getSettings } from './settings';
 import { cachedSources, events, statusOf, syncAll, type SourceFull, type SyncResult } from './sync';
-import { deleteCredential, savedCredential, secureStorageAvailable, setAutoLogin } from './credentials';
+import { deleteCredential, listCredentials, savedCredential, secureStorageAvailable, setAutoLogin } from './credentials';
+import { targetForUrl } from './autofill';
 import { openCredentialDialog } from './credential-window';
 import { checkNow, installNow, pendingUpdate } from './updater';
 import { openSourceTab } from './windows';
@@ -27,6 +28,7 @@ const M = messages({
   open: (ten: string) => `Mở ${ten}`, credSaved: (u: string) => `Mật khẩu: ${u} ✓ đã lưu`, credNone: 'Chưa lưu mật khẩu',
   credAuto: 'Tự đăng nhập lại', credEnter: 'Lưu mật khẩu…', credChange: 'Đổi mật khẩu…', credDelete: 'Xoá mật khẩu',
   credUnavailable: 'Máy chưa có kho mật khẩu của hệ điều hành',
+  otherSites: 'Mật khẩu đã lưu cho trang khác', noOtherSites: '(chưa có)',
   checkUpdate: 'Kiểm tra cập nhật', installUpdate: (v: string) => `Cập nhật lên bản ${v}`, version: (v: string) => `Phiên bản ${v}`,
   result: {
     sent: 'đã kết nối', unchanged: 'đã kết nối', managed: 'hệ thống tự đăng nhập', not_logged_in: 'chưa đăng nhập',
@@ -42,6 +44,7 @@ const M = messages({
   open: (ten: string) => `Open ${ten}`, credSaved: (u: string) => `Password: ${u} ✓ saved`, credNone: 'No saved password',
   credAuto: 'Sign in again automatically', credEnter: 'Save password…', credChange: 'Change password…', credDelete: 'Delete password',
   credUnavailable: 'No operating-system password store on this computer',
+  otherSites: 'Saved passwords for other sites', noOtherSites: '(none)',
   checkUpdate: 'Check for updates', installUpdate: (v: string) => `Update to version ${v}`, version: (v: string) => `Version ${v}`,
   result: {
     sent: 'connected', unchanged: 'connected', managed: 'signed in automatically', not_logged_in: 'not signed in',
@@ -64,6 +67,13 @@ let actions: MenuActions;
  */
 export function sourceMenuItems(src: SourceFull): MenuItemConstructorOptions[] {
   const t = M[getSettings().lang];
+  return [{ label: t.open(src.ten), click: () => openSourceTab(src) }, { type: 'separator' }, ...credentialItems(src)];
+}
+
+/** Mật khẩu đã lưu của một đích (hệ thống nguồn: mã nguồn; trang khác: site:<host>). */
+function credentialItems(target: { code: string; ten: string }): MenuItemConstructorOptions[] {
+  const t = M[getSettings().lang];
+  const src = target;
   const saved = savedCredential(src.code);
   const refresh = () => refreshMenus();
   const cred: MenuItemConstructorOptions[] = !secureStorageAvailable()
@@ -74,19 +84,35 @@ export function sourceMenuItems(src: SourceFull): MenuItemConstructorOptions[] {
         { label: saved ? t.credChange : t.credEnter, click: () => openCredentialDialog(src, refresh) },
         ...(saved ? [{ label: t.credDelete, click: () => { deleteCredential(src.code); refresh(); } }] : []),
       ];
-  return [{ label: t.open(src.ten), click: () => openSourceTab(src) }, { type: 'separator' }, ...cred];
+  return cred;
 }
 
-/** Menu chuột phải trên tab nguồn (key src:<mã>); tab khác ⇒ null. */
-export function tabContextMenu(key: string): Menu | null {
+/**
+ * Menu chuột phải trên một tab: tab hệ thống nguồn ⇒ mở + mật khẩu của hệ thống; tab trang khác (vd QLVB của đơn vị) ⇒ mật
+ * khẩu của đúng trang đó. Tab cổng Vala / trang không phải web ⇒ null.
+ */
+export function tabContextMenu(key: string, url: string): Menu | null {
   const src = getSettings().deviceToken ? cachedSources().find((x) => `src:${x.code}` === key) : undefined;
-  return src ? Menu.buildFromTemplate(sourceMenuItems(src)) : null;
+  if (src) return Menu.buildFromTemplate(sourceMenuItems(src));
+  const tg = targetForUrl(url);
+  if (!tg) return null;
+  return Menu.buildFromTemplate([{ label: tg.ten, enabled: false }, { type: 'separator' }, ...credentialItems({ code: tg.key, ten: tg.ten })]);
+}
+
+/** Mật khẩu đã lưu cho các trang không khai trên cổng (site:<host>) — trong menu ⋯. */
+function otherSiteItems(): MenuItemConstructorOptions {
+  const t = M[getSettings().lang];
+  const sites = Object.keys(listCredentials()).filter((k) => k.startsWith('site:')).sort();
+  return {
+    label: t.otherSites,
+    submenu: sites.length ? sites.map((k) => ({ label: k.slice(5), submenu: credentialItems({ code: k, ten: k.slice(5) }) })) : [{ label: t.noOtherSites, enabled: false }],
+  };
 }
 
 function sourceItems(): MenuItemConstructorOptions[] {
   const s = getSettings();
   const t = M[s.lang];
-  if (!s.deviceToken) return [{ label: t.signInFirst, enabled: false }];
+  if (!s.deviceToken) return [{ label: t.signInFirst, enabled: false }, { type: 'separator' }, otherSiteItems()];
   const items: MenuItemConstructorOptions[] = cachedSources().map((src) => {
     const r = statusOf(src.code)?.result;
     return { label: r ? `${src.ten} — ${t.result[r]}` : src.ten, submenu: sourceMenuItems(src) };
@@ -94,6 +120,7 @@ function sourceItems(): MenuItemConstructorOptions[] {
   return [
     ...(items.length ? items : [{ label: t.noSources, enabled: false }]),
     { type: 'separator' },
+    otherSiteItems(),
     { label: t.syncNow, click: () => void syncAll(true) },
   ];
 }

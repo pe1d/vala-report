@@ -28,7 +28,7 @@ const M = messages({
 let win: BrowserWindow | null = null;
 const CHANNELS = ['vala:cred-dialog-state', 'vala:cred-dialog-save', 'vala:cred-dialog-cancel'];
 
-export function openCredentialDialog(src: SourceFull, onSaved: () => void): void {
+export function openCredentialDialog(src: Pick<SourceFull, 'code' | 'ten'>, onSaved: () => void): void {
   if (win && !win.isDestroyed()) win.close();
   const parent = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows().find((w) => w.isVisible()) ?? undefined;
   const w = new BrowserWindow({
