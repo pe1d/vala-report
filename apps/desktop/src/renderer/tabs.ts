@@ -37,6 +37,7 @@ interface ValaTabsApi {
   installUpdate(): Promise<void>;
   profile(x: number, y: number): Promise<void>;
   signIn(): Promise<void>;
+  tabMenu(key: string, x: number, y: number): Promise<void>;
   onState(cb: (s: TabsState) => void): void;
 }
 
@@ -83,6 +84,8 @@ interface ValaTabsApi {
     el.addEventListener('mousedown', (e) => { if (e.button === 0) void api.activate(tab.key); });
     // Bấm chuột giữa ⇒ đóng tab (tab đóng được).
     el.addEventListener('auxclick', (e) => { if (e.button === 1 && !tab.pinned) void api.close(tab.key); });
+    // Chuột phải tab hệ thống nguồn ⇒ menu mở / mật khẩu đã lưu (tiến trình chính quyết định tab nào có menu).
+    el.addEventListener('contextmenu', (e) => { e.preventDefault(); void api.tabMenu(tab.key, e.clientX, e.clientY); });
     const box = document.createElement('span');
     box.className = 'flex h-4 w-4 shrink-0 items-center justify-center';
     // Chưa có favicon dùng được ⇒ chữ cái đầu của tên tab trong ô màu (không để ô trống).

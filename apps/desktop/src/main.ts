@@ -17,7 +17,7 @@ import { registerAutofill } from './autofill';
 import { lockCredentials } from './credentials';
 import { installUiProtocol, refreshUi, registerUiScheme } from './ui-cache';
 import { forgetPortalLogin, initBrowser, refreshBrowser } from './browser';
-import { createMenus, moreMenu, profileMenu, refreshMenus } from './menu';
+import { createMenus, moreMenu, profileMenu, refreshMenus, tabContextMenu } from './menu';
 import { refreshHomeFromServer } from './homepage';
 import { enableLinuxAutostart } from './linux';
 import { initUpdater } from './updater';
@@ -93,7 +93,7 @@ if (!app.requestSingleInstanceLock()) {
     registerAutofill();
     watchCookies();
     createMenus({ showMain, showPortal, openSettings, signOut: () => void signOut(), changePassword: changePortalPassword });
-    initBrowser({ onLeave: onTabLeave, menu: moreMenu, profileMenu, signIn: showPortal });
+    initBrowser({ onLeave: onTabLeave, menu: moreMenu, profileMenu, signIn: showPortal, tabMenu: tabContextMenu });
     // Bản mới tải xong ⇒ hiện nút "Cập nhật" trên thanh tab và trong menu.
     initUpdater(refreshAll);
 

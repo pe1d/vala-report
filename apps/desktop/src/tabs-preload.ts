@@ -12,5 +12,6 @@ contextBridge.exposeInMainWorld('valaTabs', {
   installUpdate: () => ipcRenderer.invoke('tabs:install-update'),
   profile: (x: number, y: number) => ipcRenderer.invoke('tabs:profile', { x, y }),
   signIn: () => ipcRenderer.invoke('tabs:sign-in'),
+  tabMenu: (key: string, x: number, y: number) => ipcRenderer.invoke('tabs:context', { key, x, y }),
   onState: (cb: (state: unknown) => void) => { ipcRenderer.on('tabs:state', (_e, s) => cb(s)); },
 });

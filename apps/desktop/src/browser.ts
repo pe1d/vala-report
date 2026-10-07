@@ -65,6 +65,8 @@ export interface BrowserHooks {
   profileMenu: () => Menu;
   /** Nút "Đăng nhập" (chưa đăng nhập): đưa sang tab Báo cáo. */
   signIn: () => void;
+  /** Menu chuột phải trên một tab (tab nguồn: mở + mật khẩu); null ⇒ không có menu. */
+  tabMenu: (key: string) => Menu | null;
 }
 
 let hooks: BrowserHooks;
@@ -390,6 +392,11 @@ function registerIpc(): void {
     hooks.profileMenu().popup({ window: win!, x: Math.round(Number(pos?.x) || 0), y: Math.round(Number(pos?.y) || 0) });
   });
   ipcMain.handle('tabs:sign-in', (e) => { own(e); hooks.signIn(); });
+  ipcMain.handle('tabs:context', (e, a: { key?: unknown; x?: unknown; y?: unknown }) => {
+    own(e);
+    if (typeof a?.key !== 'string') return;
+    hooks.tabMenu(a.key)?.popup({ window: win!, x: Math.round(Number(a.x) || 0), y: Math.round(Number(a.y) || 0) });
+  });
   ipcMain.handle('tabs:install-update', (e) => { own(e); installNow(); });
   ipcMain.on('tabs:resized', (e) => { if (win && e.sender === win.webContents) layout(); });
   ipcMain.handle('tabs:lang', (e, l: unknown) => { own(e); setPrefs({ lang: normLang(l) }); });

@@ -37,7 +37,11 @@ bằng **kho mật khẩu của hệ điều hành** và tự đăng nhập lạ
 
 - Người dùng tự đăng nhập trong app thì app hỏi **"Lưu mật khẩu?"**, có các nút: Lưu / Lúc khác / Không bao giờ cho hệ
   thống này. Preload chỉ theo dõi form khi tiến trình chính xác nhận trang là trang đăng nhập của một nguồn.
-- Trong **Cài đặt → Mật khẩu hệ thống nguồn**: xem tài khoản đã lưu, bật/tắt "Tự đăng nhập lại", xoá, hoặc nhập tay.
+- **Menu ⋯ → <hệ thống>** hoặc **chuột phải lên tab của hệ thống** cho:
+  - xem tài khoản đã lưu;
+  - bật/tắt "Tự đăng nhập lại";
+  - "Lưu / Đổi mật khẩu…" (mở một hộp nhỏ để nhập tài khoản);
+  - "Xoá mật khẩu".
 
 ## Giới hạn
 

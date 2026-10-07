@@ -11,7 +11,9 @@ import { APP_NAME, ICON } from './channel';
 import { messages } from './i18n';
 import { portalHasPassword } from './portal-state';
 import { getSettings } from './settings';
-import { cachedSources, events, statusOf, syncAll, type SyncResult } from './sync';
+import { cachedSources, events, statusOf, syncAll, type SourceFull, type SyncResult } from './sync';
+import { deleteCredential, savedCredential, secureStorageAvailable, setAutoLogin } from './credentials';
+import { openCredentialDialog } from './credential-window';
 import { checkNow, installNow, pendingUpdate } from './updater';
 import { openSourceTab } from './windows';
 
@@ -22,6 +24,9 @@ const M = messages({
   syncNow: 'Đồng bộ phiên ngay',
   view: 'Xem', reload: 'Tải lại', back: 'Quay lại', forward: 'Tiến tới', zoomIn: 'Phóng to', zoomOut: 'Thu nhỏ', zoomReset: 'Cỡ gốc',
   settingsMenu: 'Cài đặt', settings: 'Cài đặt…', signIn: 'Đăng nhập…', signOut: 'Đăng xuất', quit: 'Thoát', changePassword: 'Đổi mật khẩu…',
+  open: (ten: string) => `Mở ${ten}`, credSaved: (u: string) => `Mật khẩu: ${u} ✓ đã lưu`, credNone: 'Chưa lưu mật khẩu',
+  credAuto: 'Tự đăng nhập lại', credEnter: 'Lưu mật khẩu…', credChange: 'Đổi mật khẩu…', credDelete: 'Xoá mật khẩu',
+  credUnavailable: 'Máy chưa có kho mật khẩu của hệ điều hành',
   checkUpdate: 'Kiểm tra cập nhật', installUpdate: (v: string) => `Cập nhật lên bản ${v}`, version: (v: string) => `Phiên bản ${v}`,
   result: {
     sent: 'đã kết nối', unchanged: 'đã kết nối', managed: 'hệ thống tự đăng nhập', not_logged_in: 'chưa đăng nhập',
@@ -34,6 +39,9 @@ const M = messages({
   syncNow: 'Sync sessions now',
   view: 'View', reload: 'Reload', back: 'Back', forward: 'Forward', zoomIn: 'Zoom in', zoomOut: 'Zoom out', zoomReset: 'Actual size',
   settingsMenu: 'Settings', settings: 'Settings…', signIn: 'Sign in…', signOut: 'Sign out', quit: 'Quit', changePassword: 'Change password…',
+  open: (ten: string) => `Open ${ten}`, credSaved: (u: string) => `Password: ${u} ✓ saved`, credNone: 'No saved password',
+  credAuto: 'Sign in again automatically', credEnter: 'Save password…', credChange: 'Change password…', credDelete: 'Delete password',
+  credUnavailable: 'No operating-system password store on this computer',
   checkUpdate: 'Check for updates', installUpdate: (v: string) => `Update to version ${v}`, version: (v: string) => `Version ${v}`,
   result: {
     sent: 'connected', unchanged: 'connected', managed: 'signed in automatically', not_logged_in: 'not signed in',
@@ -50,13 +58,38 @@ export interface MenuActions {
 let tray: Tray | null = null;
 let actions: MenuActions;
 
+/**
+ * Mục của một hệ thống nguồn: mở tab + mật khẩu lưu trong máy (T08). Dùng cho menu ⋯ (mỗi hệ thống một menu con) và menu
+ * chuột phải trên tab của hệ thống đó.
+ */
+export function sourceMenuItems(src: SourceFull): MenuItemConstructorOptions[] {
+  const t = M[getSettings().lang];
+  const saved = savedCredential(src.code);
+  const refresh = () => refreshMenus();
+  const cred: MenuItemConstructorOptions[] = !secureStorageAvailable()
+    ? [{ label: t.credUnavailable, enabled: false }]
+    : [
+        { label: saved ? t.credSaved(saved.username) : t.credNone, enabled: false },
+        ...(saved ? [{ label: t.credAuto, type: 'checkbox' as const, checked: saved.auto, click: () => { setAutoLogin(src.code, !saved.auto); refresh(); } }] : []),
+        { label: saved ? t.credChange : t.credEnter, click: () => openCredentialDialog(src, refresh) },
+        ...(saved ? [{ label: t.credDelete, click: () => { deleteCredential(src.code); refresh(); } }] : []),
+      ];
+  return [{ label: t.open(src.ten), click: () => openSourceTab(src) }, { type: 'separator' }, ...cred];
+}
+
+/** Menu chuột phải trên tab nguồn (key src:<mã>); tab khác ⇒ null. */
+export function tabContextMenu(key: string): Menu | null {
+  const src = getSettings().deviceToken ? cachedSources().find((x) => `src:${x.code}` === key) : undefined;
+  return src ? Menu.buildFromTemplate(sourceMenuItems(src)) : null;
+}
+
 function sourceItems(): MenuItemConstructorOptions[] {
   const s = getSettings();
   const t = M[s.lang];
   if (!s.deviceToken) return [{ label: t.signInFirst, enabled: false }];
   const items: MenuItemConstructorOptions[] = cachedSources().map((src) => {
     const r = statusOf(src.code)?.result;
-    return { label: r ? `${src.ten} — ${t.result[r]}` : src.ten, click: () => openSourceTab(src) };
+    return { label: r ? `${src.ten} — ${t.result[r]}` : src.ten, submenu: sourceMenuItems(src) };
   });
   return [
     ...(items.length ? items : [{ label: t.noSources, enabled: false }]),
