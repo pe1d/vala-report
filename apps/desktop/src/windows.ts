@@ -13,15 +13,17 @@ import { join } from 'node:path';
 import { app, ipcMain, Notification, session, shell, type IpcMainInvokeEvent, type WebContents } from 'electron';
 import { adoptDeviceToken, DEVICE_TOKEN, deviceName } from './account';
 import { api } from './api';
-import { showSourceTab, showTab, showWebContents, sourceTabKey } from './browser';
+import { backgroundSourceTab, showSourceTab, showTab, showWebContents, sourceTabKey } from './browser';
 import { matchesSessionDomain, sessionDomain } from './cookies';
 import { ICON } from './channel';
 import { messages } from './i18n';
+import { listActions, refreshPackages, runAction, type ActionResult } from './scripts';
 import { getSettings } from './settings';
 import { cachedSources, events, refreshSources, statusOf, syncSource, type SourceFull } from './sync';
 
 const M = messages({
   unknownSource: 'Vala Desktop chưa đăng nhập hoặc không có hệ thống này',
+  noActions: (ten: string) => `Trang ${ten} đang mở chưa có thao tác nào — kiểm tra mẫu địa chỉ của gói, hoặc đăng nhập ${ten} trong tab vừa mở rồi thử lại`,
   loginOpened: (ten: string) => `Đăng nhập ${ten} trong tab vừa mở — xong Vala Desktop tự đưa bạn quay lại`,
   connectFailed: 'Kết nối không thành công',
   connected: (ten: string) => `Đã kết nối ${ten}`,
@@ -32,6 +34,7 @@ const M = messages({
   expiredBody: 'Vala không lấy được dữ liệu mới. Bấm vào đây để đăng nhập lại.',
 }, {
   unknownSource: 'Vala Desktop is not signed in or does not have this system',
+  noActions: (ten: string) => `The open ${ten} page has no actions yet — check the package's address patterns, or sign in to ${ten} in the tab that just opened and try again`,
   loginOpened: (ten: string) => `Sign in to ${ten} in the tab that just opened — Vala Desktop will bring you back when done`,
   connectFailed: 'Connection failed',
   connected: (ten: string) => `Connected to ${ten}`,
@@ -183,6 +186,44 @@ export function watchCookies(): void {
   });
 }
 
+// ---------------------------------------------------------------------------------------------
+// Thao tác của gói kịch bản (quản trị bấm "Chạy thử" trên cổng; sau này AI / tác tử gọi). Chạy trong tab của hệ thống nguồn,
+// bằng chính phiên người dùng đang đăng nhập trong ứng dụng. Tab chưa mở thì mở nền, không chuyển tab đang xem.
+// ---------------------------------------------------------------------------------------------
+const PAGE_READY_MS = 20_000;
+
+/** Tab nguồn đã tải xong và có ít nhất một thao tác (gói đã nạp) — chờ tối đa PAGE_READY_MS. */
+async function sourcePage(code: string): Promise<{ wc: WebContents; src: SourceFull } | { error: string }> {
+  try { await refreshSources(); } catch { /* dùng danh sách đã có */ }
+  const src = cachedSources().find((s) => s.code === code);
+  if (!src) return { error: T().unknownSource };
+  await refreshPackages();   // quản trị vừa lưu bản mới trên cổng ⇒ dùng ngay
+  const wc = backgroundSourceTab(src);
+  const t0 = Date.now();
+  while (Date.now() - t0 < PAGE_READY_MS) {
+    if (!wc.isLoading() && (await listActions(wc)).length) return { wc, src };
+    await new Promise((r) => setTimeout(r, 300));
+  }
+  return { error: T().noActions(src.ten) };
+}
+
+export async function sourceActions(code: string) {
+  const p = await sourcePage(code);
+  return 'error' in p ? { ok: false, error: p.error } : { ok: true, actions: await listActions(p.wc) };
+}
+
+export async function runSourceAction(code: string, name: string, args: Record<string, unknown>): Promise<ActionResult> {
+  const p = await sourcePage(code);
+  if ('error' in p) return { ok: false, error: p.error };
+  return runAction(p.wc, name, args);
+}
+
+const plainArgs = (a: unknown): Record<string, unknown> | null => {
+  if (a === undefined || a === null) return {};
+  if (typeof a !== 'object' || Array.isArray(a)) return null;
+  try { return JSON.stringify(a).length <= 100_000 ? (a as Record<string, unknown>) : null; } catch { return null; }
+};
+
 /** Cầu nối IPC cho portal-preload.ts. */
 export function registerBridge(): void {
   ipcMain.handle('vala:bridge-hello', (e) => {
@@ -192,6 +233,8 @@ export function registerBridge(): void {
       installed: true, version: app.getVersion(), logged_in: !!s.deviceToken, email: s.user?.email ?? null,
       // Cổng thấy đây là Vala Desktop ⇒ tự cấp token thiết bị cho người đang đăng nhập cổng (apps/web DesktopLink).
       desktop: true, device: deviceName(),
+      // Có gói kịch bản: cổng hiện "Chạy thử" thao tác trong trang quản trị Kịch bản Desktop.
+      scripts: true,
     };
   });
   ipcMain.handle('vala:device-token', async (e, a: { token?: unknown; user?: { ho_ten?: unknown; email?: unknown } }) => {
@@ -200,6 +243,17 @@ export function registerBridge(): void {
     const email = typeof a.user?.email === 'string' ? a.user.email.slice(0, 200) : '';
     await adoptDeviceToken(a.token, { ho_ten, email });
     return true;
+  });
+  ipcMain.handle('vala:list-actions', (e, code: unknown) => {
+    if (!fromPortal(e) || typeof code !== 'string' || !/^[a-z0-9_]{1,40}$/.test(code)) return { ok: false, error: 'forbidden' };
+    return sourceActions(code);
+  });
+  ipcMain.handle('vala:run-action', (e, a: { source?: unknown; name?: unknown; args?: unknown }) => {
+    const args = plainArgs(a?.args);
+    if (!fromPortal(e) || typeof a?.source !== 'string' || !/^[a-z0-9_]{1,40}$/.test(a.source) || typeof a.name !== 'string' || !args) {
+      return { ok: false, error: 'forbidden' };
+    }
+    return runSourceAction(a.source, a.name, args);
   });
   ipcMain.handle('vala:connect', (e, code: unknown) => {
     if (!fromPortal(e) || typeof code !== 'string' || !/^[a-z0-9_]{1,40}$/.test(code)) return { status: 'error' };

@@ -232,6 +232,24 @@ export function showSourceTab(src: SourceFull, opts: { reloadTo?: string } = {})
   showTab(key, opts);
 }
 
+/**
+ * Tab của một hệ thống nguồn để chạy thao tác: đang mở thì dùng luôn, chưa thì mở NỀN (không chuyển tab người dùng đang xem).
+ * Trả webContents của tab.
+ */
+export function backgroundSourceTab(src: SourceFull): WebContents {
+  ensureWindow();
+  const key = sourceTabKey(src.code);
+  let t = tabs.get(key);
+  if (!t) {
+    t = { key, pinned: false, url: src.login_url, view: null };
+    tabs.set(key, t);
+    const lastSrc = order.reduce((i, k, idx) => (k.startsWith('src:') ? idx : i), -1);
+    order.splice(lastSrc + 1, 0, key);
+  }
+  if (!t.view) { createView(t); pushState(); }
+  return t.view!.webContents;
+}
+
 export function openTab(url: string, foreground = true, after?: string): string {
   ensureWindow();
   const key = `t:${nextId++}`;

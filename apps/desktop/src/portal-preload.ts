@@ -23,6 +23,17 @@ window.addEventListener('message', (e) => {
   if (d.type === 'device-token' && typeof d.token === 'string') {
     void ipcRenderer.invoke('vala:device-token', { token: d.token, user: d.user }).then((ok) => { if (ok) void hello(); });
   }
+  // Thao tác của gói kịch bản trong tab hệ thống nguồn (trang quản trị "Kịch bản Desktop" → Chạy thử). id để cổng ghép kết quả.
+  const req = d as { id?: unknown; source_system?: unknown; name?: unknown; args?: unknown };
+  if ((d.type === 'list-actions' || d.type === 'run-action') && typeof req.id === 'string' && req.id.length <= 64) {
+    const id = req.id;
+    const call = d.type === 'list-actions'
+      ? ipcRenderer.invoke('vala:list-actions', req.source_system)
+      : ipcRenderer.invoke('vala:run-action', { source: req.source_system, name: req.name, args: req.args });
+    call.then(
+      (r: Record<string, unknown>) => post({ ...r, type: 'action-result', id }),
+      (err: Error) => post({ type: 'action-result', id, ok: false, error: String(err?.message ?? err) }));
+  }
   if (d.type === 'connect' && typeof d.code === 'string' && /^[a-z0-9_]{1,40}$/.test(d.code)) {
     const code = d.code;
     ipcRenderer.invoke('vala:connect', code).then(
