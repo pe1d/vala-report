@@ -10,6 +10,7 @@ npmRebuild: false
 files:
   - dist/**/*
   - resources/settings.html
+  - resources/recording.html
   - resources/credential.html
   - resources/tabs.html
   - resources/icon.png

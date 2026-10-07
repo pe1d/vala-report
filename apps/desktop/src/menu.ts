@@ -17,6 +17,10 @@ import { targetForUrl } from './autofill';
 import { openCredentialDialog } from './credential-window';
 import { checkNow, pendingUpdate, promptInstall } from './updater';
 import { openSourceTab } from './windows';
+import { openRecordingTab, tabWebContents } from './browser';
+import { notify } from './notify';
+import { RecorderError, recordingKey, startRecording, stopRecording } from './recorder';
+import { isPortalUrl } from './ui-cache';
 
 const M = messages({
   vala: 'Vala', openMain: 'Trang chính',
@@ -29,6 +33,8 @@ const M = messages({
   credAuto: 'Tự đăng nhập lại', credEnter: 'Lưu mật khẩu…', credChange: 'Đổi mật khẩu…', credDelete: 'Xoá mật khẩu',
   credUnavailable: 'Máy chưa có kho mật khẩu của hệ điều hành',
   managePasswords: 'Quản lý mật khẩu…',
+  recStart: 'Bắt đầu ghi thao tác', recStop: 'Dừng ghi thao tác', recFailed: 'Không ghi được thao tác trên tab này',
+  recDevtools: 'Tab đang mở công cụ dành cho nhà phát triển (DevTools) — đóng DevTools rồi thử lại.',
   checkUpdate: 'Kiểm tra cập nhật', installUpdate: (v: string) => `Cập nhật lên bản ${v}`, version: (v: string) => `Phiên bản ${v}`,
   result: {
     sent: 'đã kết nối', unchanged: 'đã kết nối', managed: 'hệ thống tự đăng nhập', not_logged_in: 'chưa đăng nhập',
@@ -45,6 +51,8 @@ const M = messages({
   credAuto: 'Sign in again automatically', credEnter: 'Save password…', credChange: 'Change password…', credDelete: 'Delete password',
   credUnavailable: 'No operating-system password store on this computer',
   managePasswords: 'Manage passwords…',
+  recStart: 'Start recording actions', recStop: 'Stop recording actions', recFailed: 'Could not record actions on this tab',
+  recDevtools: 'The tab has developer tools (DevTools) open — close DevTools and try again.',
   checkUpdate: 'Check for updates', installUpdate: (v: string) => `Update to version ${v}`, version: (v: string) => `Version ${v}`,
   result: {
     sent: 'connected', unchanged: 'connected', managed: 'signed in automatically', not_logged_in: 'not signed in',
@@ -92,11 +100,30 @@ function credentialItems(target: { code: string; ten: string }): MenuItemConstru
  * khẩu của đúng trang đó. Tab cổng Vala / trang không phải web ⇒ null.
  */
 export function tabContextMenu(key: string, url: string): Menu | null {
+  const rec = recordItems(key, url);
+  const withRec = (items: MenuItemConstructorOptions[]) => (rec.length ? [...items, { type: 'separator' as const }, ...rec] : items);
   const src = getSettings().deviceToken ? cachedSources().find((x) => `src:${x.code}` === key) : undefined;
-  if (src) return Menu.buildFromTemplate(sourceMenuItems(src));
+  if (src) return Menu.buildFromTemplate(withRec(sourceMenuItems(src)));
   const tg = targetForUrl(url);
-  if (!tg) return null;
-  return Menu.buildFromTemplate([{ label: tg.ten, enabled: false }, { type: 'separator' }, ...credentialItems({ code: tg.key, ten: tg.ten })]);
+  if (tg) return Menu.buildFromTemplate(withRec([{ label: tg.ten, enabled: false }, { type: 'separator' }, ...credentialItems({ code: tg.key, ten: tg.ten })]));
+  return rec.length ? Menu.buildFromTemplate(rec) : null;
+}
+
+/**
+ * Ghi thao tác (T07 phần 2, recorder.ts): mọi tab trang web — trừ tab Vala, Báo cáo và các tab trang cục bộ. Dừng ⇒ mở tab
+ * Bản ghi thao tác.
+ */
+function recordItems(key: string, url: string): MenuItemConstructorOptions[] {
+  if (!/^https?:/.test(url) || isPortalUrl(url) || key === 'home' || key === 'portal' || !tabWebContents(key)) return [];
+  const t = M[getSettings().lang];
+  if (recordingKey() === key) return [{ label: t.recStop, click: () => { stopRecording(); openRecordingTab(); } }];
+  return [{
+    label: t.recStart,
+    click: () => {
+      const wc = tabWebContents(key);
+      if (wc) void startRecording(key, wc).catch((e) => notify(t.recFailed, e instanceof RecorderError && e.code === 'dang_mo_devtools' ? t.recDevtools : String((e as Error).message)));
+    },
+  }];
 }
 
 function sourceItems(): MenuItemConstructorOptions[] {

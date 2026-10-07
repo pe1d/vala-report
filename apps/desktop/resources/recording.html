@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:" />
+  <title>Bản ghi thao tác</title>
+  <link rel="stylesheet" href="../dist/renderer/ui.css" />
+</head>
+<!-- Tab Bản ghi thao tác (recording-page.ts). Chữ hiển thị do tiến trình chính gửi (data-t). -->
+<body class="min-h-screen bg-slate-50 text-slate-900 antialiased dark:bg-slate-950 dark:text-slate-100">
+  <main class="mx-auto max-w-6xl px-6 py-5">
+    <div class="mb-4 flex flex-wrap items-center gap-3">
+      <h1 class="text-lg font-semibold" data-t="title"></h1>
+      <span id="rec-state" class="rounded-full px-2 py-0.5 text-xs font-medium"></span>
+      <span id="rec-meta" class="muted"></span>
+      <span class="flex-1"></span>
+      <span id="note" class="text-sm text-emerald-700 dark:text-emerald-400" role="status"></span>
+      <button type="button" id="save" class="btn" data-t="save"></button>
+      <button type="button" id="copy-json" class="btn" data-t="copyJson"></button>
+    </div>
+    <p class="muted mb-2" data-t="hint"></p>
+    <p id="warn" class="mb-2 text-sm text-amber-700 dark:text-amber-400" hidden></p>
+    <p id="empty" class="card muted" data-t="empty" hidden></p>
+
+    <div id="body" class="grid gap-4 md:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]" hidden>
+      <ol id="steps" class="card max-h-[60vh] space-y-0.5 overflow-auto p-2 text-sm"></ol>
+      <section id="detail" class="card max-h-[60vh] overflow-auto text-sm"></section>
+    </div>
+
+    <section id="draft-box" class="card mt-4" hidden>
+      <div class="flex items-center gap-3">
+        <h2 class="text-sm font-semibold" data-t="draft"></h2>
+        <span class="muted flex-1" data-t="draftHint"></span>
+        <button type="button" id="copy-draft" class="btn" data-t="copyDraft"></button>
+      </div>
+      <pre id="draft" class="mt-3 max-h-[50vh] overflow-auto rounded-md bg-slate-900 p-3 text-xs leading-relaxed text-slate-100"></pre>
+    </section>
+  </main>
+  <script src="../dist/renderer/recording.js"></script>
+</body>
+</html>

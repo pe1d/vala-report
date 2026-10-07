@@ -8,6 +8,7 @@ import { setupChannel } from './channel';
 import { cleanUserAgent } from './ua';
 import { accountEvents, logoutDevice } from './account';
 import { registerSettingsPage } from './settings-page';
+import { registerRecordingPage } from './recording-page';
 import { getSettings } from './settings';
 import { syncAll } from './sync';
 import { forgetPackages, refreshPackages } from './scripts';
@@ -16,7 +17,7 @@ import { setPortalUser } from './portal-state';
 import { registerAutofill } from './autofill';
 import { lockCredentials } from './credentials';
 import { installUiProtocol, refreshUi, registerUiScheme } from './ui-cache';
-import { forgetPortalLogin, initBrowser, isSettingsContents, openSettingsTab, pushSettings, refreshBrowser, revealWindow } from './browser';
+import { forgetPortalLogin, initBrowser, isRecordingContents, isSettingsContents, openRecordingTab, openSettingsTab, pushRecording, pushSettings, refreshBrowser, revealWindow } from './browser';
 import { setNotifyReveal } from './notify';
 import { createMenus, moreMenu, profileMenu, refreshMenus, tabContextMenu } from './menu';
 import { refreshHomeFromServer } from './homepage';
@@ -89,6 +90,7 @@ if (!app.requestSingleInstanceLock()) {
       onHomeChanged: () => { void refreshHome().then(() => showMain()); },
       isSettings: (e) => isSettingsContents(e.sender), push: pushSettings,
     });
+    registerRecordingPage({ isRecording: (e) => isRecordingContents(e.sender), push: pushRecording, open: openRecordingTab });
     watchCookies();
     createMenus({ showMain, showPortal, openSettings, signOut: () => void signOut(), changePassword: changePortalPassword });
     initBrowser({ onLeave: onTabLeave, menu: moreMenu, profileMenu, signIn: showPortal, tabMenu: tabContextMenu });

@@ -22,12 +22,13 @@ import { getSettings } from './settings';
 import { cachedSources, events, statusOf, type SourceFull } from './sync';
 import { openTarget, tabStatus, type TabStatus } from './tabs-model';
 import { pendingUpdate, promptInstall } from './updater';
+import { recordingKey } from './recorder';
 
 const M = messages({
   home: 'Vala', reports: 'Báo cáo', newTab: 'Trang',
   close: 'Đóng tab (Ctrl+W)', menu: 'Hệ thống nguồn',
   signIn: 'Đăng nhập', signInTitle: 'Đăng nhập Vala Reporting ở tab Báo cáo', account: 'Tài khoản',
-  lightMode: 'Chế độ sáng', darkMode: 'Chế độ tối',
+  lightMode: 'Chế độ sáng', darkMode: 'Chế độ tối', recording: 'đang ghi thao tác',
   updateTitle: 'Cài bản mới: ứng dụng đóng lại, cài xong tự mở lại',
   updateLabel: (v: string) => `Đã có bản ${v} — Cập nhật`,
   status: { ok: 'Đã kết nối', warn: 'Cần đăng nhập lại', off: 'Chưa kết nối' } as Record<TabStatus, string>,
@@ -35,7 +36,7 @@ const M = messages({
   home: 'Vala', reports: 'Reports', newTab: 'Page',
   close: 'Close tab (Ctrl+W)', menu: 'Source systems',
   signIn: 'Sign in', signInTitle: 'Sign in to Vala Reporting on the Reports tab', account: 'Account',
-  lightMode: 'Light mode', darkMode: 'Dark mode',
+  lightMode: 'Light mode', darkMode: 'Dark mode', recording: 'recording actions',
   updateTitle: 'Install the new version: the app closes, installs and reopens',
   updateLabel: (v: string) => `Version ${v} available — Update`,
   status: { ok: 'Connected', warn: 'Needs signing in again', off: 'Not connected' } as Record<TabStatus, string>,
@@ -155,12 +156,18 @@ function layout(): void {
   for (const t of tabs.values()) t.view?.setBounds(bounds);
 }
 
-// ---- tab Cài đặt (như chrome://settings): trang cục bộ, preload riêng, không điều hướng đi đâu ----
+// ---- tab trang cục bộ: Cài đặt (như chrome://settings), Bản ghi thao tác — preload riêng, không điều hướng đi đâu ----
 const SETTINGS = 'settings';
+const RECORDING = 'recording';
 let settingsSection = '';
+const LOCAL: Record<string, { preload: string; html: string }> = {
+  [SETTINGS]: { preload: 'settings-preload.js', html: 'settings.html' },
+  [RECORDING]: { preload: 'recording-preload.js', html: 'recording.html' },
+};
 
-function createSettingsView(t: Tab): WebContentsView {
-  const view = new WebContentsView({ webPreferences: { preload: join(__dirname, 'settings-preload.js') } });
+function createLocalView(t: Tab): WebContentsView {
+  const def = LOCAL[t.key]!;
+  const view = new WebContentsView({ webPreferences: { preload: join(__dirname, def.preload) } });
   t.view = view;
   win!.contentView.addChildView(view);
   view.setVisible(false);
@@ -169,7 +176,8 @@ function createSettingsView(t: Tab): WebContentsView {
   wc.on('will-navigate', (e) => e.preventDefault());
   wc.on('page-title-updated', () => pushState());
   wc.on('before-input-event', (e, input) => { if (shortcut(input)) e.preventDefault(); });
-  void wc.loadFile(join(__dirname, '../resources/settings.html'), settingsSection ? { hash: settingsSection } : undefined);
+  const hash = t.key === SETTINGS && settingsSection ? { hash: settingsSection } : undefined;
+  void wc.loadFile(join(__dirname, '../resources', def.html), hash);
   layout();
   return view;
 }
@@ -189,6 +197,28 @@ export function openSettingsTab(section = ''): void {
 
 export const isSettingsContents = (wc: WebContents): boolean => tabs.get(SETTINGS)?.view?.webContents === wc;
 
+/** Mở (hoặc chuyển tới) tab Bản ghi thao tác (bản ghi gần nhất — recorder.ts). */
+export function openRecordingTab(): void {
+  ensureWindow();
+  if (!tabs.has(RECORDING)) {
+    tabs.set(RECORDING, { key: RECORDING, pinned: false, url: '', view: null });
+    order.push(RECORDING);
+  } else pushRecording();
+  showTab(RECORDING);
+}
+
+export const isRecordingContents = (wc: WebContents): boolean => tabs.get(RECORDING)?.view?.webContents === wc;
+
+/** Báo tab Bản ghi (nếu đang mở) vẽ lại; thanh tab vẽ lại chấm "đang ghi". */
+export function pushRecording(): void {
+  const wc = tabs.get(RECORDING)?.view?.webContents;
+  if (wc && !wc.isDestroyed()) wc.send('vala:rec-changed');
+  pushState();
+}
+
+/** Trang web của một tab (để ghi thao tác); tab trang cục bộ / chưa nạp ⇒ undefined. */
+export const tabWebContents = (key: string): WebContents | undefined => (LOCAL[key] ? undefined : tabs.get(key)?.view?.webContents);
+
 /** Báo tab Cài đặt (nếu đang mở) vẽ lại. */
 export function pushSettings(): void {
   const wc = tabs.get(SETTINGS)?.view?.webContents;
@@ -196,7 +226,7 @@ export function pushSettings(): void {
 }
 
 function createView(t: Tab): WebContentsView {
-  if (t.key === SETTINGS) return createSettingsView(t);
+  if (LOCAL[t.key]) return createLocalView(t);
   const view = new WebContentsView({ webPreferences: { preload: TAB_PRELOAD } });
   t.view = view;
   win!.contentView.addChildView(view);
@@ -392,6 +422,7 @@ function pushState(): void {
       title: title || def?.label || src?.ten || '',
       favicon: tab.favicon ?? null,
       status: src ? tabStatus(statusOf(src.code)?.result, src.state) : null,
+      recording: key === recordingKey(),
     };
   });
   // Hàm (chữ có tham số) không gửi qua IPC được ⇒ tách ra, gửi chữ đã ghép.

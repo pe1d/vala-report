@@ -13,6 +13,8 @@ interface TabView {
   title: string;
   favicon: string | null;
   status: 'ok' | 'warn' | 'off' | null;
+  /** Đang ghi thao tác trên tab này (recorder.ts) ⇒ chấm đỏ. */
+  recording: boolean;
 }
 interface TabsState {
   lang: 'vi' | 'en';
@@ -120,7 +122,8 @@ interface ValaTabsApi {
 
   function updateNode(n: TabNode, tab: TabView, isActive: boolean, s: TabsState) {
     setIf(n.el, 'aria-selected', String(isActive));
-    setIf(n.el, 'title', tab.status ? `${tab.title} — ${s.t.status[tab.status]}` : tab.title);
+    const title = tab.status ? `${tab.title} — ${s.t.status[tab.status]}` : tab.title;
+    setIf(n.el, 'title', tab.recording ? `${title} — ${s.t.recording}` : title);
     setIf(n.el, 'class', [
       'group flex h-[32px] shrink-0 cursor-default items-center gap-2 rounded-t-lg px-3 text-[13px]',
       tab.pinned ? 'max-w-[180px]' : 'w-[200px] min-w-[90px] shrink',
@@ -139,8 +142,11 @@ interface ValaTabsApi {
     const initial = (tab.label.trim()[0] ?? '•').toUpperCase();
     if (n.letter.textContent !== initial) n.letter.textContent = initial;
     if (n.label.textContent !== tab.label) n.label.textContent = tab.label;
-    display(n.dot, !!tab.status);
-    if (tab.status) {
+    display(n.dot, !!tab.status || tab.recording);
+    if (tab.recording) {
+      setIf(n.dot, 'class', 'h-2 w-2 shrink-0 animate-pulse rounded-full bg-red-500');
+      setIf(n.dot, 'aria-label', s.t.recording);
+    } else if (tab.status) {
       setIf(n.dot, 'class', `h-2 w-2 shrink-0 rounded-full ${DOT[tab.status]}`);
       setIf(n.dot, 'aria-label', s.t.status[tab.status]);
     }
