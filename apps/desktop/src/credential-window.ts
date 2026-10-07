@@ -1,6 +1,6 @@
 /**
- * Hộp nhập tài khoản / mật khẩu một hệ thống nguồn — mở từ menu ⋯ (Hệ thống nguồn → <hệ thống> → Lưu / Đổi mật khẩu…) hoặc
- * chuột phải lên tab của hệ thống đó. Mỗi lúc một hộp; IPC chỉ nhận từ chính cửa sổ này.
+ * Hộp nhập tài khoản / mật khẩu một hệ thống nguồn — mở từ menu ⋯ (Hệ thống nguồn → <hệ thống> → Lưu / Đổi mật khẩu…),
+ * chuột phải lên tab của hệ thống đó, hoặc Cài đặt → Mật khẩu. Mỗi lúc một hộp; IPC chỉ nhận từ chính cửa sổ này.
  */
 import { join } from 'node:path';
 import { BrowserWindow, ipcMain, type IpcMainInvokeEvent } from 'electron';

@@ -12,6 +12,10 @@ contextBridge.exposeInMainWorld('vala', {
   openPortal: () => ipcRenderer.invoke('vala:open-portal'),
   checkUpdate: () => ipcRenderer.invoke('vala:check-update'),
   installUpdate: () => ipcRenderer.invoke('vala:install-update'),
+  pwAuto: (code: string, on: boolean) => ipcRenderer.invoke('vala:pw-auto', code, on),
+  pwEdit: (code: string) => ipcRenderer.invoke('vala:pw-edit', code),
+  pwDelete: (code: string) => ipcRenderer.invoke('vala:pw-delete', code),
+  pwAllow: (code: string) => ipcRenderer.invoke('vala:pw-allow', code),
   onChanged: (cb: () => void) => { ipcRenderer.on('vala:settings-changed', () => cb()); },
   onSection: (cb: (s: string) => void) => { ipcRenderer.on('vala:settings-section', (_e, s: string) => cb(s)); },
 });

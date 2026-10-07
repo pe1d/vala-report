@@ -15,7 +15,9 @@ interface SettingsState {
   devHomeUrl: string | null;
   autostart: { enabled: boolean; supported: boolean };
   update: { pending: string | null; canUpdate: boolean };
+  passwords: { available: boolean; sources: PwRow[]; sites: PwRow[]; never: { code: string; ten: string }[] };
 }
+interface PwRow { code: string; ten: string; username: string | null; auto: boolean; savedAt: string | null }
 interface ValaSettingsApi {
   state(): Promise<SettingsState>;
   setLang(lang: string): Promise<SettingsState>;
@@ -27,6 +29,10 @@ interface ValaSettingsApi {
   openPortal(): Promise<void>;
   checkUpdate(): Promise<void>;
   installUpdate(): Promise<void>;
+  pwAuto(code: string, on: boolean): Promise<SettingsState>;
+  pwEdit(code: string): Promise<void>;
+  pwDelete(code: string): Promise<SettingsState>;
+  pwAllow(code: string): Promise<SettingsState>;
   onChanged(cb: () => void): void;
   onSection(cb: (s: string) => void): void;
 }
@@ -55,6 +61,64 @@ interface ValaSettingsApi {
   }
   for (const b of all('[data-section]')) b.addEventListener('click', () => go(b.dataset.section!));
   vala.onSection(go);
+
+  // ---- mật khẩu ----
+  const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls = '', text = '') => {
+    const e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text) e.textContent = text;
+    return e;
+  };
+  const button = (label: string, cls: string, onClick: () => void, disabled = false) => {
+    const b = el('button', cls, label);
+    b.type = 'button';
+    b.disabled = disabled;
+    b.addEventListener('click', onClick);
+    return b;
+  };
+
+  function pwRow(r: PwRow, s: SettingsState): HTMLLIElement {
+    const t = s.t;
+    const li = el('li', 'flex flex-wrap items-center gap-x-4 gap-y-2 py-3');
+    const info = el('div', 'min-w-0 flex-1');
+    info.append(el('div', 'break-all text-sm font-medium', r.ten));
+    const when = r.savedAt ? ` · ${t.pwSavedAt} ${new Date(r.savedAt).toLocaleString(s.lang === 'vi' ? 'vi-VN' : 'en-GB')}` : '';
+    info.append(el('div', 'muted break-all', r.username ? `${r.username}${when}` : t.pwNotSaved));
+    li.append(info);
+    if (r.username) {
+      const label = el('label', 'flex items-center gap-2 text-sm');
+      const box = el('input');
+      box.type = 'checkbox';
+      box.checked = r.auto;
+      box.addEventListener('change', async () => render(await vala.pwAuto(r.code, box.checked)));
+      label.append(box, el('span', '', t.pwAuto));
+      li.append(label);
+    }
+    const acts = el('div', 'flex gap-2');
+    acts.append(button(r.username ? t.pwChange : t.pwSave, 'btn-sm', () => void vala.pwEdit(r.code), !s.passwords.available));
+    if (r.username) {
+      acts.append(button(t.pwDelete, 'btn-sm text-red-700 dark:text-red-400', async () => {
+        if (confirm(`${t.pwConfirmDelete} ${r.ten} (${r.username})?`)) render(await vala.pwDelete(r.code));
+      }));
+    }
+    li.append(acts);
+    return li;
+  }
+
+  function renderPasswords(s: SettingsState) {
+    const p = s.passwords;
+    $('pw-unavailable').hidden = p.available;
+    $('pw-sources').replaceChildren(...p.sources.map((r) => pwRow(r, s)));
+    $('pw-sources-empty').hidden = !!s.user || p.sources.length > 0;
+    $('pw-sites').replaceChildren(...p.sites.map((r) => pwRow(r, s)));
+    $('pw-sites-empty').hidden = p.sites.length > 0;
+    $('pw-never-card').hidden = !p.never.length;
+    $('pw-never').replaceChildren(...p.never.map((n) => {
+      const li = el('li', 'flex items-center gap-4 py-3');
+      li.append(el('div', 'min-w-0 flex-1 break-all text-sm', n.ten), button(s.t.pwAllow, 'btn-sm', async () => render(await vala.pwAllow(n.code))));
+      return li;
+    }));
+  }
 
   // ---- vẽ ----
   function render(next: SettingsState) {
@@ -86,6 +150,8 @@ interface ValaSettingsApi {
     const install = $<HTMLButtonElement>('install-update');
     install.hidden = !next.update.pending;
     install.textContent = next.update.pending ? `${t.installUpdate} ${next.update.pending}` : '';
+
+    renderPasswords(next);
 
     $<HTMLInputElement>('home').value = next.devHomeUrl ?? next.homeUrl;
     applyTheme();

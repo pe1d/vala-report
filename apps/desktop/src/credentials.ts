@@ -11,6 +11,7 @@
  *     Touch ID. Máy không có Windows Hello ⇒ chỉ dựa vào khoá tài khoản Windows (DPAPI).
  */
 import { execFile } from 'node:child_process';
+import { EventEmitter } from 'node:events';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { app, safeStorage, systemPreferences } from 'electron';
@@ -27,7 +28,7 @@ const M = messages({
 
 export interface SavedCredential {
   username: string;
-  /** Tự đăng nhập lại khi phiên hết hạn (người dùng tắt được trong Cài đặt). */
+  /** Tự đăng nhập lại khi phiên hết hạn (người dùng tắt được trong Cài đặt → Mật khẩu). */
   auto: boolean;
   savedAt: string;
 }
@@ -42,7 +43,12 @@ function read(): Store {
     return { sources: s.sources ?? {}, never: s.never ?? [] };
   } catch { return { sources: {}, never: [] }; }
 }
-const write = (s: Store) => writeFileSync(file(), JSON.stringify(s, null, 1), { encoding: 'utf8', mode: 0o600 });
+/** 'changed' — mật khẩu đã lưu / danh sách "không bao giờ lưu" vừa đổi (menu, tab Cài đặt vẽ lại). */
+export const credentialEvents = new EventEmitter();
+function write(s: Store) {
+  writeFileSync(file(), JSON.stringify(s, null, 1), { encoding: 'utf8', mode: 0o600 });
+  credentialEvents.emit('changed');
+}
 
 /** Máy có kho bí mật thật của hệ điều hành không (không thì không lưu mật khẩu). */
 export function secureStorageAvailable(): boolean {
@@ -63,6 +69,7 @@ export const listCredentials = (): Record<string, SavedCredential> =>
 
 /** Người dùng chọn "Không bao giờ lưu cho hệ thống này". */
 export const neverSave = (code: string): boolean => read().never.includes(code);
+export const listNeverSave = (): string[] => [...read().never];
 export function setNeverSave(code: string, never: boolean) {
   const s = read();
   s.never = never ? [...new Set([...s.never, code])] : s.never.filter((c) => c !== code);

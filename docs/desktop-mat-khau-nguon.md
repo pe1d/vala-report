@@ -22,7 +22,7 @@ bằng **kho mật khẩu của hệ điều hành** và tự đăng nhập lạ
 
 Ngoài hệ thống nguồn khai trên cổng, **mọi trang** mở trong app (ví dụ QLVB của một đơn vị) cũng lưu được mật khẩu. Mật
 khẩu lưu theo đúng host của trang (`site:<host>`), giống trình duyệt, và chỉ được điền lại trên đúng host đó. Quản lý ở
-chuột phải lên tab của trang đó, hoặc ở menu ⋯ → **Mật khẩu đã lưu cho trang khác**. Trang cổng Vala Reporting không
+Cài đặt → Mật khẩu, chuột phải lên tab của trang đó, hoặc ở menu ⋯ → **Mật khẩu đã lưu cho trang khác**. Trang cổng Vala Reporting không
 lưu ở đây.
 
 ## Tự điền và tự đăng nhập
@@ -44,7 +44,11 @@ lưu ở đây.
 
 - Người dùng tự đăng nhập trong app thì app hỏi **"Lưu mật khẩu?"**, có các nút: Lưu / Lúc khác / Không bao giờ cho hệ
   thống này. Preload chỉ theo dõi form khi tiến trình chính xác nhận trang là trang đăng nhập của một nguồn.
-- **Menu ⋯ → <hệ thống>** hoặc **chuột phải lên tab của hệ thống** cho:
+- **Cài đặt → Mật khẩu** (như `chrome://settings/passwords`) liệt kê mọi hệ thống nguồn trên cổng (kể cả chưa lưu, để lưu
+  ngay tại đó), các trang khác (`site:<host>`) và danh sách "Không bao giờ lưu" (bỏ ra được). Mỗi dòng: tài khoản, thời
+  điểm lưu, bật/tắt "Tự đăng nhập lại", "Lưu / Đổi…", "Xoá" (hỏi lại trước khi xoá). Trang không bao giờ nhận mật khẩu,
+  chỉ nhận tên đăng nhập. Menu ⋯ có lối tắt **Quản lý mật khẩu…** tới mục này.
+- **Menu ⋯ → <hệ thống>** hoặc **chuột phải lên tab của hệ thống** cũng cho:
   - xem tài khoản đã lưu;
   - bật/tắt "Tự đăng nhập lại";
   - "Lưu / Đổi mật khẩu…" (mở một hộp nhỏ để nhập tài khoản);
