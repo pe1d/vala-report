@@ -17,6 +17,8 @@ export interface SourceFull extends Source {
   /** Người dùng đã đồng ý cho Vala dùng tài khoản này. */
   consented?: boolean;
   last_error: string | null;
+  /** Host trang đăng nhập (vd iam.bkav.com) — chỉ tự điền mật khẩu đã lưu trên các host này (autofill.ts). Máy chủ cũ không gửi. */
+  login_hosts?: string[];
 }
 
 export type SyncResult = 'sent' | 'unchanged' | 'not_logged_in' | 'need_consent' | 'managed' | 'rejected' | 'error';

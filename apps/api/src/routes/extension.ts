@@ -128,9 +128,11 @@ export const extensionRoutes = (deps: ApiDeps): FastifyPluginAsync => async (app
       let cookieNames: string[];
       try { cookieNames = deps.connections.cookieNames(r.code); } catch { continue; }   // nguồn chưa có adapter
       if (!cookieNames.length) continue;
-      const { baseUrl } = await deps.sourceInfo(r.code);
+      const { baseUrl, loginHosts } = await deps.sourceInfo(r.code);
       out.push({
         code: r.code, ten: r.ten, origin: new URL(baseUrl).origin, login_url: baseUrl, cookie_names: cookieNames,
+        // Host trang đăng nhập (vd iam.bkav.com): Vala Desktop chỉ tự điền mật khẩu đã lưu trên đúng các host này.
+        login_hosts: loginHosts.map((h) => (h.includes('://') ? new URL(h).host : h)),
         cookie_groups: deps.connections.cookieGroups(r.code),
         stable_cookies: deps.connections.stableCookies(r.code),
         permission_origins: deps.connections.permissionOrigins(r.code, baseUrl),

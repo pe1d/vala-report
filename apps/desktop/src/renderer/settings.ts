@@ -11,6 +11,8 @@ interface SettingsState {
   dev: boolean;
   homeUrl: string;
   devHomeUrl: string | null;
+  /** Mật khẩu hệ thống nguồn lưu trong máy (T08). */
+  creds: { available: boolean; sources: Array<{ code: string; ten: string; username: string | null; auto: boolean }> };
 }
 interface ValaSettingsApi {
   state(): Promise<SettingsState>;
@@ -21,6 +23,9 @@ interface ValaSettingsApi {
   onChanged(cb: () => void): void;
   logout(): Promise<SettingsState>;
   openPortal(): Promise<void>;
+  credSave(code: string, username: string, password: string): Promise<{ ok: boolean; message: string; state: SettingsState }>;
+  credDelete(code: string): Promise<SettingsState>;
+  credAuto(code: string, auto: boolean): Promise<SettingsState>;
 }
 
 (() => {
@@ -62,8 +67,61 @@ interface ValaSettingsApi {
       $('user-name').textContent = `${st.user.ho_ten} (${st.user.email})`;
       $('user-server').textContent = st.serverUrl;
     }
+    renderCreds();
     applyTheme();
   }
+
+  /** Danh sách mật khẩu đã lưu + form lưu / đổi. Dựng DOM bằng textContent. */
+  function renderCreds() {
+    const t = st.t;
+    $('cred-section').hidden = !st.user || !st.creds.sources.length;
+    $('cred-unavailable').hidden = st.creds.available;
+    ($('cred-form') as HTMLFormElement).hidden = !st.creds.available;
+    const list = $('cred-list');
+    list.replaceChildren();
+    for (const s of st.creds.sources) {
+      const li = document.createElement('li');
+      li.className = 'flex flex-wrap items-center gap-2 py-2';
+      const name = document.createElement('span');
+      name.className = 'flex-1 min-w-0';
+      const b = document.createElement('div'); b.className = 'font-medium'; b.textContent = s.ten;
+      const u = document.createElement('div'); u.className = 'text-slate-500 dark:text-slate-400 break-all'; u.textContent = s.username ?? t.credNone;
+      name.append(b, u);
+      li.append(name);
+      if (s.username) {
+        const lab = document.createElement('label');
+        lab.className = 'flex items-center gap-1';
+        const cb = document.createElement('input');
+        cb.type = 'checkbox'; cb.checked = s.auto;
+        cb.addEventListener('change', async () => render(await vala.credAuto(s.code, cb.checked)));
+        lab.append(cb, document.createTextNode(t.credAuto));
+        const del = document.createElement('button');
+        del.type = 'button';
+        del.className = 'rounded-md border border-red-300 px-2 py-1 text-red-700 hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-950';
+        del.textContent = t.credDelete;
+        del.addEventListener('click', async () => render(await vala.credDelete(s.code)));
+        li.append(lab, del);
+      }
+      list.append(li);
+    }
+    const sel = $('cred-source') as HTMLSelectElement;
+    const keep = sel.value;
+    sel.replaceChildren(...st.creds.sources.map((s) => { const o = document.createElement('option'); o.value = s.code; o.textContent = s.ten; return o; }));
+    if (keep) sel.value = keep;
+    ($('cred-user') as HTMLInputElement).placeholder = t.credUser;
+    ($('cred-pass') as HTMLInputElement).placeholder = t.credPass;
+  }
+
+  $('cred-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const user = $('cred-user') as HTMLInputElement;
+    const pass = $('cred-pass') as HTMLInputElement;
+    const r = await vala.credSave(($('cred-source') as HTMLSelectElement).value, user.value.trim(), pass.value);
+    pass.value = '';
+    if (r.ok) user.value = '';
+    render(r.state);
+    note('cred-note', r.message, r.ok ? 'ok' : 'err');
+  });
 
   for (const b of Array.from(document.querySelectorAll<HTMLButtonElement>('[data-lang]'))) {
     b.addEventListener('click', async () => {

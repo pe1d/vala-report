@@ -51,6 +51,32 @@ window.addEventListener('message', (e) => {
   }
 });
 
+// ---- Người dùng tự đăng nhập hệ thống nguồn ⇒ hỏi lưu mật khẩu (T08) ----
+// Chỉ theo dõi khi tiến trình chính xác nhận trang này là trang đăng nhập của một nguồn (autofill.ts sourceForUrl) — trang
+// khác không bao giờ gửi gì. Lấy ô mật khẩu có giá trị + ô tên đăng nhập đứng trước nó, như phần tự điền.
+let watchLogin = false;
+void ipcRenderer.invoke('vala:login-host').then((ok) => { watchLogin = ok === true; }, () => {});
+let lastSent = 0;
+function captureLogin(scope: ParentNode) {
+  if (!watchLogin || Date.now() - lastSent < 3000) return;
+  const vis = (el: HTMLInputElement) => el.getClientRects().length > 0;
+  const pw = Array.from(scope.querySelectorAll<HTMLInputElement>('input[type=password]')).find((p) => p.value && vis(p));
+  if (!pw) return;
+  const inputs = Array.from((pw.form ?? document).querySelectorAll<HTMLInputElement>('input')).filter(vis);
+  const user = inputs.slice(0, inputs.indexOf(pw)).reverse().find((i) => /^(text|email|tel|)$/i.test(i.getAttribute('type') ?? ''));
+  if (!user?.value) return;
+  lastSent = Date.now();
+  void ipcRenderer.invoke('vala:login-captured', { username: user.value, password: pw.value });
+}
+window.addEventListener('submit', (e) => captureLogin((e.target as HTMLFormElement) ?? document), true);
+window.addEventListener('click', (e) => {
+  const b = (e.target as Element | null)?.closest?.('button, input[type=submit], input[type=button], a');
+  if (b) captureLogin(b.closest('form') ?? document);
+}, true);
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && e.target instanceof HTMLInputElement) captureLogin(e.target.form ?? document);
+}, true);
+
 ipcRenderer.on('vala:event', (_e, m: { type?: string }) => {
   if (m?.type === 'connected' || m?.type === 'connect-failed' || m?.type === 'prefs' || m?.type === 'command') post(m as Record<string, unknown>);
 });

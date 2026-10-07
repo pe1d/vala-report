@@ -13,6 +13,8 @@ import { syncAll } from './sync';
 import { forgetPackages, refreshPackages } from './scripts';
 import { applyTheme, prefsEvents } from './prefs';
 import { setPortalUser } from './portal-state';
+import { registerAutofill } from './autofill';
+import { lockCredentials } from './credentials';
 import { installUiProtocol, refreshUi, registerUiScheme } from './ui-cache';
 import { forgetPortalLogin, initBrowser, refreshBrowser } from './browser';
 import { createMenus, moreMenu, profileMenu, refreshMenus } from './menu';
@@ -51,7 +53,7 @@ async function signOut() {
 
 // Đăng nhập cổng ở tab Báo cáo ⇒ cổng cấp token thiết bị qua cầu nối (account.ts) ⇒ bắt đầu giữ/gửi phiên.
 accountEvents.on('login', () => { refreshAll(); startSync(); });
-accountEvents.on('logout', () => { forgetPackages(); setPortalUser(null); refreshAll(); });
+accountEvents.on('logout', () => { forgetPackages(); setPortalUser(null); lockCredentials(); refreshAll(); });
 // Đổi ngôn ngữ / sáng-tối ở bất kỳ đâu ⇒ menu, khay, thanh tab theo (browser.ts tự báo cổng).
 prefsEvents.on('changed', refreshAll);
 portalUserEvents.on('changed', refreshAll);
@@ -88,6 +90,7 @@ if (!app.requestSingleInstanceLock()) {
     applyTheme();
     installUiProtocol();
     registerBridge();
+    registerAutofill();
     watchCookies();
     createMenus({ showMain, showPortal, openSettings, signOut: () => void signOut(), changePassword: changePortalPassword });
     initBrowser({ onLeave: onTabLeave, menu: moreMenu, profileMenu, signIn: showPortal });

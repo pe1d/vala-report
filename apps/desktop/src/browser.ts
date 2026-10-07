@@ -14,6 +14,7 @@ import { join } from 'node:path';
 import { app, BrowserWindow, ipcMain, session, shell, WebContentsView, type HandlerDetails, type Input, type IpcMainInvokeEvent, type Menu, type WebContents } from 'electron';
 import { APP_NAME, ICON, IS_DEV } from './channel';
 import { messages, normLang } from './i18n';
+import { attachAutofill } from './autofill';
 import { attachPackages, injectAll, packageEvents } from './scripts';
 import { isPortalUrl, mapToUi, UI_ORIGIN, uiEvents, uiPortalUrl } from './ui-cache';
 import { currentPrefs, prefsEvents, setPrefs } from './prefs';
@@ -178,6 +179,8 @@ function createView(t: Tab): WebContentsView {
   wc.on('before-input-event', (e, input) => { if (shortcut(input)) e.preventDefault(); });
   // Gói kịch bản của quản trị (sửa giao diện, thao tác có tên) — chèn vào trang khớp mẫu địa chỉ (scripts.ts).
   attachPackages(wc);
+  // Trang đăng nhập của hệ thống nguồn có mật khẩu đã lưu ⇒ tự đăng nhập (autofill.ts, T08).
+  attachAutofill(wc);
   // Tab Báo cáo chạy bản giao diện trong máy: trang của cổng trên máy chủ (vd SSO đăng nhập xong chuyển về
   // https://<máy chủ>/#token…) ⇒ mở cùng đường dẫn trong bản trong máy, giữ nguyên query và #.
   if (t.key === 'portal') {

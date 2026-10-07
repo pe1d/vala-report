@@ -14,6 +14,7 @@ import { app, ipcMain, Notification, session, shell, type IpcMainInvokeEvent, ty
 import { adoptDeviceToken, DEVICE_TOKEN, deviceName } from './account';
 import { api } from './api';
 import { EventEmitter } from 'node:events';
+import { tryAutoRelogin } from './autofill';
 import { backgroundSourceTab, sendToPortal, showSourceTab, showTab, showWebContents, sourceTabKey } from './browser';
 import { matchesSessionDomain, sessionDomain } from './cookies';
 import { ICON } from './channel';
@@ -162,6 +163,8 @@ function checkExpiry(src: SourceFull) {
   if (src.auth_method !== 'extension' || pending.has(src.code)) return;
   const dead = src.state === 'expired' || src.state === 'failed' || r === 'rejected';
   if (!dead) return;
+  // Có mật khẩu đã lưu trong máy (T08) ⇒ tự đăng nhập lại nền trước; chỉ báo người dùng khi không tự làm được.
+  if (tryAutoRelogin(src)) return;
   const last = expiryNoticeAt.get(src.code);
   if (last && Date.now() - last < EXPIRY_REMIND_MS) return;
   expiryNoticeAt.set(src.code, Date.now());

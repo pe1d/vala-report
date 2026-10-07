@@ -8,10 +8,13 @@
 import { join } from 'node:path';
 import { BrowserWindow, ipcMain, type IpcMainInvokeEvent } from 'electron';
 import { accountEvents } from './account';
+import { onCredentialSaved } from './autofill';
 import { ICON, IS_DEV } from './channel';
 import { messages, normLang } from './i18n';
+import { deleteCredential, listCredentials, saveCredential, secureStorageAvailable, setAutoLogin } from './credentials';
 import { prefsEvents, setPrefs } from './prefs';
 import { DEFAULT_SERVER, getSettings, normalizeHome, setSettings } from './settings';
+import { cachedSources } from './sync';
 
 const M = messages({
   title: 'Cài đặt Vala Desktop',
@@ -27,6 +30,12 @@ const M = messages({
   signIn: 'Đăng nhập',
   signedInAs: 'Đã đăng nhập', serverIs: 'Máy chủ',
   openPortal: 'Mở cổng báo cáo', logout: 'Đăng xuất',
+  credTitle: 'Mật khẩu hệ thống nguồn',
+  credHint: 'Lưu trong kho mật khẩu của hệ điều hành trên máy này (không gửi lên máy chủ Vala). Phiên hết hạn thì Vala Desktop tự đăng nhập lại; lần đầu dùng sau khi mở ứng dụng, Windows hỏi xác nhận (vân tay / khuôn mặt / PIN). Đăng nhập tay trong ứng dụng cũng được hỏi lưu.',
+  credUnavailable: 'Máy này chưa có kho mật khẩu của hệ điều hành (Linux: cần gnome-keyring hoặc KWallet) — không lưu được mật khẩu.',
+  credNone: 'Chưa lưu', credAuto: 'Tự đăng nhập lại', credDelete: 'Xoá',
+  credUser: 'Tên đăng nhập', credPass: 'Mật khẩu', credSave: 'Lưu mật khẩu',
+  credSaved: (ten: string) => `Đã lưu mật khẩu ${ten}`, credBad: 'Nhập đủ tên đăng nhập và mật khẩu',
 }, {
   title: 'Vala Desktop settings',
   homeTitle: 'Home page (dev build only)',
@@ -41,6 +50,12 @@ const M = messages({
   signIn: 'Sign in',
   signedInAs: 'Signed in as', serverIs: 'Server',
   openPortal: 'Open reporting portal', logout: 'Sign out',
+  credTitle: 'Source-system passwords',
+  credHint: 'Stored in your operating system’s password store on this computer (never sent to the Vala server). When a session expires Vala Desktop signs in again by itself; the first time after the app starts, Windows asks you to confirm (fingerprint / face / PIN). Signing in manually inside the app also offers to save.',
+  credUnavailable: 'This computer has no operating-system password store (Linux: needs gnome-keyring or KWallet) — passwords cannot be saved.',
+  credNone: 'Not saved', credAuto: 'Sign in again automatically', credDelete: 'Delete',
+  credUser: 'Username', credPass: 'Password', credSave: 'Save password',
+  credSaved: (ten: string) => `Saved the ${ten} password`, credBad: 'Enter both the username and the password',
 });
 
 export interface SettingsHooks {
@@ -57,8 +72,13 @@ let win: BrowserWindow | null = null;
 
 function state() {
   const s = getSettings();
-  const t = M[s.lang];
+  const { credSaved, ...t } = M[s.lang];   // hàm không gửi qua IPC được
+  const saved = listCredentials();
   return {
+    creds: {
+      available: secureStorageAvailable(),
+      sources: s.deviceToken ? cachedSources().map((x) => ({ code: x.code, ten: x.ten, username: saved[x.code]?.username ?? null, auto: saved[x.code]?.auto ?? true })) : [],
+    },
     t: { ...t, title: IS_DEV ? `${t.title} (dev)` : t.title }, lang: s.lang, serverUrl: s.serverUrl || DEFAULT_SERVER,
     user: s.deviceToken ? s.user : null,
     dev: IS_DEV, homeUrl: s.homeUrl, devHomeUrl: s.devHomeUrl ?? null,
@@ -74,7 +94,7 @@ prefsEvents.on('changed', pushState);
 export function openSettingsWindow(hooks: SettingsHooks): void {
   if (win && !win.isDestroyed()) { win.show(); win.focus(); return; }
   const w = new BrowserWindow({
-    width: 520, height: IS_DEV ? 760 : 560, minWidth: 420, minHeight: 480, autoHideMenuBar: true, show: false,
+    width: 520, height: IS_DEV ? 880 : 720, minWidth: 420, minHeight: 480, autoHideMenuBar: true, show: false,
     icon: ICON,
     webPreferences: { preload: join(__dirname, 'settings-preload.js') },
   });
@@ -99,10 +119,27 @@ export function openSettingsWindow(hooks: SettingsHooks): void {
   ipcMain.handle('vala:sign-in', (e) => { own(e); hooks.signIn(); w.close(); });
   ipcMain.handle('vala:logout', async (e) => { own(e); await hooks.signOut(); return state(); });
   ipcMain.handle('vala:open-portal', (e) => { own(e); hooks.openPortal(); });
+  ipcMain.handle('vala:cred-save', (e, a: { code?: unknown; username?: unknown; password?: unknown }) => {
+    own(e);
+    const t = M[getSettings().lang];
+    const src = cachedSources().find((x) => x.code === a?.code);
+    const user = typeof a?.username === 'string' ? a.username.trim().slice(0, 200) : '';
+    const pass = typeof a?.password === 'string' ? a.password.slice(0, 500) : '';
+    if (!src || !user || !pass) return { ok: false, message: t.credBad, state: state() };
+    const ok = saveCredential(src.code, user, pass);
+    if (ok) onCredentialSaved(src.code);
+    return { ok, message: ok ? t.credSaved(src.ten) : t.credUnavailable, state: state() };
+  });
+  ipcMain.handle('vala:cred-delete', (e, code: unknown) => { own(e); if (typeof code === 'string') deleteCredential(code); return state(); });
+  ipcMain.handle('vala:cred-auto', (e, a: { code?: unknown; auto?: unknown }) => {
+    own(e);
+    if (typeof a?.code === 'string') setAutoLogin(a.code, a.auto === true);
+    return state();
+  });
 
   w.once('ready-to-show', () => w.show());
   w.on('closed', () => {
-    for (const ch of ['vala:settings-state', 'vala:set-lang', 'vala:set-theme', 'vala:save-home', 'vala:sign-in', 'vala:logout', 'vala:open-portal']) ipcMain.removeHandler(ch);
+    for (const ch of ['vala:cred-save', 'vala:cred-delete', 'vala:cred-auto', 'vala:settings-state', 'vala:set-lang', 'vala:set-theme', 'vala:save-home', 'vala:sign-in', 'vala:logout', 'vala:open-portal']) ipcMain.removeHandler(ch);
     if (win === w) win = null;
   });
   void w.loadFile(join(__dirname, '../resources/settings.html'));

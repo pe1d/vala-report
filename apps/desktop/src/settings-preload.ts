@@ -9,5 +9,8 @@ contextBridge.exposeInMainWorld('vala', {
   signIn: () => ipcRenderer.invoke('vala:sign-in'),
   logout: () => ipcRenderer.invoke('vala:logout'),
   openPortal: () => ipcRenderer.invoke('vala:open-portal'),
+  credSave: (code: string, username: string, password: string) => ipcRenderer.invoke('vala:cred-save', { code, username, password }),
+  credDelete: (code: string) => ipcRenderer.invoke('vala:cred-delete', code),
+  credAuto: (code: string, auto: boolean) => ipcRenderer.invoke('vala:cred-auto', { code, auto }),
   onChanged: (cb: () => void) => { ipcRenderer.on('vala:settings-changed', () => cb()); },
 });

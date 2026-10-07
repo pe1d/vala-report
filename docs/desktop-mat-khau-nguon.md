@@ -1,0 +1,46 @@
+# Vala Desktop: mật khẩu hệ thống nguồn lưu trong máy (T08)
+
+Đây là việc T08 trong biên bản họp 10/2026. Người dùng nhập tài khoản eGov/eTask… **một lần**. Vala Desktop lưu tài khoản đó
+bằng **kho mật khẩu của hệ điều hành** và tự đăng nhập lại mỗi khi phiên hết hạn.
+
+## Lưu ở đâu, an toàn thế nào
+
+- Mật khẩu được mã hoá bằng Electron `safeStorage`, tức là khoá do hệ điều hành giữ:
+  - Windows: DPAPI, theo tài khoản Windows;
+  - macOS: Keychain;
+  - Linux: gnome-libsecret hoặc KWallet. Nếu máy không có kho bí mật (`basic_text`), app **không lưu**.
+- Tệp `credentials.json` trong thư mục dữ liệu của app chỉ chứa tên đăng nhập và bản mã hoá. Mật khẩu **không bao giờ gửi
+  lên máy chủ Vala**.
+- Lần đầu dùng mật khẩu sau khi mở app, app hỏi xác nhận người dùng **một lần cho cả phiên**:
+  - Windows: Windows Hello (vân tay, khuôn mặt hoặc PIN). App gọi WinRT `UserConsentVerifier` qua Windows PowerShell 5.1,
+    không cần module gốc. Máy không có Windows Hello thì chỉ dựa vào DPAPI.
+  - macOS: Touch ID.
+  - Bấm Huỷ thì app không dùng mật khẩu trong phiên đó.
+- Đăng xuất app thì app khoá lại. Mật khẩu đã lưu vẫn giữ trong máy.
+
+## Tự điền và tự đăng nhập
+
+- App chỉ điền trên đúng các host của hệ thống đó: trang chính, `login_url`, và `login_hosts` do máy chủ gửi qua
+  `/ext/sources` (ví dụ `iam.bkav.com`). Trang khác không bao giờ nhận mật khẩu.
+- Trang có ô mật khẩu đang hiện:
+  - nếu gói kịch bản của hệ thống có thao tác `dang_nhap({ username, password })` thì app gọi thao tác đó;
+  - nếu không, app tự tìm ô tên đăng nhập đứng trước ô mật khẩu, điền rồi bấm đăng nhập.
+- **Chống khoá tài khoản nguồn:**
+  - Nếu form đăng nhập hiện lại trong vòng 90 giây sau lần tự đăng nhập, app coi là mật khẩu sai, dừng tự đăng nhập hệ
+    thống đó và báo người dùng.
+  - Chặn cứng: tối đa 3 lần tự đăng nhập mỗi giờ cho mỗi hệ thống.
+  - App chỉ thử lại khi người dùng lưu mật khẩu **mới**.
+- Khi đồng bộ phát hiện phiên hết hạn, app mở nền trang đăng nhập (`tryAutoRelogin`, tối đa 1 lần mỗi 30 phút). Cookie mới
+  tự được gửi lên Vala. App chỉ báo "phiên hết hạn" khi không tự đăng nhập được.
+
+## Lưu mật khẩu
+
+- Người dùng tự đăng nhập trong app thì app hỏi **"Lưu mật khẩu?"**, có các nút: Lưu / Lúc khác / Không bao giờ cho hệ
+  thống này. Preload chỉ theo dõi form khi tiến trình chính xác nhận trang là trang đăng nhập của một nguồn.
+- Trong **Cài đặt → Mật khẩu hệ thống nguồn**: xem tài khoản đã lưu, bật/tắt "Tự đăng nhập lại", xoá, hoặc nhập tay.
+
+## Giới hạn
+
+- Trang đăng nhập có CAPTCHA hoặc mã OTP thì không tự đăng nhập được. Phần điền vẫn chạy, người dùng nhập mã còn lại.
+- Form đăng nhập nằm trong iframe thì vẫn tự điền được, nhưng app không hỏi lưu mật khẩu (preload chỉ chạy ở khung chính).
+- Windows Hello mới được viết theo tài liệu WinRT, **chưa chạy thử trên máy Windows thật**.
