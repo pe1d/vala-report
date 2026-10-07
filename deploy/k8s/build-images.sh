@@ -14,6 +14,8 @@ IMAGES="$DATA_DIR/images"
 
 echo "==> Build image phiên bản $VER từ $ROOT"
 k delete job vala-build --ignore-not-found --wait=true >/dev/null
+# Sự kiện của Job cũ cùng tên còn lưu ~1 giờ — xoá để phần báo lỗi bên dưới không đọc nhầm lỗi của lần build trước.
+k delete events --field-selector involvedObject.name=vala-build --ignore-not-found >/dev/null 2>&1 || true
 sed -e "s|VALA_VERSION|$VER|g" -e "s|RUNNER_VERSION|$RV|g" -e "s|BUILD_RUNNER|$BUILD_RUNNER|g" -e "s|SRC_DIR|$ROOT|" -e "s|IMAGES_DIR|$IMAGES|" -e "s|CACHE_DIR|$DATA_DIR/buildkit|" \
   -e "s|BUILD_PROXY|${BUILD_HTTP_PROXY:-}|g" -e "s|WEB_BASE_PATH|${WEB_BASE_PATH:-/}|g" \
   "$K8S/build-job.yaml" | k apply -f - >/dev/null
