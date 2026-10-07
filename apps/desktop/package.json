@@ -7,6 +7,23 @@
   "private": true,
   "description": "Vala Desktop — giữ phiên các hệ thống nguồn và mở cổng Vala như một ứng dụng",
   "main": "dist/main.js",
+  "scripts": {
+    "build": "tsc -p . && node scripts/write-defaults.cjs && node scripts/release-notes.cjs && node scripts/copy-runtime.cjs && tailwindcss -i resources/ui.src.css -o dist/renderer/ui.css --minify",
+    "dev": "pnpm build && electron . --no-sandbox",
+    "package": "pnpm build && node scripts/release-notes.cjs --strict && electron-builder --win -p never",
+    "package:zip": "pnpm build && node scripts/release-notes.cjs --strict && electron-builder --win zip -p never",
+    "package:linux": "pnpm build && node scripts/release-notes.cjs --strict && electron-builder --linux deb -p never",
+    "typecheck": "tsc -p . --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "electron": "^32.3.3",
+    "electron-builder": "^25.1.8",
+    "tailwindcss": "~3.4.19",
+    "typescript": "~5.9.3",
+    "vitest": "^2.1.9"
+  },
   "dependencies": {
     "electron-updater": "^6.8.9"
   }
