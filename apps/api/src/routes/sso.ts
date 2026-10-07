@@ -30,8 +30,17 @@ export function grantStartUrl(deps: ApiDeps, st: Omit<GrantState, 'kind'>): stri
 }
 
 export const ssoRoutes = (deps: ApiDeps): FastifyPluginAsync => async (app) => {
-  /** Đăng nhập cổng qua Bkav SSO (tuỳ chọn, ngoài đăng nhập bằng mật khẩu). */
+  /**
+   * Đăng nhập cổng qua Bkav SSO (tuỳ chọn, ngoài đăng nhập bằng mật khẩu). Chuyển sang /auth/sso/start bằng địa chỉ ĐẦY ĐỦ
+   * của máy chủ: Vala Desktop chạy giao diện từ bản trong máy và chuyển tiếp /api hộ trang (không giữ cookie) — bước này
+   * biến thành một lần điều hướng thật tới máy chủ, nên cookie PKCE được lưu đúng như trên trình duyệt thường.
+   */
   app.get<{ Querystring: { next?: string } }>('/auth/sso/login', async (req, reply) => {
+    const q = new URLSearchParams({ next: safeNext(req.query.next) });
+    return reply.redirect(`${deps.config.publicApiUrl.replace(/\/+$/, '')}/api/v1/auth/sso/start?${q}`);
+  });
+
+  app.get<{ Querystring: { next?: string } }>('/auth/sso/start', async (req, reply) => {
     try { await deps.sso.discover(); } catch (e) {
       req.log.error({ err: (e as Error).message }, 'không đọc được cấu hình SSO (discovery)');
       return toWeb(reply, deps, '/dang-nhap', { loi: 'sso_loi' });

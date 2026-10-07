@@ -144,7 +144,8 @@ async function proxy(req: Request, target: string): Promise<Response> {
 /** GET điều hướng: không tự theo chuyển hướng — gặp 3xx thì trả trang tự chuyển (meta refresh) tới đích. */
 function navigate(target: string, headers: Headers): Promise<Response> {
   return new Promise((resolve, reject) => {
-    const r = net.request({ method: 'GET', url: target, redirect: 'manual' });
+    // useSessionCookies: cookie máy chủ đặt ở bước này (vd cookie PKCE của SSO) vào kho cookie chung của các tab.
+    const r = net.request({ method: 'GET', url: target, redirect: 'manual', useSessionCookies: true });
     headers.forEach((v, k) => { try { r.setHeader(k, v); } catch { /* header Chromium tự đặt */ } });
     r.on('redirect', (_status, _method, url) => {
       r.abort();
