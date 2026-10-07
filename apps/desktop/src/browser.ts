@@ -411,6 +411,17 @@ function registerIpc(): void {
   });
   ipcMain.handle('tabs:install-update', (e) => { own(e); installNow(); });
   ipcMain.on('tabs:resized', (e) => { if (win && e.sender === win.webContents) layout(); });
+  // Người dùng bấm thông báo do trang tạo (vd tin nhắn Vala) ⇒ đưa cửa sổ lên, chuyển sang đúng tab đó. Giới hạn nhịp để
+  // một trang không dùng lệnh này giành cửa sổ liên tục.
+  let lastNotifyClick = 0;
+  ipcMain.on('vala:web-notification-click', (e) => {
+    if (Date.now() - lastNotifyClick < 1500) return;
+    const t = [...tabs.values()].find((x) => x.view?.webContents === e.sender);
+    if (!t) return;
+    lastNotifyClick = Date.now();
+    showTab(t.key);
+    if (win && !win.isDestroyed()) reveal(win, true);
+  });
   ipcMain.handle('tabs:lang', (e, l: unknown) => { own(e); setPrefs({ lang: normLang(l) }); });
   ipcMain.handle('tabs:theme', (e, v: unknown) => { own(e); setPrefs({ theme: v }); });
 }

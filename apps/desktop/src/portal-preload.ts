@@ -3,7 +3,7 @@
  * thấy "đã có Vala Desktop", gọi được luồng kết nối, và chuyển token thiết bị khi người dùng đăng nhập cổng trong ứng dụng.
  * Không cookie nào đi qua đây. Tiến trình chính tự kiểm origin của trang trước khi trả lời (windows.ts fromPortal).
  */
-import { ipcRenderer } from 'electron';
+import { ipcRenderer, webFrame } from 'electron';
 
 const IN = 'vala-portal';
 const OUT = 'vala-extension';
@@ -76,6 +76,31 @@ window.addEventListener('click', (e) => {
 window.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && e.target instanceof HTMLInputElement) captureLogin(e.target.form ?? document);
 }, true);
+
+// ---- Thông báo do chính trang tạo (vd tin nhắn Vala trên vala.bkav.com) ----
+// Trang bấm thông báo thường chỉ gọi window.focus() — trong ứng dụng, trang nằm trong một tab nên lệnh đó không đưa được
+// cửa sổ lên. Bọc window.Notification ở thế giới của trang (trước khi trang chạy): bấm thông báo ⇒ báo tiến trình chính
+// đưa cửa sổ lên và chuyển sang đúng tab này; xử lý riêng của trang (mở cuộc trò chuyện…) vẫn chạy như cũ.
+void webFrame.executeJavaScript(`(() => {
+  const N = window.Notification;
+  if (!N || N.__vala) return;
+  const V = function Notification(title, options) {
+    const n = new N(title, options);
+    n.addEventListener('click', () => window.postMessage({ source: 'vala-web-notification', type: 'click' }, location.origin));
+    return n;
+  };
+  V.prototype = N.prototype;
+  Object.defineProperty(V, 'permission', { get: () => N.permission });
+  Object.defineProperty(V, 'maxActions', { get: () => N.maxActions });
+  V.requestPermission = (...a) => N.requestPermission(...a);
+  V.__vala = true;
+  window.Notification = V;
+})()`).catch(() => { /* trang không cho chạy (vd about:blank) */ });
+window.addEventListener('message', (e) => {
+  if (e.source !== window || e.origin !== location.origin) return;
+  const d = e.data as { source?: string; type?: string };
+  if (d?.source === 'vala-web-notification' && d.type === 'click') ipcRenderer.send('vala:web-notification-click');
+});
 
 ipcRenderer.on('vala:event', (_e, m: { type?: string }) => {
   if (m?.type === 'connected' || m?.type === 'connect-failed' || m?.type === 'prefs' || m?.type === 'command') post(m as Record<string, unknown>);
