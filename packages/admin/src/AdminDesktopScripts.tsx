@@ -286,7 +286,8 @@ function PackageEditor({ code, canTest, onClose, onSaved }: {
             className="rounded-md px-2 py-1 text-lg leading-none text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800 dark:hover:bg-slate-800 dark:hover:text-slate-100">✕</button>
         </header>
 
-        <div className="flex flex-1 flex-col gap-4 px-5 py-4 lg:min-h-0 lg:overflow-y-auto">
+        {/* Khối con không co lại (shrink-0): cột flex cuộn được sẽ ép khối mã về min-h ⇒ dòng gợi ý tràn đè lên ô Ghi chú. */}
+        <div className="flex flex-1 flex-col gap-4 px-5 py-4 lg:min-h-0 lg:overflow-y-auto [&>*]:shrink-0">
           {!isNew && detail.loading && <Loading />}
           {detail.error ? <ErrorBox error={detail.error} onRetry={detail.reload} /> : null}
           {f && (
@@ -339,12 +340,12 @@ function PackageEditor({ code, canTest, onClose, onSaved }: {
                   onChange={(e) => set({ css: e.target.value })} onKeyDown={tabInserts(f.css, (v) => set({ css: v }))} className={textareaCls} />
               </div>
 
-              <div className="flex min-h-[360px] flex-1 flex-col">
+              <div className="flex flex-1 flex-col">
                 <div className="mb-1.5 flex items-center gap-2"><span className="text-sm font-medium">{t.script}</span><Muted className="text-xs">{t.scriptHint}</Muted></div>
                 <textarea aria-label={t.script} spellCheck={false} value={f.script}
                   onChange={(e) => set({ script: e.target.value })} onKeyDown={tabInserts(f.script, (v) => set({ script: v }))}
                   className={`${textareaCls} min-h-[360px] flex-1`} />
-                <Muted className="mt-1 font-mono text-xs">{t.apiHelp}</Muted>
+                <Muted className="mt-1 break-words font-mono text-xs">{t.apiHelp}</Muted>
               </div>
 
               <Field label={t.note}><Input className="w-full !min-w-0" value={f.ghi_chu} placeholder={t.notePh} onChange={(e) => set({ ghi_chu: e.target.value })} /></Field>
