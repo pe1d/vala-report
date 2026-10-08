@@ -37,8 +37,12 @@ const num = (v: unknown): number | undefined => { const n = typeof v === 'number
  */
 export interface Hop { ma: string; ten: string; loai: 'den' | 'di' | 'khac'; goc?: string; loc?: Truong[] }
 export interface Nhom { ten: string; muc: Hop[] }
-/** `menu`: nhóm ⇒ mục, đủ như hệ thống gốc; `tao`: loại văn bản tạo được trên giao diện (form lấy bằng vb_mau_tao). */
-export interface ThongTin { he_thong: string; nguoi_dung?: string; menu: Nhom[]; tao: Array<{ ma: string; ten: string }> }
+/**
+ * `menu`: nhóm ⇒ mục, đủ như hệ thống gốc; `tao`: loại văn bản tạo được — form lấy bằng vb_mau_tao, hoặc `goc` (chưa
+ * phiên dịch form) ⇒ mở đúng form tạo của hệ thống.
+ */
+export interface LoaiTao { ma: string; ten: string; goc?: string }
+export interface ThongTin { he_thong: string; nguoi_dung?: string; menu: Nhom[]; tao: LoaiTao[] }
 /** Trường riêng của hệ thống (không có trong hợp đồng) — hiện nguyên tên + giá trị để không mất thông tin nào. */
 export interface Them { ten: string; gia_tri: string }
 export interface Dong {
@@ -83,7 +87,10 @@ export function cleanThongTin(v: unknown): ThongTin {
     he_thong: str(o.he_thong, 100) ?? '',
     nguoi_dung: str(o.nguoi_dung, 200),
     menu,
-    tao: arr(o.tao, (h) => { const x = obj(h); const ma = str(x?.ma, 100); const ten = str(x?.ten, 100); return ma && MA.test(ma) && ten ? { ma, ten } : null; }, 20),
+    tao: arr(o.tao, (h) => {
+      const x = obj(h); const ma = str(x?.ma, 200); const ten = str(x?.ten, 150); const goc = str(x?.goc, 2000);
+      return ma && MA.test(ma) && ten ? { ma, ten, goc: goc && /^https?:\/\//.test(goc) ? goc : undefined } : null;
+    }, 30),
   };
 }
 

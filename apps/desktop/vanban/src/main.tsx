@@ -9,7 +9,7 @@ import { createRoot } from 'react-dom/client';
 import { locale, messages, setLang, useLang, useT, type Lang } from '@vala/ui/i18n';
 import { setTheme, type ThemeMode } from '@vala/ui/theme';
 import { Badge, Banner, Button, Skeleton } from '@vala/ui/ui';
-import type { ChiTiet, DanhSach, Dem, Dong, Hop, MauTao, TepGui, ThaoTac, ThongTin, Truong } from '../../src/vanban-model';
+import type { ChiTiet, DanhSach, Dem, Dong, Hop, LoaiTao, MauTao, TepGui, ThaoTac, ThongTin, Truong } from '../../src/vanban-model';
 import './index.css';
 
 type Res<T> = { ok: true; result: T } | { ok: false; error: string; code?: string };
@@ -246,7 +246,7 @@ function ActionDialog({ id, tt, onDone, onClose, t }: { id: string; tt: ThaoTac;
 }
 
 // ---- tạo văn bản (form do phiên dịch khai: vb_mau_tao ⇒ vb_tao) ----
-function Compose({ loai, system, onClose, onCreated, t }: { loai: { ma: string; ten: string }; system: string; onClose: () => void; onCreated: (id: string | undefined, msg: string) => void; t: T }) {
+function Compose({ loai, system, onClose, onCreated, t }: { loai: LoaiTao; system: string; onClose: () => void; onCreated: (id: string | undefined, msg: string) => void; t: T }) {
   const [mau, setMau] = useState<MauTao | null>(null);
   const [err, setErr] = useState<unknown>(null);
   const load = useCallback(() => { setErr(null); setMau(null); call<MauTao>('vb_mau_tao', { loai: loai.ma }).then(setMau, setErr); }, [loai.ma]);
@@ -432,7 +432,7 @@ function Row({ d, active, onOpen, t, lang }: { d: Dong; active: boolean; onOpen:
 }
 
 // ---- menu bên trái ----
-function Nav({ info, dem, hop, onPick, onCreate, t }: { info: ThongTin; dem: Dem; hop: string; onPick: (h: Hop) => void; onCreate: (l: { ma: string; ten: string }) => void; t: T }) {
+function Nav({ info, dem, hop, onPick, onCreate, t }: { info: ThongTin; dem: Dem; hop: string; onPick: (h: Hop) => void; onCreate: (l: LoaiTao) => void; t: T }) {
   const [shut, setShut] = useState<Set<string>>(new Set());
   const [pick, setPick] = useState(false);
   return (
@@ -445,9 +445,17 @@ function Nav({ info, dem, hop, onPick, onCreate, t }: { info: ThongTin; dem: Dem
             <Button variant="primary" className="w-full justify-center" onClick={() => (info.tao.length === 1 ? onCreate(info.tao[0]!) : setPick((x) => !x))}>
               <Icon d={I.plus} />{t.create}{info.tao.length > 1 && <Icon d={I.chev} size={14} />}
             </Button>
+            {pick && <div aria-hidden className="fixed inset-0 z-10" onClick={() => setPick(false)} />}
             {pick && (
               <ul className="absolute left-0 right-0 z-20 mt-1 rounded-xl border border-slate-200 bg-white p-1 shadow-lg dark:border-slate-700 dark:bg-slate-900">
-                {info.tao.map((l) => <li key={l.ma}><button type="button" onClick={() => { setPick(false); onCreate(l); }} className="w-full rounded-lg px-3 py-1.5 text-left text-sm hover:bg-slate-100 dark:hover:bg-slate-800">{l.ten}</button></li>)}
+                {info.tao.map((l) => (
+                  <li key={l.ma}>
+                    <button type="button" onClick={() => { setPick(false); onCreate(l); }} title={l.goc ? t.onOriginal : undefined}
+                      className="flex w-full items-center gap-2 rounded-lg px-3 py-1.5 text-left text-sm hover:bg-slate-100 dark:hover:bg-slate-800">
+                      <span className="min-w-0 flex-1 truncate">{l.ten}</span>{l.goc && <span className="shrink-0 text-slate-400"><Icon d={I.ext} size={13} /></span>}
+                    </button>
+                  </li>
+                ))}
               </ul>
             )}
           </div>
@@ -459,7 +467,7 @@ function Nav({ info, dem, hop, onPick, onCreate, t }: { info: ThongTin; dem: Dem
           const closed = shut.has(key);
           return (
             <div key={key} className="mt-1">
-              {n.ten && (
+              {n.ten && !(n.muc.length === 1 && n.muc[0]!.ten === n.ten) && (
                 <button type="button" aria-expanded={!closed} onClick={() => setShut((s) => { const x = new Set(s); if (closed) x.delete(key); else x.add(key); return x; })}
                   className="flex w-full items-center gap-1 rounded-md px-2 pb-1 pt-2 text-left text-[12px] font-semibold text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200">
                   <span className={`transition-transform ${closed ? '-rotate-90' : ''}`}><Icon d={I.chev} size={12} /></span>{n.ten}
@@ -488,7 +496,7 @@ function Nav({ info, dem, hop, onPick, onCreate, t }: { info: ThongTin; dem: Dem
 }
 
 // ---- trang ----
-type Pane = { kind: 'detail'; id: string; flash: string } | { kind: 'create'; loai: { ma: string; ten: string } } | null;
+type Pane = { kind: 'detail'; id: string; flash: string } | { kind: 'create'; loai: LoaiTao } | null;
 
 function App({ system }: { system: string }) {
   const t = useT(M);
@@ -524,13 +532,16 @@ function App({ system }: { system: string }) {
     const l = Object.fromEntries(Object.entries(loc).filter(([, v]) => !isEmpty(v)));
     call<DanhSach>('vb_danh_sach', { hop, trang, so_dong: 20, tim, loc: l }).then((r) => { if (n === seq.current) setDs(r); }, (e) => { if (n === seq.current) setErr(e); });
   }, [hop, trang, tim, loc]);
-  const refresh = useCallback(() => { loadList(); loadDem(); }, [loadList, loadDem]);
+  // Tải lại: cả menu (hệ thống có thể vừa đổi / vừa đăng nhập xong) lẫn danh sách, số đếm.
+  const refresh = useCallback(() => { loadInfo(); loadList(); }, [loadInfo, loadList]);
   useEffect(loadInfo, [loadInfo]);
   useEffect(loadList, [loadList]);
-  // Trang gốc vừa tải lại (vd vừa đăng nhập) ⇒ đang báo lỗi thì thử lại.
-  const errRef = useRef(err); errRef.current = err;
-  useEffect(() => bridge.onGocLoaded(() => { if (errRef.current) { if (info) refresh(); else loadInfo(); } }), [info, loadInfo, refresh]);
+  // Trang gốc vừa tải lại (vd vừa đăng nhập, vừa làm gì đó trên trang gốc) ⇒ đọc lại menu, danh sách, số đếm.
+  const refreshRef = useRef(refresh); refreshRef.current = refresh;
+  useEffect(() => bridge.onGocLoaded(() => refreshRef.current()), []);
 
+  /** Loại văn bản có form phiên dịch ⇒ form Vala; chưa phiên dịch (`goc`) ⇒ mở form tạo của hệ thống. */
+  const create = (l: LoaiTao) => { if (l.goc) void bridge.goc(true, l.goc); else setPane({ kind: 'create', loai: l }); };
   const pickHop = (m: Hop) => {
     if (m.goc) { void bridge.goc(true, m.goc); return; }
     setHop(m.ma); setTrang(1); setLoc({}); setPane(null);
@@ -543,7 +554,7 @@ function App({ system }: { system: string }) {
       if (e.key === 'Escape' && pane) { setPane(null); return; }
       if (typing(e)) return;
       if (e.key === '/') { e.preventDefault(); searchRef.current?.focus(); return; }
-      if ((e.key === 'n' || e.key === 'N') && info?.tao[0]) { e.preventDefault(); setPane({ kind: 'create', loai: info.tao[0] }); return; }
+      if ((e.key === 'n' || e.key === 'N') && info?.tao[0]) { e.preventDefault(); create(info.tao[0]); return; }
       if (e.key === 'r' || e.key === 'R') { e.preventDefault(); refresh(); return; }
       if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && ds?.dong.length) {
         e.preventDefault();
@@ -567,7 +578,7 @@ function App({ system }: { system: string }) {
   }
   return (
     <div className="flex h-screen bg-white text-slate-800 dark:bg-slate-950 dark:text-slate-100">
-      <Nav info={info} dem={dem} hop={hop} onPick={pickHop} onCreate={(l) => setPane({ kind: 'create', loai: l })} t={t} />
+      <Nav info={info} dem={dem} hop={hop} onPick={pickHop} onCreate={create} t={t} />
       <div className="flex min-w-0 flex-1">
         <main className={`min-h-0 min-w-0 flex-1 flex-col ${pane ? 'hidden lg:flex' : 'flex'}`}>
           <header className="flex items-center gap-2 px-4 pb-2 pt-4">

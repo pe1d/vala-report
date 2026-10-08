@@ -87,12 +87,12 @@ function menuHeThong() {
   return nhom;
 }
 
-/** Các luồng "Tạo văn bản" của hệ thống (chưa phiên dịch form) ⇒ mục mở đúng form tạo của hệ thống. */
+/** Các luồng "Tạo văn bản" của hệ thống (chưa phiên dịch form) ⇒ nút Tạo văn bản của Vala mở đúng form tạo của hệ thống. */
 function taoHeThong() {
   const k = Object.keys(sessionStorage).find((x) => /^vi_get_menu_top_tao_van_ban_/.test(x));
   const raw = k ? sessionStorage.getItem(k) || '' : '';
   return raw.split('|').filter(Boolean).map((it) => it.split(',')).filter((b) => b.length >= 6).map((b) => ({
-    ma: `tao_${b[0]}_${b[4].split(':')[0]}`.replace(/[^A-Za-z0-9_.:|-]/g, '_').slice(0, 200), ten: tenMenu(b[1]), loai: 'di',
+    ma: `tao_${b[0]}_${b[4].split(':')[0]}`.replace(/[^A-Za-z0-9_.:|-]/g, '_').slice(0, 200), ten: tenMenu(b[1]),
     goc: urlGoc(`IyLlCc5f5w5fCES.=${b[5]}&CBAkTA9f5o..=${b[0]}&6yXl=${b[2]}&4BLw6B9k=${b[3]}&DFHl4yAvDx9a5B5fCcbw6B9k3yba=${b[4]}&5ELj3zP1DES.=${b[6] || ''}`),
   }));
 }
@@ -136,12 +136,12 @@ const nho = new Map();
 
 vala.action('vb_thong_tin', { mo_ta: 'Giao diện Văn bản: tên hệ thống, người đăng nhập, menu đủ như hệ thống' }, async () => {
   const nguoi_dung = await vala.dwr('DataRemoting.getJValue', vala.dwr.expr('qlvb.vanban_di.act_activiti.getUserLogin'));
+  // Vừa đăng nhập: trang chính còn đang vẽ menu ⇒ chờ (không có thì dùng các hộp đã phiên dịch).
+  try { await vala.waitFor(() => /link\(/.test(htmlMenu()), { timeout: 8000 }); } catch { /* không có menu */ }
   let menu = menuHeThong();
   // Chưa đọc được menu của trang ⇒ ít nhất các hộp đã phiên dịch.
   if (!menu.some((n) => n.muc.some((m) => !m.goc))) menu = [{ ten: 'Văn bản', muc: HOP.map(({ ma, ten, loai }) => ({ ma, ten, loai })) }, ...menu];
-  const tao = taoHeThong();
-  if (tao.length) menu.unshift({ ten: 'Tạo văn bản', muc: tao });
-  return { he_thong: 'Văn bản Hà Nội', nguoi_dung, menu, tao: [] };
+  return { he_thong: 'Văn bản Hà Nội', nguoi_dung, menu, tao: taoHeThong() };
 });
 
 vala.action('vb_dem', { mo_ta: 'Giao diện Văn bản: số văn bản các hộp đã phiên dịch' }, async () => {

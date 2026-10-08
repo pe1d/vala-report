@@ -26,12 +26,12 @@ describe('làm sạch kết quả phiên dịch', () => {
   it('thông tin: menu nhóm ⇒ mục, bỏ mục sai mã, loại lạ ⇒ khac, mục chưa phiên dịch giữ địa chỉ trang gốc', () => {
     const r = cleanThongTin({ he_thong: 'iOffice', menu: [{ ten: 'Văn bản đến', muc: [
       { ma: 'den', ten: 'Đến', loai: 'den' }, { ma: 'x y', ten: 'Sai' }, { ma: 'k', ten: 'K', loai: 'zzz', goc: 'https://a.vn/x?y=1' }, { ma: 'j', ten: 'J', goc: 'javascript:alert(1)' }] }],
-      tao: [{ ma: 'du_thao', ten: 'Dự thảo' }] });
+      tao: [{ ma: 'du_thao', ten: 'Dự thảo' }, { ma: 'tao_m1', ten: 'Đi CVPX', goc: 'https://a.vn/tao' }, { ma: 'x', ten: 'X', goc: 'file:///etc' }] });
     expect(r.menu).toEqual([{ ten: 'Văn bản đến', muc: [
       { ma: 'den', ten: 'Đến', loai: 'den', goc: undefined, loc: undefined },
       { ma: 'k', ten: 'K', loai: 'khac', goc: 'https://a.vn/x?y=1', loc: undefined },
       { ma: 'j', ten: 'J', loai: 'khac', goc: undefined, loc: undefined }] }]);
-    expect(r.tao).toEqual([{ ma: 'du_thao', ten: 'Dự thảo' }]);
+    expect(r.tao).toEqual([{ ma: 'du_thao', ten: 'Dự thảo', goc: undefined }, { ma: 'tao_m1', ten: 'Đi CVPX', goc: 'https://a.vn/tao' }, { ma: 'x', ten: 'X', goc: undefined }]);
   });
   it('thông tin: phiên dịch cũ khai `hop` phẳng ⇒ một nhóm', () => {
     expect(cleanThongTin({ he_thong: 'X', hop: [{ ma: 'a', ten: 'A' }] }).menu).toEqual([{ ten: '', muc: [{ ma: 'a', ten: 'A', loai: 'khac', goc: undefined, loc: undefined }] }]);
