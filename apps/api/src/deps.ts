@@ -1,5 +1,5 @@
 import type { Queue } from 'bullmq';
-import type { ConnectionSessions, CrawlJob, CrawlabClient, Db, PackageSigner, SecretStore, SessionManager, SourceInfo, SourceRegistry, SsoClient } from '@vala/core';
+import type { ConnectionSessions, CrawlJob, CrawlabClient, Db, PackageSigner, SecretStore, SessionManager, SourceInfo, SourceRegistries, SsoClient } from '@vala/core';
 
 export interface ApiConfig {
   /** Đăng nhập cổng: 'password' (mặc định) và/hoặc 'sso'. */
@@ -8,7 +8,6 @@ export interface ApiConfig {
   internalToken: string;
   publicWebUrl: string;
   publicApiUrl: string;
-  tenant: string;
   /** Địa chỉ API mà spider trong Crawlab gọi tới (đặt vào biến môi trường của Crawlab khi đồng bộ). */
   spiderApiUrl: string;
   /** Link giao diện Crawlab cho quản trị (chỉ kỹ sư vận hành). */
@@ -30,7 +29,7 @@ export interface ApiDeps {
   sessions: SessionManager;
   connections: ConnectionSessions;
   /** Danh mục hệ thống nguồn trong bộ nhớ (gồm hệ thống do quản trị tạo); reload() sau khi sửa. */
-  sources: SourceRegistry;
+  sources: SourceRegistries;
   sourceInfo: (source: string) => Promise<SourceInfo>;
   /** Có ⇒ lịch chạy và "chạy ngay" đi qua Crawlab; không có ⇒ worker nội bộ. */
   crawlab?: CrawlabClient;

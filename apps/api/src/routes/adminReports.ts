@@ -59,7 +59,7 @@ export const adminReportRoutes = (deps: ApiDeps): FastifyPluginAsync => async (a
     // Spider lấy dữ liệu cho hệ thống này (nếu có) — để "Chạy ngay"/lịch chạy biết đường chạy spider trên Crawlab.
     // Không có spider ⇒ worker chạy các bước lấy dữ liệu khai trong cấu hình adapter.
     const spider = await withTenant(deps.writer, (t) => t.oneOrNone(
-      `SELECT code FROM core.crawl_spiders WHERE source_system = $1 AND is_enabled ORDER BY code LIMIT 1`,
+      `SELECT code FROM crawl_spiders WHERE source_system = $1 AND is_enabled ORDER BY code LIMIT 1`,
       [source], (r: { code: string } | null) => r?.code ?? null));
     return { capability: ds[0]!.capability, spider_code: spider };
   };
@@ -71,7 +71,7 @@ export const adminReportRoutes = (deps: ApiDeps): FastifyPluginAsync => async (a
               -- Số người có lịch lấy dữ liệu đang bật cho NGUỒN DỮ LIỆU của báo cáo (dùng chung với báo cáo cùng nguồn).
               (SELECT count(*)::int FROM data_schedules ds WHERE ds.is_enabled AND ds.source_system = rc.source_system
                   AND (ds.spider_code = rc.spider_code OR (rc.spider_code IS NULL AND ds.spider_code IS NULL AND ds.capability = rc.capability))) AS lich
-         FROM report_catalog rc JOIN core.source_systems ss ON ss.code = rc.source_system
+         FROM report_catalog rc JOIN source_systems ss ON ss.code = rc.source_system
         ORDER BY rc.dashboard_order, rc.ten`);
     // Mọi báo cáo là báo cáo cấu hình; 'missing' = dòng cũ chưa có định nghĩa (cần sửa hoặc xoá).
     return rows.map((r) => ({ ...r, kind: r.definition ? 'config' : 'missing' }));
@@ -191,7 +191,7 @@ export const adminReportRoutes = (deps: ApiDeps): FastifyPluginAsync => async (a
   app.get('/admin/dashboard-tabs', async () => withTenant(deps.writer, (t) => t.any(
     `SELECT dt.id, dt.ten, dt.source_system, ss.ten AS source_ten, dt.thu_tu, dt.is_active, dt.updated_at,
             (SELECT count(*)::int FROM report_catalog rc WHERE rc.dashboard_tab = dt.id AND rc.show_on_dashboard) AS khoi
-       FROM dashboard_tabs dt LEFT JOIN core.source_systems ss ON ss.code = dt.source_system
+       FROM dashboard_tabs dt LEFT JOIN source_systems ss ON ss.code = dt.source_system
       ORDER BY dt.thu_tu, dt.id`)));
 
   const checkTabSource = (source: string | null | undefined) => {

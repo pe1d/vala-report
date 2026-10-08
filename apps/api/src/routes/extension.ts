@@ -7,7 +7,7 @@
  */
 import { createHash, randomBytes } from 'node:crypto';
 import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
-import { L, Problem, canAutoRenew, langOf, localizeStored, saveSourceAccount, vaultRef, withTenant, type AuthMethod, type SignedFields } from '@vala/core';
+import { L, Problem, canAutoRenew, langOf, localizeStored, saveSourceAccount, vaultRef, withTenant, type AuthMethod, type SignedFields, currentSchema, currentTenant, DEFAULT_TENANT } from '@vala/core';
 import { loadAllSpecs } from '@vala/core/adapter';
 import { audit } from '../audit.js';
 import type { AuthUser } from '../auth.js';
@@ -30,7 +30,10 @@ const hashToken = (t: string) => createHash('sha256').update(t).digest();
  * Desktop khi người dùng đã đăng nhập cổng trong ứng dụng (POST /me/extension-devices). Chỉ lưu SHA-256 của token.
  */
 async function issueDeviceToken(deps: ApiDeps, req: FastifyRequest, userId: number, deviceName: string | undefined, via: 'extension' | 'desktop') {
-  const token = `vxt_${randomBytes(32).toString('base64url')}`;
+  // Mã đơn vị trong token ⇒ hook đơn vị chọn đúng schema trước khi tra token (multi-tenant). Bkav giữ dạng cũ không
+  // mã (`vxt_<ngẫu nhiên>` ⇒ bkav): Desktop / tiện ích đã cài kiểm token theo dạng cũ và chỉ phục vụ Bkav.
+  const tnt = currentTenant();
+  const token = `vxt_${tnt === DEFAULT_TENANT ? '' : `${tnt}.`}${randomBytes(32).toString('base64url')}`;
   const user = await withTenant(deps.writer, async (t) => {
     const d = await t.one<{ id: number }>(
       `INSERT INTO extension_devices (app_user_id, token_hash, ten, expires_at)
@@ -59,7 +62,7 @@ export const extensionLoginRoutes = (deps: ApiDeps): FastifyPluginAsync => async
 /** Xác thực token thiết bị cho /ext/*. */
 function authenticateDevice(deps: ApiDeps) {
   return async (req: FastifyRequest) => {
-    const m = /^Bearer (vxt_[\w-]{20,100})$/.exec(req.headers.authorization ?? '');
+    const m = /^Bearer (vxt_(?:[a-z][a-z0-9]{1,19}\.)?[\w-]{20,100})$/.exec(req.headers.authorization ?? '');
     if (!m) throw new Problem('unauthenticated', L('Tiện ích chưa đăng nhập', 'The extension is not signed in'));
     const row = await withTenant(deps.writer, (t) => t.oneOrNone<AuthUser & { device_id: number; stale: boolean }>(
       `SELECT d.id AS device_id, u.id, u.ho_ten, u.email, u.is_ops_admin, u.must_change_password, u.password_hash IS NOT NULL AS has_password,
@@ -118,7 +121,7 @@ export const extensionRoutes = (deps: ApiDeps): FastifyPluginAsync => async (app
     const rows = await withTenant(deps.writer, (t) => t.any<GrantRow & { code: string; ten: string; last_push_at: Date | null; last_error: string | null }>(
       `SELECT ss.code, ss.ten, g.auth_method, g.revoked_at, g.last_push_at, g.last_error, ss.connection_methods,
               coalesce(CASE WHEN g.revoked_at IS NOT NULL THEN 'revoked' ELSE g.session_state END, 'chua_cau_hinh') AS session_state
-         FROM core.source_systems ss
+         FROM source_systems ss
          LEFT JOIN source_grants g ON g.app_user_id = $1 AND g.source_system = ss.code
         WHERE ss.enabled AND 'extension' = ANY(ss.connection_methods) ORDER BY ss.code`, [req.user.id]));
     const consents = await consentsFor(deps, req.user.id);
@@ -161,7 +164,7 @@ export const extensionRoutes = (deps: ApiDeps): FastifyPluginAsync => async (app
     const userId = req.user.id;
     const source = req.params.source;
     const src = await withTenant(deps.writer, (t) => t.oneOrNone(
-      `SELECT 1 FROM core.source_systems WHERE code = $1 AND enabled AND 'extension' = ANY(connection_methods)`, [source]));
+      `SELECT 1 FROM source_systems WHERE code = $1 AND enabled AND 'extension' = ANY(connection_methods)`, [source]));
     if (!src) throw new Problem('not_found', L('Hệ thống nguồn này không nhận phiên từ tiện ích', 'This source system does not accept sessions from the browser extension'));
     if (!(await deps.limiter.take(`ext:${userId}:${source}`, 5))) throw new Problem('rate_limited', L('Gửi phiên quá dày, thử lại sau vài giây', 'Sessions are being sent too often, try again in a few seconds'));
 
@@ -207,7 +210,7 @@ export const extensionRoutes = (deps: ApiDeps): FastifyPluginAsync => async (app
                last_push_at = now(), last_refresh_at = now(), updated_at = now(),
                scope_capabilities = CASE WHEN source_grants.auth_method = 'extension' AND source_grants.revoked_at IS NULL
                                          THEN source_grants.scope_capabilities ELSE EXCLUDED.scope_capabilities END`,
-        [userId, source, all, vaultRef(deps.config.tenant, userId, source), expiresAt]);
+        [userId, source, all, vaultRef(currentSchema(), userId, source), expiresAt]);
       // Audit khi kết nối bắt đầu/đổi cách lấy; các lần gửi lại cùng cách chỉ cập nhật last_push_at.
       if (changed) await audit(t, req, 'grant', { type: 'connection', id: `${userId}/${source}` }, { auth_method: 'extension', by: 'self', device: req.extDeviceId });
     });
@@ -222,7 +225,7 @@ export const extensionRoutes = (deps: ApiDeps): FastifyPluginAsync => async (app
     schema: { body: { type: 'object', required: ['cookies'], properties: {
       cookies: { type: 'object', minProperties: 1, maxProperties: 40, additionalProperties: { type: 'string', maxLength: 8192 } } } } },
   }, async (req) => {
-    const src = await withTenant(deps.writer, (t) => t.oneOrNone('SELECT 1 FROM core.source_systems WHERE code = $1 AND enabled', [req.params.source]));
+    const src = await withTenant(deps.writer, (t) => t.oneOrNone('SELECT 1 FROM source_systems WHERE code = $1 AND enabled', [req.params.source]));
     if (!src) throw new Problem('not_found', L('Không có hệ thống nguồn này', 'Source system not found'));
     if (!(await deps.limiter.take(`ext-discover:${req.user.id}`, 60))) throw new Problem('rate_limited', L('Mỗi phút chỉ dò một lần', 'Only one detection per minute'));
     const r = await deps.connections.discoverCookies(req.params.source, req.body.cookies);

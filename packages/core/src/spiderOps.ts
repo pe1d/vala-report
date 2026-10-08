@@ -2,7 +2,7 @@
  * Vận hành spider trên Crawlab — để những lỗi xảy ra NGAY trong Crawlab (trước khi spider kịp gọi Vala) không còn
  * "biến mất":
  *   - launchSpider: mọi lần bảo Crawlab chạy spider đều đi qua đây — kiểm tra/khôi phục mã spider trên Crawlab,
- *     chạy, ghi core.spider_launches; Crawlab từ chối ⇒ ghi ngay một lượt lỗi vào crawl_runs.
+ *     chạy, ghi spider_launches; Crawlab từ chối ⇒ ghi ngay một lượt lỗi vào crawl_runs.
  *   - checkSpiderLaunches: lượt đã khởi chạy mà quá vài phút spider vẫn chưa gọi Vala ⇒ lấy lý do từ log Crawlab,
  *     ghi lượt lỗi (Nhật ký chạy trên trang Vận hành); lỗi do thiếu file ⇒ khôi phục mã spider cho lần sau.
  *   - checkCrawlabHealth / heartbeat: worker ghi tình trạng worker + Crawlab để trang Vận hành hiện ra.
@@ -10,7 +10,8 @@
  */
 import { loadAllSpecs } from './adapter/index.js';
 import { spiderFiles, syncCrawlab, type CrawlabClient, type SyncOptions } from './crawlab.js';
-import { withTenant, type Db } from './db/index.js';
+import { withCore, withTenant, type Db } from './db/index.js';
+import { currentTenant, DEFAULT_TENANT } from './tenant.js';
 import { L, Problem } from './errors.js';
 import { localizeStored } from './localize.js';
 import { getSpider, type SpiderRow } from './ingest/spider.js';
@@ -67,7 +68,10 @@ export async function launchSpider(db: Db, client: CrawlabClient, opts: { spider
   await ensureSpiderFiles(client, row).catch(() => []);     // không liên lạc được sẽ lộ ra ở bước chạy ngay dưới
   let tasks: string[];
   try {
-    tasks = await client.runSpider(row.crawlab_spider_id, `--user ${opts.userId} --trigger ${opts.trigger}`);
+    // Đơn vị khác Bkav ⇒ spider gửi mã đơn vị về API (vala_sdk --tenant ⇒ X-Vala-Tenant). Bkav không gửi: bản SDK cũ
+    // còn trên Crawlab chưa biết tham số này.
+    const tnt = currentTenant();
+    tasks = await client.runSpider(row.crawlab_spider_id, `--user ${opts.userId} --trigger ${opts.trigger}${tnt === DEFAULT_TENANT ? '' : ` --tenant ${tnt}`}`);
   } catch (e) {
     const msg = `Crawlab không chạy được spider: ${(e as Error).message}`;
     await recordSpiderFailure(db, row, opts.userId, opts.trigger, 'spider_launch_failed', msg);
@@ -76,7 +80,7 @@ export async function launchSpider(db: Db, client: CrawlabClient, opts: { spider
   }
   await withTenant(db, async (t) => {
     for (const id of tasks.length ? tasks : [null]) {
-      await t.none(`INSERT INTO core.spider_launches (spider_code, app_user_id, crawlab_task_id, trigger_type, retry_of) VALUES ($1, $2, $3, $4, $5)`,
+      await t.none(`INSERT INTO spider_launches (spider_code, app_user_id, crawlab_task_id, trigger_type, retry_of) VALUES ($1, $2, $3, $4, $5)`,
         [row.code, opts.userId, id, opts.trigger, opts.retryOf ?? null]);
     }
   });
@@ -87,7 +91,7 @@ export async function launchSpider(db: Db, client: CrawlabClient, opts: { spider
 export async function markSpiderLaunchReported(db: Db, crawlabTaskId: string | undefined): Promise<void> {
   if (!crawlabTaskId) return;
   await withTenant(db, (t) => t.none(
-    `UPDATE core.spider_launches SET status = 'reported', checked_at = now() WHERE crawlab_task_id = $1 AND status = 'launched'`, [crawlabTaskId]));
+    `UPDATE spider_launches SET status = 'reported', checked_at = now() WHERE crawlab_task_id = $1 AND status = 'launched'`, [crawlabTaskId]));
 }
 
 /** Dòng log Crawlab nói rõ nhất lý do hỏng (vd "can't open file … main.py"), không có thì trạng thái task. */
@@ -107,7 +111,7 @@ async function failureReason(client: CrawlabClient, taskId: string | null, statu
  */
 export async function checkSpiderLaunches(db: Db, client: CrawlabClient, now = new Date()): Promise<{ failed: number }> {
   const rows = await withTenant(db, (t) => t.any<{ id: number; spider_code: string; app_user_id: number | null; crawlab_task_id: string | null; trigger_type: Trigger; launched_at: Date; retry_of: number | null }>(
-    `SELECT id, spider_code, app_user_id, crawlab_task_id, trigger_type, launched_at, retry_of FROM core.spider_launches
+    `SELECT id, spider_code, app_user_id, crawlab_task_id, trigger_type, launched_at, retry_of FROM spider_launches
       WHERE status = 'launched' AND launched_at < $1::timestamptz - make_interval(secs => $2) ORDER BY id LIMIT 50`,
     [now, REPORT_GRACE_MS / 1000]));
   let failed = 0;
@@ -124,7 +128,7 @@ export async function checkSpiderLaunches(db: Db, client: CrawlabClient, now = n
     const retry = NOT_READY.test(reason) && l.trigger_type === 'schedule' && !l.retry_of && l.app_user_id !== null;
     await recordSpiderFailure(db, row, l.app_user_id, l.trigger_type, 'spider_not_started',
       retry ? `${reason} — Crawlab vừa khởi động, đã tự chạy lại` : reason, l.crawlab_task_id);
-    await withTenant(db, (t) => t.none(`UPDATE core.spider_launches SET status = 'failed', checked_at = now(), error = $2 WHERE id = $1`, [l.id, reason.slice(0, 500)]));
+    await withTenant(db, (t) => t.none(`UPDATE spider_launches SET status = 'failed', checked_at = now(), error = $2 WHERE id = $1`, [l.id, reason.slice(0, 500)]));
     if (NOT_READY.test(reason)) await ensureSpiderFiles(client, row).catch(() => []);
     if (retry) {
       await launchSpider(db, client, { spiderCode: row.code, userId: l.app_user_id!, trigger: 'schedule', retryOf: l.id })
@@ -137,7 +141,8 @@ export async function checkSpiderLaunches(db: Db, client: CrawlabClient, now = n
 
 /** Ghi "còn sống" của một dịch vụ (worker) hoặc kết quả kiểm tra (crawlab) — trang Vận hành đọc. */
 export async function heartbeat(db: Db, name: string, info: Record<string, unknown> = {}): Promise<void> {
-  await withTenant(db, (t) => t.none(
+  // Bảng dùng chung (không thuộc đơn vị nào) — worker gọi ngoài vòng lặp đơn vị.
+  await withCore(db, (t) => t.none(
     `INSERT INTO core.service_heartbeats (name, at, info) VALUES ($1, now(), $2)
      ON CONFLICT (name) DO UPDATE SET at = now(), info = EXCLUDED.info`, [name, JSON.stringify(info)]));
 }
@@ -158,10 +163,10 @@ export async function checkCrawlabHealth(db: Db, client: CrawlabClient | null, s
     // Spider chưa có trên Crawlab (máy chủ mới, hoặc dữ liệu vừa chuyển từ máy khác) ⇒ đồng bộ luôn — không cần bấm tay.
     let synced: string[] = [];
     if (sync) {
-      const unsynced = await withTenant(db, (t) => t.map('SELECT code FROM core.crawl_spiders WHERE is_enabled AND crawlab_spider_id IS NULL', [], (r: { code: string }) => r.code));
+      const unsynced = await withTenant(db, (t) => t.map('SELECT code FROM crawl_spiders WHERE is_enabled AND crawlab_spider_id IS NULL', [], (r: { code: string }) => r.code));
       if (unsynced.length) synced = (await syncCrawlab(db, client, sync)).spiders.map((s) => s.code);
     }
-    const spiders = await withTenant(db, (t) => t.any<SpiderRow>('SELECT * FROM core.crawl_spiders WHERE is_enabled AND crawlab_spider_id IS NOT NULL'));
+    const spiders = await withTenant(db, (t) => t.any<SpiderRow>('SELECT * FROM crawl_spiders WHERE is_enabled AND crawlab_spider_id IS NOT NULL'));
     const restored: string[] = [];
     const errors: string[] = [];
     for (const s of spiders) {

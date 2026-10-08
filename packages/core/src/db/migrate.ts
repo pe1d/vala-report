@@ -1,7 +1,8 @@
-import { readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import pgPromise from 'pg-promise';
-import { REPO_ROOT, TENANT } from '../env.js';
+import { REPO_ROOT } from '../env.js';
+import { tenantSchema } from '../tenant.js';
 import { hashPassword } from '../passwords.js';
 
 const pgp = pgPromise();
@@ -14,7 +15,10 @@ export interface MigrateOptions {
   log?: (msg: string) => void;
 }
 
-/** Chạy các file db/migrations/NNN_*.sql chưa áp dụng, mỗi file một transaction. */
+/**
+ * Chạy các file db/migrations/NNN_*.sql chưa áp dụng (phần chung, mỗi file một transaction), rồi các migration LOẠI ĐƠN
+ * VỊ (db/migrations/tenant/) cho từng đơn vị.
+ */
 export async function migrate(opts: MigrateOptions): Promise<string[]> {
   const log = opts.log ?? (() => {});
   const db = pgp({ connectionString: opts.ownerUrl, max: 1 });
@@ -37,6 +41,7 @@ export async function migrate(opts: MigrateOptions): Promise<string[]> {
       applied.push(f);
       log(`đã áp dụng ${f}`);
     }
+    applied.push(...await applyTenantMigrations(opts.ownerUrl, undefined, log));
     await ensureLoginRoles(db, opts.readerUrl, opts.writerUrl);
     if (opts.seed) {
       await db.none(readFileSync(join(REPO_ROOT, 'db/seed/dev.sql'), 'utf8'));
@@ -44,7 +49,7 @@ export async function migrate(opts: MigrateOptions): Promise<string[]> {
       const pw = await hashPassword(process.env.DEV_SEED_PASSWORD ?? 'Vala@2026');
       await db.none(
         `UPDATE $2:name.app_users SET username = split_part(email, '@', 1), password_hash = $1, password_changed_at = now()
-          WHERE password_hash IS NULL`, [pw, TENANT]);
+          WHERE password_hash IS NULL`, [pw, tenantSchema('bkav')]);
       log('đã nạp dữ liệu mẫu');
     }
   } finally {
@@ -69,8 +74,44 @@ async function ensureLoginRoles(db: pgPromise.IDatabase<unknown>, readerUrl: str
     const attrs = `LOGIN ${r.bypass ? 'BYPASSRLS' : 'NOBYPASSRLS'} NOSUPERUSER PASSWORD $2`;
     await db.none(exists ? `ALTER ROLE $1:name ${attrs}` : `CREATE ROLE $1:name ${attrs}`, [r.name, r.pass]);
     await db.none(`GRANT $1:name TO $2:name`, [r.group, r.name]);
-    await db.none(`ALTER ROLE $1:name SET search_path = $2:name, core, public`, [r.name, TENANT]);
+    // Mặc định KHÔNG trỏ vào đơn vị nào: truy vấn quên ngữ cảnh đơn vị (withTenant) ⇒ lỗi "bảng không tồn tại" thay vì
+    // âm thầm đọc dữ liệu Bkav.
+    await db.none(`ALTER ROLE $1:name SET search_path = core, public`, [r.name]);
   }
+}
+
+/**
+ * Migration loại đơn vị (`db/migrations/tenant/NNN_*.sql`, viết KHÔNG ghi tên schema): áp cho từng đơn vị đã tạo xong
+ * schema (mọi trạng thái trừ 'dang_tao'), search_path = tenant_<mã>; ghi nhận ở core.tenant_migrations. Trả về
+ * ['<mã>:<file>', …] đã áp lần này.
+ */
+export async function applyTenantMigrations(ownerUrl: string, dir = join(REPO_ROOT, 'db/migrations/tenant'),
+  log: (msg: string) => void = () => {}): Promise<string[]> {
+  if (!existsSync(dir)) return [];
+  const files = readdirSync(dir).filter((f) => /^\d{3}_.*\.sql$/.test(f)).sort();
+  if (!files.length) return [];
+  const db = pgp({ connectionString: ownerUrl, max: 1 });
+  const applied: string[] = [];
+  try {
+    const tenants = (await db.any<{ ma: string }>(`SELECT ma FROM core.tenants WHERE status <> 'dang_tao' ORDER BY ma`)).map((r) => r.ma);
+    for (const ma of tenants) {
+      const done = new Set((await db.any<{ name: string }>('SELECT name FROM core.tenant_migrations WHERE tenant = $1', [ma])).map((r) => r.name));
+      for (const f of files) {
+        if (done.has(f)) continue;
+        const sql = readFileSync(join(dir, f), 'utf8');
+        await db.tx(async (t) => {
+          await t.any('SELECT set_config(\'search_path\', $1, true)', [`${tenantSchema(ma)}, core, public`]);
+          await t.none(sql);
+          await t.none('INSERT INTO core.tenant_migrations (tenant, name) VALUES ($1, $2)', [ma, f]);
+        });
+        applied.push(`${ma}:${f}`);
+        log(`đã áp dụng ${f} cho đơn vị ${ma}`);
+      }
+    }
+  } finally {
+    await db.$pool.end();
+  }
+  return applied;
 }
 
 /** Chỉ dùng cho test: xoá và tạo lại một database trống. */

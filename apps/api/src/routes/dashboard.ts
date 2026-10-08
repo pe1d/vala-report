@@ -6,9 +6,7 @@
  */
 import type { FastifyPluginAsync } from 'fastify';
 import { randomUUID } from 'node:crypto';
-import {
-  allowedScopes, L, langOf, launchSpider, loadMemberships, Problem, withTenant, type Scope,
-} from '@vala/core';
+import { allowedScopes, L, langOf, launchSpider, loadMemberships, Problem, withTenant, type Scope, currentTenant } from '@vala/core';
 import { loadAllSpecs } from '@vala/core/adapter';
 import { audit } from '../audit.js';
 import type { ApiDeps } from '../deps.js';
@@ -32,13 +30,13 @@ export const dashboardRoutes = (deps: ApiDeps): FastifyPluginAsync => async (app
                              spider_code: string | null; dashboard_tab: number | null; dashboard_width: number }>(
         `SELECT rc.code, rc.ten, rc.mo_ta, rc.source_system, rc.view_template, rc.required_scope, rc.spider_code,
                 CASE WHEN dt.is_active THEN rc.dashboard_tab END AS dashboard_tab, rc.dashboard_width
-           FROM report_catalog rc JOIN core.source_systems ss ON ss.code = rc.source_system
+           FROM report_catalog rc JOIN source_systems ss ON ss.code = rc.source_system
            LEFT JOIN dashboard_tabs dt ON dt.id = rc.dashboard_tab
           WHERE rc.is_active AND ss.enabled AND rc.show_on_dashboard
           ORDER BY rc.dashboard_order, rc.view_template = 'tong_hop' DESC, rc.ten`),
       tabs: await t.any<{ id: number; ten: string; source_system: string | null }>(
         `SELECT dt.id, dt.ten, dt.source_system FROM dashboard_tabs dt
-           LEFT JOIN core.source_systems ss ON ss.code = dt.source_system
+           LEFT JOIN source_systems ss ON ss.code = dt.source_system
           WHERE dt.is_active AND (dt.source_system IS NULL OR ss.enabled) ORDER BY dt.thu_tu, dt.id`),
       grants: await t.any<{ source_system: string; state: string; auth_method: string | null }>(
         `SELECT source_system, CASE WHEN revoked_at IS NOT NULL THEN 'revoked' ELSE session_state END AS state, auth_method
@@ -113,7 +111,7 @@ export const dashboardRoutes = (deps: ApiDeps): FastifyPluginAsync => async (app
       throw new Problem('rate_limited', L('Vừa lấy dữ liệu gần đây', 'Data was fetched recently'), L('Mỗi hệ thống chỉ lấy ngay được một lần trong 10 phút', 'Each system can be fetched on demand only once every 10 minutes'));
     }
     const spiders = await withTenant(deps.writer, (t) => t.any<{ code: string; crawlab_spider_id: string | null }>(
-      `SELECT code, crawlab_spider_id FROM core.crawl_spiders WHERE source_system = $1 AND is_enabled`, [source]));
+      `SELECT code, crawlab_spider_id FROM crawl_spiders WHERE source_system = $1 AND is_enabled`, [source]));
     await withTenant(deps.writer, (t) => audit(t, req, 'run_now', { type: 'source', id: source }));
     if (deps.crawlab && spiders.some((s) => s.crawlab_spider_id)) {
       const ids: string[] = [];
@@ -128,7 +126,7 @@ export const dashboardRoutes = (deps: ApiDeps): FastifyPluginAsync => async (app
     const runKey = randomUUID();
     await deps.queue.addBulk(caps.map((c) => ({
       name: `${source}.${c.capability}`,
-      data: { source, capability: c.capability, userId: req.user.id, trigger: 'manual' as const, crawlabRunId: runKey },
+      data: { tenant: currentTenant(), source, capability: c.capability, userId: req.user.id, trigger: 'manual' as const, crawlabRunId: runKey },
       opts: { jobId: `${runKey}_${c.capability}`, attempts: 1, removeOnComplete: 5000, removeOnFail: 5000 },
     })));
     return reply.status(202).send({ executor: 'worker', queued: caps.length });

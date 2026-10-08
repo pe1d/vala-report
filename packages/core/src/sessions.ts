@@ -10,12 +10,14 @@
 import { bootstrapAppSession, findSpec, loadAllSpecs, type AdapterSpec, type FetchLike } from './adapter/index.js';
 import { Problem, L } from './errors.js';
 import { vaultRef, type SecretStore, type SessionSecret } from './secrets.js';
+import { currentSchema } from './tenant.js';
 import { toSsoSecret, type SsoClient, type SsoSecret, type SsoTokens } from './sso.js';
 
 export interface SessionManagerOptions {
   secrets: SecretStore;
   sso: SsoClient;
-  tenant: string;
+  /** Tiền tố đường dẫn vault (schema đơn vị). Không đặt ⇒ theo đơn vị của ngữ cảnh lúc gọi (multi-tenant). */
+  tenant?: string;
   /** base_url theo source. Không có ⇒ phải truyền resolveBaseUrl. */
   baseUrls?: Record<string, string>;
   resolveBaseUrl?: (source: string) => Promise<string>;
@@ -34,7 +36,7 @@ export class SessionManager {
   constructor(private readonly o: SessionManagerOptions) {}
 
   ssoRef(userId: number) {
-    return vaultRef(this.o.tenant, userId, 'sso');
+    return vaultRef(this.o.tenant ?? currentSchema(), userId, 'sso');
   }
 
   private async withLock<T>(userId: number, fn: () => Promise<T>): Promise<T> {
@@ -98,7 +100,7 @@ export class SessionManager {
       r = await attempt(true);
     }
     const secret: SessionSecret = { cookies: r.cookies, obtained_at: new Date().toISOString(), expires_at: r.expires_at };
-    await this.o.secrets.put(vaultRef(this.o.tenant, userId, source), secret);
+    await this.o.secrets.put(vaultRef(this.o.tenant ?? currentSchema(), userId, source), secret);
     return secret;
   }
 

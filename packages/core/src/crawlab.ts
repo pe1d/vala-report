@@ -139,7 +139,7 @@ export async function syncCrawlab(db: Db, client: CrawlabClient, opts: SyncOptio
   await client.setEnvironment('VALA_API_URL', opts.apiUrlForSpiders);
   await client.setEnvironment('VALA_INTERNAL_TOKEN', opts.internalToken);
 
-  const rows = await withTenant(db, (t) => t.any<SpiderRow>('SELECT * FROM core.crawl_spiders ORDER BY code'));
+  const rows = await withTenant(db, (t) => t.any<SpiderRow>('SELECT * FROM crawl_spiders ORDER BY code'));
   const existing = await client.listSpiders();
   const schedules = await client.listSchedules();
   const out: SyncResult = { spiders: [] };
@@ -152,16 +152,16 @@ export async function syncCrawlab(db: Db, client: CrawlabClient, opts: SyncOptio
 
     const files = spiderFiles(sp);
     // Spider cũ chưa có mã trong CSDL: chép mẫu repo vào CSDL, từ đó quản trị sửa trên cổng.
-    if (!sp.main_py) await withTenant(db, (t) => t.none('UPDATE core.crawl_spiders SET main_py = $2 WHERE code = $1 AND main_py IS NULL', [sp.code, files['main.py']]));
+    if (!sp.main_py) await withTenant(db, (t) => t.none('UPDATE crawl_spiders SET main_py = $2 WHERE code = $1 AND main_py IS NULL', [sp.code, files['main.py']]));
     for (const [path, data] of Object.entries(files)) await client.saveFile(id, path, data);
 
     // Lịch cố định theo preset (trước migration 015) thôi dùng: worker Vala tự hẹn giờ theo lịch từng người rồi
     // chạy spider với --user. Xoá hết lịch Crawlab của spider này để không chạy trùng.
     const stale = schedules.filter((x) => x.spider_id === id || x.name.startsWith(`${sp.code}:`));
     for (const x of stale) await client.deleteSchedule(x._id);
-    await withTenant(db, (t) => t.none('DELETE FROM core.spider_schedules WHERE spider_code = $1', [sp.code]));
+    await withTenant(db, (t) => t.none('DELETE FROM spider_schedules WHERE spider_code = $1', [sp.code]));
     const n = 0;
-    await withTenant(db, (t) => t.none('UPDATE core.crawl_spiders SET crawlab_spider_id = $2, synced_at = now() WHERE code = $1', [sp.code, id]));
+    await withTenant(db, (t) => t.none('UPDATE crawl_spiders SET crawlab_spider_id = $2, synced_at = now() WHERE code = $1', [sp.code, id]));
     out.spiders.push({ code: sp.code, crawlab_spider_id: id, files: Object.keys(files).length, schedules: n });
   }
   return out;

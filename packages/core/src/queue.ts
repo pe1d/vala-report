@@ -3,6 +3,7 @@ import { Queue, type ConnectionOptions } from 'bullmq';
 import { findSpec, loadAllSpecs, type AdapterSpec } from './adapter/index.js';
 import { withTenant, type Db } from './db/index.js';
 import { env } from './env.js';
+import { currentTenant } from './tenant.js';
 import type { CrawlabClient } from './crawlab.js';
 import { JITTER_SQL, ScheduleSchema, nextScheduleRuns, type Schedule } from './schedule.js';
 import { launchSpider } from './spiderOps.js';
@@ -87,16 +88,17 @@ export async function fanOut(writer: Db, queue: Queue<CrawlJob>, req: FanOutRequ
   const spec = findSpec(req.source, req.capability, loadAllSpecs());
   const users = await selectFanOutUsers(writer, spec, req.capability, req.preset, req.onlyUserId);
   const runKey = req.crawlabRunId ?? randomUUID();
+  const tenant = currentTenant();
   const window = req.onlyUserId ? 0 : req.windowMs ?? FANOUT_WINDOW_MS;
   const step = users.length > 1 ? window / users.length : 0;
   await queue.addBulk(users.map((userId, i) => ({
     name: `${req.source}.${req.capability}`,
     data: {
-      source: req.source, capability: req.capability, userId, preset: req.preset,
+      tenant, source: req.source, capability: req.capability, userId, preset: req.preset,
       trigger: req.trigger ?? 'schedule', crawlabTaskId: req.crawlabTaskId, crawlabRunId: runKey,
     },
     opts: {
-      jobId: `${runKey}_${userId}`,
+      jobId: `${runKey}_${tenant}_${userId}`,
       delay: Math.round(i * step),
       attempts: 1,               // lỗi phiên không tự khỏi khi thử lại; lần chạy lịch sau sẽ thử
       removeOnComplete: 5000,
@@ -141,10 +143,10 @@ export async function runDueSchedules(
               sp.crawlab_spider_id, sp.is_enabled AS spider_enabled,
               CASE WHEN g.revoked_at IS NOT NULL THEN 'revoked' ELSE g.session_state END AS grant_state
          FROM data_schedules ds
-         JOIN core.source_systems ss ON ss.code = ds.source_system AND ss.enabled
+         JOIN source_systems ss ON ss.code = ds.source_system AND ss.enabled
          JOIN app_users au ON au.id = ds.app_user_id AND au.is_active     -- người dùng bị vô hiệu hoá: lịch ngừng chạy
          LEFT JOIN source_grants g ON g.app_user_id = ds.app_user_id AND g.source_system = ds.source_system
-         LEFT JOIN core.crawl_spiders sp ON sp.code = ds.spider_code
+         LEFT JOIN crawl_spiders sp ON sp.code = ds.spider_code
         WHERE ds.is_enabled
           AND (ds.next_run_at IS NULL
                OR ds.next_run_at + ${JITTER_SQL} <= $1)
@@ -207,10 +209,11 @@ export async function runDueSchedules(
     const capability = r.capability!;               // không có spider ⇒ lịch theo capability (ràng buộc CSDL)
     const spec = specs.find((s) => s.source_system === r.source_system && s.capabilities.some((c) => c.id === capability && c.sink));
     if (!spec) { res.skipped++; continue; }        // hệ thống chỉ có cấu hình nhanh: chưa lấy dữ liệu được
-    const k = `${r.app_user_id}:${r.source_system}:${capability}`;
+    // Id người dùng trùng nhau giữa các đơn vị ⇒ khoá việc phải có mã đơn vị (BullMQ bỏ việc trùng jobId).
+    const k = `${currentTenant()}:${r.app_user_id}:${r.source_system}:${capability}`;
     jobs.push({
       name: `${r.source_system}.${capability}`,
-      data: { source: r.source_system, capability, userId: r.app_user_id, trigger: 'schedule' as const },
+      data: { tenant: currentTenant(), source: r.source_system, capability, userId: r.app_user_id, trigger: 'schedule' as const },
       opts: { jobId: `due_${k}_${tick}`.replace(/[^\w-]/g, '_'), attempts: 1, removeOnComplete: 5000, removeOnFail: 5000 },
     });
   }

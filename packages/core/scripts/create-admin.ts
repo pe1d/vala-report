@@ -1,12 +1,14 @@
 /**
  * Tạo (hoặc đặt lại) tài khoản QUẢN TRỊ đăng nhập bằng mật khẩu — dùng khi cài mới trên máy chủ.
- *   tsx scripts/create-admin.ts --username admin --name "Quản trị" [--email admin@ten-don-vi.gov.vn]
+ *   tsx scripts/create-admin.ts --username admin --name "Quản trị" [--email admin@ten-don-vi.gov.vn] [--tenant bkav]
+ * --tenant: mã đơn vị (mặc định bkav) — tài khoản nằm trong schema tenant_<mã>.
  * Mật khẩu tạm được sinh ngẫu nhiên và in ra MỘT lần; lần đăng nhập đầu phải đổi (must_change_password).
  * Tài khoản đã có ⇒ giữ nguyên, cấp quyền quản trị, bật lại và đặt mật khẩu tạm mới.
  */
 import { randomBytes } from 'node:crypto';
 import pgPromise from 'pg-promise';
-import { env, TENANT } from '../src/env.js';
+import { env } from '../src/env.js';
+import { DEFAULT_TENANT, isTenantCode, tenantSchema } from '../src/tenant.js';
 import { hashPassword } from '../src/passwords.js';
 
 const arg = (name: string) => {
@@ -16,6 +18,9 @@ const arg = (name: string) => {
 const username = (arg('username') ?? 'admin').trim().toLowerCase();
 const name = arg('name') ?? 'Quản trị hệ thống';
 const email = (arg('email') ?? `${username}@local`).trim().toLowerCase();
+const tenant = arg('tenant') ?? DEFAULT_TENANT;
+if (!isTenantCode(tenant)) throw new Error('--tenant: mã đơn vị gồm chữ thường và số, bắt đầu bằng chữ (2–20 ký tự)');
+const TENANT = tenantSchema(tenant);
 if (!/^[a-z0-9][a-z0-9._-]{2,39}$/.test(username)) throw new Error('username chỉ gồm chữ thường, số, . _ - (3–40 ký tự)');
 
 // Mật khẩu tạm: 14 ký tự, bỏ ký tự dễ nhầm, luôn có chữ và số.

@@ -9,6 +9,7 @@
 import { GuardedHttpClient, cookieGroups, cookieNames, findSpec, missingCookieGroups, loadAllSpecs, parseCookieInput, passwordLogin, pickRequiredCookies, probeSession, type AdapterSpec, type FetchLike, type SessionInfo, type SourceCredential } from './adapter/index.js';
 import { Problem, L } from './errors.js';
 import { vaultRef, type SecretStore, type SessionSecret } from './secrets.js';
+import { currentSchema } from './tenant.js';
 import type { SessionManager } from './sessions.js';
 
 export type AuthMethod = 'sso' | 'password' | 'cookie' | 'extension';
@@ -27,7 +28,8 @@ export interface SourceInfo {
 
 export interface ConnectionSessionsOptions {
   secrets: SecretStore;
-  tenant: string;
+  /** Tiền tố đường dẫn vault (schema đơn vị). Không đặt ⇒ theo đơn vị của ngữ cảnh lúc gọi (multi-tenant). */
+  tenant?: string;
   sourceInfo: (source: string) => Promise<SourceInfo>;
   specs?: AdapterSpec[];
   fetchImpl?: FetchLike;
@@ -43,11 +45,11 @@ export class ConnectionSessions {
   constructor(private readonly o: ConnectionSessionsOptions) {}
 
   credentialRef(userId: number, source: string) {
-    return vaultRef(this.o.tenant, userId, `${source}_login`);
+    return vaultRef(this.o.tenant ?? currentSchema(), userId, `${source}_login`);
   }
 
   sessionRef(userId: number, source: string) {
-    return vaultRef(this.o.tenant, userId, source);
+    return vaultRef(this.o.tenant ?? currentSchema(), userId, source);
   }
 
   spec(source: string): AdapterSpec {

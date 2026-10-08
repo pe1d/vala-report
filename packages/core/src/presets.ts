@@ -4,7 +4,7 @@ export const TIMEZONE = 'Asia/Ho_Chi_Minh';
 
 /**
  * Preset lịch — thứ duy nhất người dùng chọn ở bản 1 (không nhận cron thô).
- * Cron ở đây phải khớp core.crawl_tasks; test khẳng định điều đó.
+ * Cron ở đây phải khớp crawl_tasks; test khẳng định điều đó.
  */
 export const SCHEDULE_PRESETS = {
   hang_ngay_07: { label: 'Hàng ngày lúc 07:00', cron: '0 7 * * *' },

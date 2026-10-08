@@ -33,7 +33,7 @@ export const opsRoutes = (deps: ApiDeps): FastifyPluginAsync => async (app) => {
                               AND r.status = 'ok' AND r.finished_at > now() - interval '48 hours'))::int AS users_no_success_48h,
          -- Lịch đã quá giờ (trừ 10 phút rải giờ + nhịp 1 phút) mà bộ hẹn giờ chưa xử lý ⇒ worker đang ngừng.
          (SELECT count(*) FROM data_schedules ds
-            JOIN core.source_systems ss ON ss.code = ds.source_system AND ss.enabled
+            JOIN source_systems ss ON ss.code = ds.source_system AND ss.enabled
             JOIN app_users au ON au.id = ds.app_user_id AND au.is_active
            WHERE ds.is_enabled AND ds.next_run_at < now() - interval '10 minutes')::int AS overdue_schedules,
          -- Lượt spider hỏng ngay trong Crawlab (không tới được Vala) 24 giờ qua.

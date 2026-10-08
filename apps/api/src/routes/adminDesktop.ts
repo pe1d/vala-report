@@ -72,7 +72,7 @@ export const adminDesktopRoutes = (deps: ApiDeps): FastifyPluginAsync => async (
     const packages = await withTenant(deps.writer, (t) => t.any(
       `SELECT p.code, p.ten, p.mo_ta, p.source_system, ss.ten AS source_ten, p.matches, p.version, p.is_enabled, p.updated_at,
               u.ho_ten AS updated_by, length(p.css) AS css_bytes, length(p.script) AS script_bytes
-         FROM desktop_packages p LEFT JOIN core.source_systems ss ON ss.code = p.source_system
+         FROM desktop_packages p LEFT JOIN source_systems ss ON ss.code = p.source_system
          LEFT JOIN app_users u ON u.id = p.updated_by ORDER BY p.code`));
     return { key_fingerprint: keyFingerprint(deps.packageSigner.publicKey), packages };
   });

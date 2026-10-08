@@ -22,7 +22,7 @@ export interface SourceCredential {
 export interface PasswordLoginOptions {
   spec: AdapterSpec;
   baseUrl: string;
-  /** Host trang đăng nhập, vd iam.bkav.com (core.source_systems.login_hosts). */
+  /** Host trang đăng nhập, vd iam.bkav.com (source_systems.login_hosts). */
   loginHosts: string[];
   credential: SourceCredential;
   fetchImpl?: FetchLike;

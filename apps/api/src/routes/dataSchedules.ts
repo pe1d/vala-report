@@ -1,9 +1,6 @@
 import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
 import { randomUUID } from 'node:crypto';
-import {
-  describeSchedule, L, langOf, launchSpider, localizeStored, nextScheduleRuns, parseSchedule, Problem, withTenant, withUserContext,
-  type Lang, type Schedule, type UserContext,
-} from '@vala/core';
+import { describeSchedule, L, langOf, launchSpider, localizeStored, nextScheduleRuns, parseSchedule, Problem, withTenant, withUserContext, type Lang, type Schedule, type UserContext, currentTenant } from '@vala/core';
 import { loadAllSpecs } from '@vala/core/adapter';
 import { audit } from '../audit.js';
 import type { ApiDeps } from '../deps.js';
@@ -31,9 +28,9 @@ export async function listSources(deps: ApiDeps, userId: number, lang: Lang = 'v
   const { reports, spiders, schedules, grants, runs, okRuns, prefs } = await withUserContext(deps.reader, own(userId), async (t) => ({
     reports: await t.any<Target & { code: string; ten: string }>(
       `SELECT rc.code, rc.ten, rc.source_system, rc.spider_code, CASE WHEN rc.spider_code IS NULL THEN rc.capability END AS capability
-         FROM report_catalog rc JOIN core.source_systems ss ON ss.code = rc.source_system AND ss.enabled
+         FROM report_catalog rc JOIN source_systems ss ON ss.code = rc.source_system AND ss.enabled
         WHERE rc.is_active AND rc.definition IS NOT NULL ORDER BY rc.ten`),
-    spiders: await t.any<{ code: string; ten: string; is_enabled: boolean }>('SELECT code, ten, is_enabled FROM core.crawl_spiders'),
+    spiders: await t.any<{ code: string; ten: string; is_enabled: boolean }>('SELECT code, ten, is_enabled FROM crawl_spiders'),
     schedules: await t.any<ScheduleRow>(
       `SELECT id, source_system, spider_code, capability, schedule, is_enabled, next_run_at, last_run_at
          FROM data_schedules WHERE app_user_id = $1`, [userId]),
@@ -107,8 +104,8 @@ async function launchFor(deps: ApiDeps, userId: number, src: DataSourceItem): Pr
   const runKey = randomUUID();
   await deps.queue.addBulk([{
     name: `${src.source_system}.${src.capability}`,
-    data: { source: src.source_system, capability: src.capability!, userId, trigger: 'manual' as const, crawlabRunId: runKey },
-    opts: { jobId: `${runKey}_${userId}`, attempts: 1, removeOnComplete: 5000, removeOnFail: 5000 },
+    data: { tenant: currentTenant(), source: src.source_system, capability: src.capability!, userId, trigger: 'manual' as const, crawlabRunId: runKey },
+    opts: { jobId: `${runKey}_${currentTenant()}_${userId}`, attempts: 1, removeOnComplete: 5000, removeOnFail: 5000 },
   }]);
   return { executor: 'worker', run_key: runKey };
 }
@@ -141,7 +138,7 @@ export async function autoRefresh(
               max(started_at) AS at
          FROM crawl_runs WHERE app_user_id = $1 AND status = 'running' AND started_at > now() - interval '20 minutes' GROUP BY 1`, [userId])).map((r) => [r.key, r.at] as const),
     ...(await t.any<{ key: string; at: string }>(
-      `SELECT 'spider:' || spider_code AS key, max(launched_at) AS at FROM core.spider_launches
+      `SELECT 'spider:' || spider_code AS key, max(launched_at) AS at FROM spider_launches
         WHERE app_user_id = $1 AND status = 'launched' AND launched_at > now() - interval '5 minutes' GROUP BY 1`, [userId])).map((r) => [r.key, r.at] as const),
   ]));
   const out: Array<{ key: string; ten: string; source_ten: string; state: AutoState; last_success_at: string | null; since: string | null }> = [];

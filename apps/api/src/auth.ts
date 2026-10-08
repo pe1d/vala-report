@@ -1,5 +1,5 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import { L, Problem, withTenant } from '@vala/core';
+import { L, Problem, currentTenant, withTenant } from '@vala/core';
 import type { ApiDeps } from './deps.js';
 import { sign, verify } from './tokens.js';
 
@@ -31,7 +31,9 @@ export function authenticate(deps: ApiDeps) {
   return async (req: FastifyRequest, _reply: FastifyReply) => {
     const m = /^Bearer (.+)$/.exec(req.headers.authorization ?? '');
     if (!m) throw new Problem('unauthenticated', L('Cần đăng nhập', 'Sign-in required'));
-    const payload = verify<{ uid: number; kind?: string }>(m[1]!, deps.config.jwtSecret);
+    const payload = verify<{ uid: number; kind?: string; tnt?: string }>(m[1]!, deps.config.jwtSecret);
+    // Hook đơn vị đã chọn schema theo `tnt`; token của đơn vị khác với ngữ cảnh (không thể xảy ra) ⇒ từ chối cho chắc.
+    if (payload?.tnt && payload.tnt !== currentTenant()) throw new Problem('unauthenticated', L('Phiên đăng nhập không hợp lệ hoặc đã hết hạn', 'Your sign-in session is invalid or has expired'));
     if (!payload || payload.kind !== 'portal') throw new Problem('unauthenticated', L('Phiên đăng nhập không hợp lệ hoặc đã hết hạn', 'Your sign-in session is invalid or has expired'));
     // Pool writer: pool reader chỉ được đọc một số cột của app_users (không có cột mật khẩu / trạng thái mật khẩu).
     const user = await withTenant(deps.writer, (t) => t.oneOrNone<AuthUser>(
@@ -47,6 +49,7 @@ export function authenticate(deps: ApiDeps) {
 
 export const PORTAL_TOKEN_TTL = 12 * 3600;
 
+/** Token cổng của người dùng thuộc đơn vị hiện tại (claim `tnt` — hook đơn vị đọc để chọn schema). */
 export function issuePortalToken(userId: number, secret: string): string {
-  return sign({ uid: userId, kind: 'portal' }, secret, PORTAL_TOKEN_TTL);
+  return sign({ uid: userId, kind: 'portal', tnt: currentTenant() }, secret, PORTAL_TOKEN_TTL);
 }

@@ -125,10 +125,10 @@ export const adminSourceRoutes = (deps: ApiDeps): FastifyPluginAsync => async (a
     const rows = await t.any<{ code: string; conns: number; spiders: number; reports: number; password_conns: number }>(
       `SELECT ss.code,
               (SELECT count(*)::int FROM source_grants g WHERE g.source_system = ss.code AND g.revoked_at IS NULL AND g.session_state = 'active') AS conns,
-              (SELECT count(*)::int FROM core.crawl_spiders sp WHERE sp.source_system = ss.code) AS spiders,
+              (SELECT count(*)::int FROM crawl_spiders sp WHERE sp.source_system = ss.code) AS spiders,
               (SELECT count(*)::int FROM report_catalog rc WHERE rc.source_system = ss.code AND rc.is_active) AS reports,
               (SELECT count(*)::int FROM source_grants g WHERE g.source_system = ss.code AND g.revoked_at IS NULL AND g.auth_method = 'password') AS password_conns
-         FROM core.source_systems ss`);
+         FROM source_systems ss`);
     return Object.fromEntries(rows.map((r) => [r.code, r]));
   });
 
@@ -155,7 +155,7 @@ export const adminSourceRoutes = (deps: ApiDeps): FastifyPluginAsync => async (a
     const baseUrl = normalizeBaseUrl(b.base_url!);
     await withTenant(deps.writer, async (t) => {
       await t.none(
-        `INSERT INTO core.source_systems (code, ten, mo_ta, base_url, auth_mode, auth_profile, adapter_yaml, adapter_updated_at,
+        `INSERT INTO source_systems (code, ten, mo_ta, base_url, auth_mode, auth_profile, adapter_yaml, adapter_updated_at,
                                           adapter_updated_by, connection_methods, created_by, mfa)
          VALUES ($1, $2, $3, $4, 'delegated_session', $5, $6, CASE WHEN $6::text IS NULL THEN NULL ELSE now() END, $7, $8, $7, $9)`,
         [code, b.ten!.trim(), b.mo_ta?.trim() || null, baseUrl, profile ? JSON.stringify(profile) : null, b.adapter_yaml ?? null, req.user.id, methods, mfa]);
@@ -187,7 +187,7 @@ export const adminSourceRoutes = (deps: ApiDeps): FastifyPluginAsync => async (a
     const baseUrl = b.base_url !== undefined ? normalizeBaseUrl(b.base_url) : undefined;
     await withTenant(deps.writer, async (t) => {
       await t.none(
-        `UPDATE core.source_systems SET
+        `UPDATE source_systems SET
             ten = coalesce($2, ten), mo_ta = CASE WHEN $3::boolean THEN $4 ELSE mo_ta END, base_url = coalesce($5, base_url),
             enabled = coalesce($6, enabled), connection_methods = coalesce($7, connection_methods),
             auth_profile = coalesce($8, auth_profile), mfa = $9,
@@ -197,7 +197,7 @@ export const adminSourceRoutes = (deps: ApiDeps): FastifyPluginAsync => async (a
          b.enabled ?? null, b.connection_methods ?? null, profile ? JSON.stringify(profile) : null, mfa]);
       // Có xác thực 2 lớp ⇒ không còn cho kết nối bằng mật khẩu.
       if (mfa === 'co') {
-        await t.none(`UPDATE core.source_systems SET connection_methods = array_remove(connection_methods, 'password')
+        await t.none(`UPDATE source_systems SET connection_methods = array_remove(connection_methods, 'password')
                        WHERE code = $1 AND cardinality(array_remove(connection_methods, 'password')) > 0`, [cur.code]);
       }
       await audit(t, req, 'source_change', { type: 'source_system', id: cur.code },
@@ -224,7 +224,7 @@ export const adminSourceRoutes = (deps: ApiDeps): FastifyPluginAsync => async (a
 
   /**
    * Lưu cấu hình adapter. Thay cấu hình nhanh (nếu có). Cách kết nối không còn được hỗ trợ bị bỏ khỏi
-   * connection_methods. Ghi core.adapters (bản đang dùng) và audit; các tiến trình khác thấy trong ≤ 1 phút.
+   * connection_methods. Ghi adapters (bản đang dùng) và audit; các tiến trình khác thấy trong ≤ 1 phút.
    */
   app.put<{ Params: { code: string }; Body: { yaml: string } }>('/admin/sources/:code/adapter', {
     schema: { body: { type: 'object', required: ['yaml'], properties: { yaml: { type: 'string', minLength: 20, maxLength: 200_000 } } } },
@@ -236,7 +236,7 @@ export const adminSourceRoutes = (deps: ApiDeps): FastifyPluginAsync => async (a
     const methods = cur.connection_methods.filter((m) => ok.includes(m));
     await withTenant(deps.writer, async (t) => {
       await t.none(
-        `UPDATE core.source_systems SET adapter_yaml = $2, auth_profile = NULL, adapter_updated_at = now(), adapter_updated_by = $3,
+        `UPDATE source_systems SET adapter_yaml = $2, auth_profile = NULL, adapter_updated_at = now(), adapter_updated_by = $3,
                 connection_methods = $4, updated_at = now() WHERE code = $1`,
         [cur.code, req.body.yaml, req.user.id, methods.length ? methods : ['extension', 'cookie']]);
       await registerSpecs(t, [spec]);

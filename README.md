@@ -40,7 +40,7 @@ pnpm test           # bộ test cũ (phụ thuộc eGov/eTask giả lập) đã 
 
 | Thư mục | Nội dung |
 | --- | --- |
-| `db/migrations/` | `001` = lược đồ gốc (sửa 2 chỗ để chạy được), `002`–`004` = bản vá, `003` = danh mục báo cáo, `005` = đăng nhập mật khẩu + kết nối, `006` = spider Crawlab, `007` = tiện ích trình duyệt, `008` = quản trị thêm hệ thống nguồn, `009` = cấu hình adapter nằm trong CSDL, `010` = bảng dữ liệu chung + báo cáo cấu hình, `011` = tham số lọc lấy từ dữ liệu |
+| `db/migrations/` | `001` = lược đồ gốc (sửa 2 chỗ để chạy được), `002`–`004` = bản vá, `003` = danh mục báo cáo, `005` = đăng nhập mật khẩu + kết nối, `006` = spider Crawlab, `007` = tiện ích trình duyệt, `008` = quản trị thêm hệ thống nguồn, `009` = cấu hình adapter nằm trong CSDL, `010` = bảng dữ liệu chung + báo cáo cấu hình, `011` = tham số lọc lấy từ dữ liệu, …, `027` = nhiều đơn vị (`core.tenants`, bảng nguồn vào schema đơn vị). `db/migrations/tenant/` = migration áp cho từng đơn vị — xem `docs/nhieu-don-vi.md` |
 | `adapters/` | **Mẫu khởi tạo** adapter (hiện để trống). Nếu có file `*.yaml`, lần chạy đầu chép vào CSDL cho hệ thống chưa có `adapter_yaml`; hiện egov/etask cấu hình hoàn toàn trên giao diện |
 | `packages/core` | CSDL (2 pool), phân quyền, adapter runtime, pipeline nạp, vault, hàng đợi fan-out |
 | `apps/api` | Fastify, theo `openapi.yaml` |

@@ -30,4 +30,3 @@ export function envBool(name: string, fallback = false): boolean {
   return v === 'true' || v === '1';
 }
 
-export const TENANT = process.env.TENANT ?? 'tenant_bkav';

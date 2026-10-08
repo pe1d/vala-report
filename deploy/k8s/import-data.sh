@@ -25,10 +25,10 @@ TENANT="$(grep -E '^TENANT=' "$ROOT/.env.prod" 2>/dev/null | cut -d= -f2)"
 k exec -i postgres-0 -- psql -U vala_owner -d vala -v ON_ERROR_STOP=1 -v tenant="${TENANT:-tenant_bkav}" <<'SQL'
 SET search_path = :"tenant", core, public;
 -- Crawlab của máy chủ là mới: bỏ liên kết tới Crawlab máy dev ⇒ worker tự đồng bộ lại.
-UPDATE core.crawl_spiders SET crawlab_spider_id = NULL, synced_at = NULL;
-DELETE FROM core.spider_schedules;
+UPDATE crawl_spiders SET crawlab_spider_id = NULL, synced_at = NULL;
+DELETE FROM spider_schedules;
 DELETE FROM core.service_heartbeats;
-UPDATE core.spider_launches SET status = 'failed', error = 'Chuyển máy chủ' WHERE status = 'launched';
+UPDATE spider_launches SET status = 'failed', error = 'Chuyển máy chủ' WHERE status = 'launched';
 -- Vault không chuyển theo ⇒ mọi kết nối cần phiên mới, ghi rõ lý do để người dùng không hiểu nhầm là "hết hạn".
 UPDATE source_grants
    SET session_state = 'expired', last_error = 'Phiên đã lưu bị mất: chuyển sang máy chủ mới — mở hệ thống nguồn trên trình duyệt, tiện ích tự gửi lại'

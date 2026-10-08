@@ -1,6 +1,6 @@
 import pgPromise from 'pg-promise';
 import type { IDatabase, ITask } from 'pg-promise';
-import { TENANT } from '../env.js';
+import { currentSchema } from '../tenant.js';
 
 export const pgp = pgPromise({ capSQL: true });
 
@@ -52,6 +52,11 @@ export interface UserContext {
   orgUnitsAllowed: number[];
 }
 
+/** Schema của đơn vị hiện tại; thiếu ngữ cảnh ⇒ promise bị từ chối (để nơi gọi dùng .catch() cũng bắt được). */
+function schemaOrReject(): string | Promise<never> {
+  try { return currentSchema(); } catch (e) { return Promise.reject(e); }
+}
+
 export function toPgArray(ids: number[]): string {
   if (!ids.every((n) => Number.isSafeInteger(n))) throw new Error('org unit id không hợp lệ');
   return `{${ids.join(',')}}`;
@@ -62,22 +67,35 @@ export function toPgArray(ids: number[]): string {
  * nên chỉ sống trong transaction này), rồi mới chạy truy vấn. Không đặt ⇒ RLS trả rỗng.
  */
 export function withUserContext<T>(db: Db, ctx: UserContext, fn: (t: Tx) => Promise<T>): Promise<T> {
+  // Lấy schema TRƯỚC khi mở giao dịch: thiếu ngữ cảnh đơn vị ⇒ lỗi ngay, không mở kết nối.
+  const schema = schemaOrReject();
+  if (schema instanceof Promise) return schema;
   return db.tx(async (t) => {
     await t.any(
       `SELECT set_config('search_path', $4, true),
               set_config('app.user_id', $1, true),
               set_config('app.org_units_allowed', $2, true),
               set_config('app.scope', $3, true)`,
-      [String(ctx.userId), toPgArray(ctx.orgUnitsAllowed), ctx.scope, `${TENANT}, core, public`],
+      [String(ctx.userId), toPgArray(ctx.orgUnitsAllowed), ctx.scope, `${schema}, core, public`],
     );
     return fn(t);
   });
 }
 
-/** Giao dịch hệ thống trên pool writer, chỉ đặt search_path theo đơn vị. */
+/** Giao dịch hệ thống (thường trên pool writer): search_path theo đơn vị của ngữ cảnh hiện tại (tenant.ts). */
 export function withTenant<T>(db: Db, fn: (t: Tx) => Promise<T>): Promise<T> {
+  const schema = schemaOrReject();
+  if (schema instanceof Promise) return schema;
   return db.tx(async (t) => {
-    await t.any(`SELECT set_config('search_path', $1, true)`, [`${TENANT}, core, public`]);
+    await t.any(`SELECT set_config('search_path', $1, true)`, [`${schema}, core, public`]);
+    return fn(t);
+  });
+}
+
+/** Giao dịch chỉ chạm bảng dùng chung `core.*` (danh mục đơn vị, heartbeat) — không cần ngữ cảnh đơn vị. */
+export function withCore<T>(db: Db, fn: (t: Tx) => Promise<T>): Promise<T> {
+  return db.tx(async (t) => {
+    await t.any(`SELECT set_config('search_path', 'core, public', true)`);
     return fn(t);
   });
 }

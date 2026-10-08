@@ -1,5 +1,5 @@
 /**
- * Danh mục hệ thống nguồn (core.source_systems) và CẤU HÌNH ADAPTER của từng hệ thống, giữ trong bộ nhớ.
+ * Danh mục hệ thống nguồn (source_systems) và CẤU HÌNH ADAPTER của từng hệ thống, giữ trong bộ nhớ.
  * Cấu hình nằm trong CSDL (adapter_yaml hoặc auth_profile), không nằm trong code:
  *   - adapter_yaml: adapter đầy đủ (xác thực, endpoint được phép, cách lấy + chuẩn hoá dữ liệu, bảng đích).
  *   - auth_profile: hệ thống quản trị tạo nhanh — chỉ phần phiên đăng nhập.
@@ -8,6 +8,8 @@
  */
 import { AuthProfileSchema, parseSpec, repoSpecFiles, setSpecProvider, specFromProfile, type AdapterSpec, type AuthProfile } from './adapter/index.js';
 import { withTenant, type Db } from './db/index.js';
+import { currentTenant, runInTenant } from './tenant.js';
+import { activeTenants } from './tenants.js';
 import type { AuthMethod } from './connections.js';
 
 export interface SourceRow {
@@ -39,7 +41,7 @@ export class SourceRegistry {
     const q = () => withTenant(this.db, (t) => t.any<SourceRow>(
       `SELECT code, ten, mo_ta, base_url, enabled, login_hosts, auth_profile, adapter_yaml, adapter_updated_at,
               connection_methods, mfa, mfa_detected_at, updated_at
-         FROM core.source_systems ORDER BY code`));
+         FROM source_systems ORDER BY code`));
     let rows = await q();
     if (this.opts.importFromRepo !== false && rows.some((r) => !r.adapter_yaml && !r.auth_profile)) {
       if (await this.importFromRepo(rows)) rows = await q();
@@ -73,7 +75,7 @@ export class SourceRegistry {
       const f = files.find((x) => x.spec.source_system === r.code);
       if (!f) continue;
       n += await withTenant(this.db, (t) => t.result(
-        `UPDATE core.source_systems SET adapter_yaml = $2, adapter_updated_at = now()
+        `UPDATE source_systems SET adapter_yaml = $2, adapter_updated_at = now()
           WHERE code = $1 AND adapter_yaml IS NULL AND auth_profile IS NULL`, [r.code, f.text], (x) => x.rowCount));
     }
     return n > 0;
@@ -98,12 +100,48 @@ export class SourceRegistry {
 }
 
 /**
+ * Mỗi đơn vị một SourceRegistry (danh mục nguồn nằm trong schema đơn vị — multi-tenant). get / list / reload / specs /
+ * errors làm việc với đơn vị của NGỮ CẢNH HIỆN TẠI, nên route và worker không phải biết có nhiều đơn vị.
+ */
+export class SourceRegistries {
+  private byTenant = new Map<string, SourceRegistry>();
+
+  constructor(private readonly db: Db, private readonly opts: { importFromRepo?: boolean } = {}) {}
+
+  private reg(code = currentTenant()): SourceRegistry {
+    let r = this.byTenant.get(code);
+    if (!r) { r = new SourceRegistry(this.db, this.opts); this.byTenant.set(code, r); }
+    return r;
+  }
+
+  /** Nạp lại danh mục của mọi đơn vị đang hoạt động (khởi động + định kỳ). Một đơn vị lỗi không chặn đơn vị khác. */
+  async reloadAll(onError?: (tenant: string, e: Error) => void): Promise<void> {
+    for (const code of await activeTenants(this.db)) {
+      try { await runInTenant(code, () => this.reg(code).reload()); } catch (e) { onError?.(code, e as Error); }
+    }
+  }
+
+  reload(): Promise<void> { return this.reg().reload(); }
+  get(code: string): SourceRow | undefined { return this.reg().get(code); }
+  list(): SourceRow[] { return this.reg().list(); }
+  get errors(): Map<string, string> { return this.reg().errors; }
+  /** Adapter của đơn vị hiện tại. */
+  readonly specs = (): AdapterSpec[] => this.reg().specs();
+
+  /** Mọi loadAllSpecs() trong tiến trình trả adapter của đơn vị đang chạy. */
+  install(): this {
+    setSpecProvider(this.specs);
+    return this;
+  }
+}
+
+/**
  * Tự đăng nhập bằng mật khẩu gặp OTP ⇒ đánh dấu hệ thống có xác thực 2 lớp (chỉ khi đang "chưa rõ") và bỏ cách kết
  * nối bằng mật khẩu khỏi danh sách cho phép. Kết nối mật khẩu đang có vẫn giữ nhưng sẽ báo lỗi OTP cho tới khi đổi cách.
  */
 export async function markSourceMfa(db: Db, source: string): Promise<void> {
   await withTenant(db, (t) => t.none(
-    `UPDATE core.source_systems
+    `UPDATE source_systems
         SET mfa = 'co', mfa_detected_at = now(), connection_methods = array_remove(connection_methods, 'password'), updated_at = now()
       WHERE code = $1 AND mfa = 'chua_ro'`, [source]));
 }

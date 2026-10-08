@@ -13,7 +13,8 @@
     "migrate": "tsx scripts/migrate.ts",
     "seed": "tsx scripts/migrate.ts --seed",
     "typecheck": "tsc -p .",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:db": "vitest run -c vitest.db.config.ts"
   },
   "dependencies": {
     "bullmq": "^5.81.5",

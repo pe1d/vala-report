@@ -22,6 +22,8 @@ import { canAutoRenew, isPermanentLoginError, type AuthMethod, type ConnectionSe
 export type TriggerType = 'schedule' | 'manual' | 'backfill';
 
 export interface CrawlJob {
+  /** Mã đơn vị — worker chạy việc trong ngữ cảnh đơn vị này (việc cũ trong hàng đợi không có ⇒ bkav). */
+  tenant: string;
   source: string;
   capability: string;
   userId: number;
@@ -37,7 +39,7 @@ export interface CrawlDeps {
   specs?: AdapterSpec[];
   fetchImpl?: FetchLike;
   sleep?: (ms: number) => Promise<void>;
-  /** Ghi đè base_url theo source (dev trỏ vào mock). Mặc định lấy từ core.source_systems. */
+  /** Ghi đè base_url theo source (dev trỏ vào mock). Mặc định lấy từ source_systems. */
   baseUrls?: Record<string, string>;
   /** Có ⇒ phiên ứng dụng hỏng được lấy lại từ SSO thay vì đánh dấu hết hạn ngay. */
   sessions?: SessionManager;
@@ -99,7 +101,7 @@ export async function crawlUserSource(deps: CrawlDeps, job: CrawlJob): Promise<C
 
   try {
     const baseUrl = deps.baseUrls?.[job.source] ?? await withTenant(db, (t) => t.one(
-      'SELECT base_url FROM core.source_systems WHERE code = $1', [job.source], (r: { base_url: string }) => r.base_url));
+      'SELECT base_url FROM source_systems WHERE code = $1', [job.source], (r: { base_url: string }) => r.base_url));
     // API dữ liệu có thể ở tên miền khác (adapter.auth.api_base_url); bỏ trống ⇒ dùng base_url hệ thống.
     const apiBase = spec.auth.api_base_url ?? baseUrl;
     const connect = (sec: SessionSecret) =>

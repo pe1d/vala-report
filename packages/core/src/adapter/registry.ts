@@ -11,7 +11,7 @@ let provider: (() => AdapterSpec[]) | null = null;
 
 /**
  * adapters/*.yaml trong repo — chỉ còn là MẪU KHỞI TẠO: lần chạy đầu SourceRegistry chép vào CSDL
- * (core.source_systems.adapter_yaml), từ đó cấu hình trong CSDL mới là nguồn sự thật.
+ * (source_systems.adapter_yaml), từ đó cấu hình trong CSDL mới là nguồn sự thật.
  */
 export function repoSpecFiles(dir = REPO_DIR): Array<{ file: string; text: string; spec: AdapterSpec }> {
   const read = () => readdirSync(dir).filter((f) => f.endsWith('.yaml')).sort().map((f) => {
@@ -40,17 +40,17 @@ export function findSpec(source: string, capabilityId: string, specs = loadAllSp
   return s;
 }
 
-/** Ghi spec đang dùng vào core.adapters (một bản active cho mỗi source × capability). */
+/** Ghi spec đang dùng vào adapters (một bản active cho mỗi source × capability). */
 export async function registerSpecs(t: Tx, specs = loadAllSpecs()): Promise<void> {
   for (const spec of specs) {
     for (const cap of spec.capabilities) {
       await t.none(
-        `UPDATE core.adapters SET is_active = false
+        `UPDATE adapters SET is_active = false
           WHERE source_system = $1 AND capability = $2 AND version <> $3 AND is_active`,
         [spec.source_system, cap.id, spec.version],
       );
       await t.none(
-        `INSERT INTO core.adapters (source_system, capability, version, spec, schema_baseline, is_active, created_by)
+        `INSERT INTO adapters (source_system, capability, version, spec, schema_baseline, is_active, created_by)
          VALUES ($1, $2, $3, $4, $5, true, 'worker')
          ON CONFLICT (source_system, capability, version)
          DO UPDATE SET spec = EXCLUDED.spec, schema_baseline = EXCLUDED.schema_baseline, is_active = true`,

@@ -1,5 +1,5 @@
 /**
- * Dịch các thông báo ĐÃ LƯU trong CSDL (source_grants.last_error, crawl_runs.error_detail, core.spider_launches.error…)
+ * Dịch các thông báo ĐÃ LƯU trong CSDL (source_grants.last_error, crawl_runs.error_detail, spider_launches.error…)
  * khi trả cho giao diện. Lúc ghi vẫn lưu tiếng Việt (nhật ký giữ nguyên); khi đọc, nếu người dùng chọn tiếng Anh thì
  * dịch các câu cố định / tiền tố do chính code này sinh ra — phần đuôi kỹ thuật (đường dẫn, mã HTTP, tên cookie…) giữ nguyên.
  * Câu không nhận ra (vd spider Python tự ghi) ⇒ trả nguyên.

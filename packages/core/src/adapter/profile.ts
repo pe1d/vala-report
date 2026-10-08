@@ -1,5 +1,5 @@
 /**
- * Hồ sơ xác thực của hệ thống nguồn do quản trị tạo trên cổng (core.source_systems.auth_profile).
+ * Hồ sơ xác thực của hệ thống nguồn do quản trị tạo trên cổng (source_systems.auth_profile).
  * Chỉ mô tả PHIÊN: cookie nào là phiên, kiểm tra phiên ở đâu. Đủ để người dùng kết nối (tiện ích / dán
  * cookie) và để hệ thống kiểm tra phiên — lấy dữ liệu vẫn cần spider + báo cáo riêng.
  */

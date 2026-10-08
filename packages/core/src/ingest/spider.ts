@@ -49,7 +49,7 @@ interface RunRow {
 }
 
 export async function getSpider(db: Db, code: string): Promise<SpiderRow> {
-  const s = await withTenant(db, (t) => t.oneOrNone<SpiderRow>('SELECT * FROM core.crawl_spiders WHERE code = $1', [code]));
+  const s = await withTenant(db, (t) => t.oneOrNone<SpiderRow>('SELECT * FROM crawl_spiders WHERE code = $1', [code]));
   if (!s) throw new Problem('not_found', L('Không có spider này', 'Spider not found'), code);
   return s;
 }

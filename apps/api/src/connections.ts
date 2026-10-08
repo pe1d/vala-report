@@ -3,7 +3,7 @@
  * Bí mật (mật khẩu, cookie hệ thống nguồn) chỉ vào vault; hàm nào ở đây cũng không trả bí mật ra.
  */
 import type { FastifyRequest } from 'fastify';
-import { AUTH_METHODS, L, Problem, canAutoRenew, isPermanentLoginError, localizeStored, vaultRef, withTenant, type AuthMethod, type Lang } from '@vala/core';
+import { AUTH_METHODS, L, Problem, canAutoRenew, isPermanentLoginError, localizeStored, vaultRef, withTenant, type AuthMethod, type Lang, currentSchema } from '@vala/core';
 import { loadAllSpecs } from '@vala/core/adapter';
 import { audit } from './audit.js';
 import type { ApiDeps } from './deps.js';
@@ -37,7 +37,7 @@ export async function listConnections(deps: ApiDeps, userId?: number, lang: Lang
             (SELECT max(r.finished_at) FROM crawl_runs r WHERE r.app_user_id = u.id AND r.source_system = ss.code AND r.status = 'ok') AS last_success_at,
             (SELECT c.consented_at FROM source_consents c WHERE c.app_user_id = u.id AND c.source_system = ss.code AND c.version = $2) AS consented_at
        FROM app_users u
-       CROSS JOIN core.source_systems ss
+       CROSS JOIN source_systems ss
        LEFT JOIN source_grants g ON g.app_user_id = u.id AND g.source_system = ss.code
       WHERE u.is_active AND ss.enabled AND ($1::bigint IS NULL OR u.id = $1)
       ORDER BY u.ho_ten, ss.code`, [userId ?? null, CONSENT_VERSION]));
@@ -48,7 +48,7 @@ export async function configureConnection(
   deps: ApiDeps, req: FastifyRequest, userId: number, source: string, b: ConnectionBody,
 ): Promise<{ state: string; expires_at: string | null }> {
   const src = await withTenant(deps.writer, (t) => t.oneOrNone<{ connection_methods: AuthMethod[]; mfa: string }>(
-    'SELECT connection_methods, mfa FROM core.source_systems WHERE code = $1 AND enabled', [source]));
+    'SELECT connection_methods, mfa FROM source_systems WHERE code = $1 AND enabled', [source]));
   if (!src) throw new Problem('not_found', L('Không có hệ thống nguồn này', 'Source system not found'));
   if (b.auth_method === 'password' && src.mfa === 'co') {
     throw new Problem('invalid_params', L('Hệ thống này có xác thực 2 lớp (OTP)', 'This system uses two-factor authentication (OTP)'),
@@ -101,7 +101,7 @@ export async function configureConnection(
              auth_method = EXCLUDED.auth_method, source_username = EXCLUDED.source_username,
              configured_by = EXCLUDED.configured_by, session_expires_at = EXCLUDED.session_expires_at,
              revoked_at = NULL, last_error = NULL, updated_at = now()`,
-      [userId, source, caps, vaultRef(deps.config.tenant, userId, source), state, b.auth_method,
+      [userId, source, caps, vaultRef(currentSchema(), userId, source), state, b.auth_method,
        b.auth_method === 'password' ? b.source_username!.trim() : null, req.user.id, expiresAt]);
     await audit(t, req, 'grant', { type: 'connection', id: `${userId}/${source}` },
       { auth_method: b.auth_method, by: req.user.id === userId ? 'self' : 'admin' });
@@ -119,7 +119,7 @@ export async function testConnection(deps: ApiDeps, userId: number, source: stri
       s = await deps.connections.renew(userId, source, g.auth_method);
     } else {
       // Cookie dán / tiện ích gửi: không tự lấy lại được ⇒ probe phiên đang có trong vault.
-      const cur = await deps.secrets.get(vaultRef(deps.config.tenant, userId, source));
+      const cur = await deps.secrets.get(vaultRef(currentSchema(), userId, source));
       if (!cur) throw new Problem('session_expired', L('Chưa có phiên trong kho bí mật', 'No session in the secret store'));
       await deps.connections.verifyCookies(source, cur.cookies).catch((e) => {
         if (e instanceof Problem && e.type === 'session_expired') {

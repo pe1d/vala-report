@@ -79,11 +79,11 @@ export const adminRoutes = (deps: ApiDeps): FastifyPluginAsync => async (app) =>
     const spiders = await withTenant(deps.writer, (t) => t.any(
       `SELECT sp.code, sp.ten, sp.mo_ta, sp.source_system, ss.ten AS source_ten, sp.entity, sp.is_enabled,
               sp.crawlab_spider_id, sp.synced_at,
-              (SELECT count(*)::int FROM core.spider_schedules sc WHERE sc.spider_code = sp.code AND sc.crawlab_schedule_id IS NOT NULL) AS schedules,
+              (SELECT count(*)::int FROM spider_schedules sc WHERE sc.spider_code = sp.code AND sc.crawlab_schedule_id IS NOT NULL) AS schedules,
               (SELECT count(DISTINCT ds.app_user_id)::int FROM data_schedules ds WHERE ds.spider_code = sp.code AND ds.is_enabled) AS subscribers,
               (SELECT json_build_object('status', r.status, 'started_at', r.started_at, 'error_code', r.error_code)
                  FROM crawl_runs r WHERE r.spider_code = sp.code ORDER BY r.started_at DESC LIMIT 1) AS last_run
-         FROM core.crawl_spiders sp JOIN core.source_systems ss ON ss.code = sp.source_system
+         FROM crawl_spiders sp JOIN source_systems ss ON ss.code = sp.source_system
         ORDER BY sp.code`));
     return { crawlab_url: deps.config.crawlabWebUrl ?? null, crawlab_configured: !!deps.crawlab, spiders };
   });
@@ -115,7 +115,7 @@ export const adminRoutes = (deps: ApiDeps): FastifyPluginAsync => async (app) =>
     const b = req.body;
     await withTenant(deps.writer, async (t) => {
       await t.none(
-        `INSERT INTO core.crawl_spiders (code, ten, mo_ta, source_system, entity, is_enabled, main_py, updated_by)
+        `INSERT INTO crawl_spiders (code, ten, mo_ta, source_system, entity, is_enabled, main_py, updated_by)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
         [b.code, b.ten, b.mo_ta ?? null, b.source_system, 'records', b.is_enabled ?? true, b.main_py, req.user.id]).catch(spiderDbError);
       await audit(t, req, 'source_change', { type: 'spider', id: b.code }, { op: 'create', source_system: b.source_system });
@@ -132,7 +132,7 @@ export const adminRoutes = (deps: ApiDeps): FastifyPluginAsync => async (app) =>
     const b = req.body;
     await withTenant(deps.writer, async (t) => {
       await t.none(
-        `UPDATE core.crawl_spiders SET ten = $2, mo_ta = $3, entity = $4, is_enabled = $5, main_py = $6,
+        `UPDATE crawl_spiders SET ten = $2, mo_ta = $3, entity = $4, is_enabled = $5, main_py = $6,
                 updated_at = now(), updated_by = $7 WHERE code = $1`,
         [cur.code, b.ten ?? cur.ten, b.mo_ta !== undefined ? b.mo_ta : cur.mo_ta ?? null, b.entity ?? cur.entity,
          b.is_enabled ?? cur.is_enabled, b.main_py !== undefined ? b.main_py : cur.main_py ?? null, req.user.id]).catch(spiderDbError);

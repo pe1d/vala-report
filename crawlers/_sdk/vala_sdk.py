@@ -26,7 +26,7 @@ Hệ thống không có API (ASP.NET WebForms): run.webform('/Trang.aspx') ⇒ W
 
 Biến môi trường (Crawlab đặt sẵn qua "Environments", do "Đồng bộ Crawlab" cấu hình):
     VALA_API_URL, VALA_INTERNAL_TOKEN, CRAWLAB_TASK_ID (Crawlab tự đặt)
-Tham số dòng lệnh: --user <id> (chạy riêng một người — lịch do worker Vala hẹn giờ, hoặc "chạy ngay"),
+Tham số dòng lệnh: --tenant <mã đơn vị> (không có ⇒ Bkav), --user <id> (chạy riêng một người — lịch do worker Vala hẹn giờ, hoặc "chạy ngay"),
 --trigger schedule|manual (ghi nhận lượt chạy theo lịch hay chạy tay), --preset <preset> (cũ, trước 015)
 """
 import argparse
@@ -683,12 +683,16 @@ class Vala:
         p.add_argument('--preset')
         p.add_argument('--user', type=int)
         p.add_argument('--trigger', choices=['schedule', 'manual'])
+        # Mã đơn vị (nhiều đơn vị — worker Vala truyền khi đơn vị khác Bkav); không có ⇒ API hiểu là Bkav.
+        p.add_argument('--tenant')
         self.args, _ = p.parse_known_args(argv)
         url = os.environ.get('VALA_API_URL')
         token = os.environ.get('VALA_INTERNAL_TOKEN')
         if not url or not token:
             sys.exit('Thiếu VALA_API_URL hoặc VALA_INTERNAL_TOKEN — chạy "Đồng bộ Crawlab" trên cổng quản trị.')
         self.api = _Api(url, token)
+        if self.args.tenant:
+            self.api.http.headers['X-Vala-Tenant'] = self.args.tenant
         self.task_id = os.environ.get('CRAWLAB_TASK_ID')
 
     def targets(self, spider):

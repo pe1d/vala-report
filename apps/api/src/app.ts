@@ -1,6 +1,7 @@
 import Fastify, { type FastifyError } from 'fastify';
-import { Problem, langOf } from '@vala/core';
+import { Problem, langOf, tenantStatus } from '@vala/core';
 import { authenticate } from './auth.js';
+import { installTenantHook } from './tenant-hook.js';
 import type { ApiDeps } from './deps.js';
 import { adminRoutes } from './routes/admin.js';
 import { authRoutes } from './routes/auth.js';
@@ -26,6 +27,10 @@ export async function buildApp(deps: ApiDeps, opts: { logger?: boolean } = {}) {
     trustProxy: true,
     bodyLimit: 256 * 1024,
   });
+
+  // Mỗi request chạy trong ngữ cảnh một đơn vị (theo token) — trước mọi hook / route khác.
+  installTenantHook(app, { jwtSecret: deps.config.jwtSecret, internalToken: deps.config.internalToken,
+    status: (ma) => tenantStatus(deps.writer, ma) });
 
   // Lỗi theo RFC 7807. Problem ⇒ đúng mã; lỗi validate của Fastify ⇒ 422; còn lại ⇒ 500 không lộ chi tiết.
   app.setErrorHandler((err: FastifyError | Problem, req, reply) => {

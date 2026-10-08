@@ -1,5 +1,5 @@
 import type { FastifyPluginAsync } from 'fastify';
-import { L, Problem, langOf, localizeStored, vaultRef, withUserContext, type UserContext } from '@vala/core';
+import { L, Problem, langOf, localizeStored, vaultRef, withUserContext, type UserContext, currentSchema } from '@vala/core';
 import { loadAllSpecs } from '@vala/core/adapter';
 import { audit } from '../audit.js';
 import type { ApiDeps } from '../deps.js';
@@ -27,7 +27,7 @@ export const grantRoutes = (deps: ApiDeps): FastifyPluginAsync => async (app) =>
               (SELECT max(r.finished_at) FROM crawl_runs r
                 WHERE r.app_user_id = $1 AND r.source_system = ss.code AND r.status = 'ok') AS last_success_at,
               (g.id IS NOT NULL AND g.revoked_at IS NULL AND g.session_state = 'active') AS can_crawl
-         FROM core.source_systems ss
+         FROM source_systems ss
          LEFT JOIN source_grants g ON g.source_system = ss.code AND g.app_user_id = $1
         WHERE ss.enabled ORDER BY ss.code`, [req.user.id]);
     const lang = langOf(req.headers['accept-language']);
@@ -52,7 +52,7 @@ export const grantRoutes = (deps: ApiDeps): FastifyPluginAsync => async (app) =>
          SET scope_capabilities = EXCLUDED.scope_capabilities, auth_method = 'sso',
              session_state = CASE WHEN source_grants.revoked_at IS NULL AND source_grants.session_state = 'active'
                                   THEN 'active' ELSE 'pending' END`,
-      [req.user.id, source, caps, vaultRef(deps.config.tenant, req.user.id, source)]));
+      [req.user.id, source, caps, vaultRef(currentSchema(), req.user.id, source)]));
 
     // Chuyển sang trang đăng nhập Bkav SSO. Người dùng đang có phiên SSO trên trình duyệt thì SSO
     // trả về ngay, không phải gõ lại mật khẩu.

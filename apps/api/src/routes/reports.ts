@@ -75,7 +75,7 @@ export const reportRoutes = (deps: ApiDeps): FastifyPluginAsync => async (app) =
     const scopes = allowedScopes(await withTenant(deps.reader, (t) => loadMemberships(t, req.user.id)));
     return withUserContext(deps.reader, { userId: req.user.id, scope: 'ca_nhan', orgUnitsAllowed: [] }, async (t) => {
       const rows = await t.any<CatalogRow & { requires_grant: boolean }>(
-        `SELECT rc.code, rc.ten, rc.mo_ta, rc.source_system, (SELECT ss.ten FROM core.source_systems ss WHERE ss.code = rc.source_system) AS source_ten, rc.param_schema, rc.default_params, rc.view_template, rc.required_scope,
+        `SELECT rc.code, rc.ten, rc.mo_ta, rc.source_system, (SELECT ss.ten FROM source_systems ss WHERE ss.code = rc.source_system) AS source_ten, rc.param_schema, rc.default_params, rc.view_template, rc.required_scope,
                 NOT EXISTS (SELECT 1 FROM source_grants g WHERE g.app_user_id = $1 AND g.source_system = rc.source_system
                              AND g.revoked_at IS NULL AND g.session_state = 'active') AS requires_grant
            FROM report_catalog rc WHERE rc.is_active ORDER BY rc.ten`, [req.user.id]);
