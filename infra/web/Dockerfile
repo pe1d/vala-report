@@ -6,7 +6,12 @@ WORKDIR /app
 RUN npm install -g pnpm@12.5.1 --no-fund --no-audit --loglevel=error
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
 COPY apps/web/package.json apps/web/
-RUN pnpm install --frozen-lockfile --filter @vala/web
+# Web dùng phần giao diện chung với Vala Desktop: @vala/ui (song ngữ, sáng/tối, thành phần) và @vala/admin (trang quản trị).
+COPY packages/ui/package.json packages/ui/
+COPY packages/admin/package.json packages/admin/
+RUN pnpm install --frozen-lockfile --filter "@vala/web..."
+COPY packages/ui packages/ui
+COPY packages/admin packages/admin
 COPY apps/web apps/web
 # Cổng chạy dưới đường dẫn con (vd /vala-report/ sau reverse proxy)? Truyền --build-arg VITE_BASE_PATH=/vala-report/.
 ARG VITE_BASE_PATH=/

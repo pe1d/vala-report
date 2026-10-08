@@ -11,6 +11,4 @@
 coverage
 **/*.log
 **/__pycache__
-apps/extension/vala-extension-*
-apps/extension/*.zip
 deploy/backup

@@ -14,7 +14,6 @@ COPY packages/core/package.json packages/core/
 COPY apps/api/package.json apps/api/
 COPY apps/worker/package.json apps/worker/
 COPY apps/web/package.json apps/web/
-COPY apps/extension/package.json apps/extension/
 RUN pnpm install --frozen-lockfile --filter @vala/core --filter @vala/api --filter @vala/worker
 
 COPY . .
