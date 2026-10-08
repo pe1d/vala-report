@@ -10,6 +10,7 @@ import { accountEvents, clearWebSession, logoutDevice } from './account';
 import { registerSettingsPage } from './settings-page';
 import { registerRecordingPage } from './recording-page';
 import { registerVanbanPage } from './vanban-page';
+import { offerPin } from './pin';
 import { registerChatPage } from './chat-page';
 import { registerLoginPage } from './login-page';
 import { registerAdminPage } from './admin-page';
@@ -128,6 +129,8 @@ if (!app.requestSingleInstanceLock()) {
     initUpdater(refreshAll);
     // Vừa cập nhật lên bản mới ⇒ báo một lần "có gì mới" (bấm ⇒ Cài đặt → Giới thiệu).
     announceUpdate(() => openSettings('gioi-thieu'));
+    // Lần đầu mở bản cài: Ubuntu tự ghim vào dock, Windows hướng dẫn ghim vào thanh tác vụ (pin.ts).
+    offerPin();
 
     void refreshUi();
     // Chưa đăng nhập ⇒ cửa sổ mở màn hình đăng nhập (2 bước, nhiều đơn vị — login-page.ts).

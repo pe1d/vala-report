@@ -27,6 +27,8 @@ export interface Settings {
   autoUpdate?: boolean;
   /** Tự gửi báo lỗi / crash về máy chủ Vala (error-report.ts). Không đặt ⇒ bật. */
   errorReport?: boolean;
+  /** Đã ghim / đã hướng dẫn ghim vào thanh tác vụ (dock) lần đầu mở bản cài (pin.ts) — chỉ làm một lần. */
+  pinOffered?: boolean;
   /** Chỉ bản dev: trang chính tự đặt để thử (đè trang quản trị đặt trên cổng). Bản cho người dùng bỏ qua trường này. */
   devHomeUrl?: string | null;
   /** Phiên bản lần chạy trước — khác bản đang chạy ⇒ vừa cập nhật, báo "có gì mới" một lần (updater.ts). */
