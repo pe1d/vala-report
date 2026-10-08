@@ -1,4 +1,4 @@
-/** Preload của lớp khung nổi (menu hồ sơ, khung ⊞): chỉ mở đúng các lệnh khung cần (tiến trình chính kiểm đúng trang). */
+/** Preload của lớp khung nổi (menu hồ sơ, khung ⊞, ô tìm kiếm): chỉ mở đúng các lệnh khung cần (tiến trình chính kiểm đúng trang). */
 import { contextBridge, ipcRenderer } from 'electron';
 
 contextBridge.exposeInMainWorld('valaOverlay', {
@@ -8,5 +8,8 @@ contextBridge.exposeInMainWorld('valaOverlay', {
   prefs: (p: { lang?: string; theme?: string }) => ipcRenderer.invoke('overlay:prefs', p),
   openApp: (key: string) => ipcRenderer.invoke('overlay:open-app', key),
   pin: (key: string, on: boolean) => ipcRenderer.invoke('overlay:pin', key, on),
+  search: (q: string) => ipcRenderer.invoke('overlay:search', q),
+  pick: (item: unknown) => ipcRenderer.invoke('overlay:pick', item),
+  clearHistory: () => ipcRenderer.invoke('overlay:clear-history'),
   onOpen: (cb: () => void) => { ipcRenderer.on('overlay:open', () => cb()); },
 });

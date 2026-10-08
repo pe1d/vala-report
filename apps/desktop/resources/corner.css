@@ -1,0 +1,11 @@
+/* Mặt nạ góc khung trang web (browser.ts): tô màu nền cửa sổ ngoài cung tròn bán kính 12px (khớp RADIUS). Màu khớp nền
+   resources/tabs.html: slate-100 sáng / slate-900 tối. */
+html, body { margin: 0; height: 100%; overflow: hidden; background: transparent; }
+body { --bg: #f1f5f9; }
+@media (prefers-color-scheme: dark) { body { --bg: #0f172a; } }
+div { display: none; position: fixed; inset: 0; }
+div:target { display: block; }
+#tl { background: radial-gradient(circle at 100% 100%, transparent 11.5px, var(--bg) 12px); }
+#tr { background: radial-gradient(circle at 0 100%, transparent 11.5px, var(--bg) 12px); }
+#bl { background: radial-gradient(circle at 100% 0, transparent 11.5px, var(--bg) 12px); }
+#br { background: radial-gradient(circle at 0 0, transparent 11.5px, var(--bg) 12px); }

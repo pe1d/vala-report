@@ -9,6 +9,7 @@ import { accountEvents } from './account';
 import { greeting, parseArgs, resultView } from './chat-model';
 import { strings } from './chat-strings';
 import { messages } from './i18n';
+import { getChat, recordActions, saveChat, type CatalogAction } from './local-data';
 import { prefsEvents } from './prefs';
 import { getSettings } from './settings';
 import { cachedSources, events as syncEvents, statusOf } from './sync';
@@ -25,6 +26,34 @@ export interface ChatPageHooks {
   push: () => void;
 }
 
+/** Lệnh chờ trang Trợ lý lấy (ô tìm kiếm của header: mở phiếu thao tác / mở lại hội thoại). */
+type ChatCommand = { type: 'action'; code: string; action: CatalogAction } | { type: 'open'; id: string; title: string; msgs: unknown[] };
+let pending: ChatCommand | null = null;
+let pushPage: () => void = () => {};
+
+/** Ô tìm kiếm chọn một thao tác: trang Trợ lý mở sẵn phiếu tham số của nó (main đã chuyển sang trang Trợ lý). */
+export function queueChatAction(code: string, action: CatalogAction): void { pending = { type: 'action', code, action }; pushPage(); }
+/** Ô tìm kiếm chọn một hội thoại cũ: trang Trợ lý dựng lại nó. */
+export function queueChatOpen(id: string): void {
+  const c = getChat(id);
+  if (!c) return;
+  pending = { type: 'open', id: c.id, title: c.title, msgs: c.msgs };
+  pushPage();
+}
+
+/** Chữ để tìm trong một cuộc trò chuyện: tiêu đề, câu hỏi, lệnh và chữ của kết quả (giới hạn độ dài). */
+function chatText(title: string, msgs: unknown[]): string {
+  const parts: string[] = [title];
+  const walk = (v: unknown) => {
+    if (parts.join(' ').length > 4000) return;
+    if (typeof v === 'string') parts.push(v);
+    else if (Array.isArray(v)) v.forEach(walk);
+    else if (v && typeof v === 'object') for (const [k, x] of Object.entries(v)) if (k !== 'kind' && k !== 'role') walk(x);
+  };
+  walk(msgs);
+  return parts.join(' ').slice(0, 4000);
+}
+
 function state() {
   const s = getSettings();
   // Tên gọi trong lời chào: tên (chữ cuối của họ tên).
@@ -37,15 +66,29 @@ function state() {
 
 export function registerChatPage(hooks: ChatPageHooks): void {
   const own = (e: IpcMainInvokeEvent) => { if (!hooks.isChat(e)) throw new Error('forbidden'); };
+  pushPage = hooks.push;
   for (const ev of ['login', 'logout'] as const) accountEvents.on(ev, hooks.push);
   prefsEvents.on('changed', hooks.push);
   syncEvents.on('status', hooks.push);
 
   ipcMain.handle('chat:state', (e) => { own(e); return state(); });
-  ipcMain.handle('chat:actions', (e, code: unknown) => {
+  ipcMain.handle('chat:actions', async (e, code: unknown) => {
     own(e);
     if (typeof code !== 'string' || !CODE.test(code)) return { ok: false, error: 'forbidden' };
-    return sourceActions(code);
+    const r = await sourceActions(code);
+    // Ghi danh mục thao tác ⇒ ô tìm kiếm của header tìm được thao tác mà không phải mở hệ thống.
+    if (r.ok && r.actions) recordActions(code, r.actions);
+    return r;
+  });
+  ipcMain.handle('chat:take', (e) => { own(e); const c = pending; pending = null; return c; });
+  ipcMain.handle('chat:save', (e, c: { id?: unknown; title?: unknown; msgs?: unknown }) => {
+    own(e);
+    if (typeof c?.id !== 'string' || !/^[a-z0-9]{4,40}$/.test(c.id) || !Array.isArray(c.msgs)) return;
+    const title = typeof c.title === 'string' ? c.title.slice(0, 200) : '';
+    // Kết quả quá lớn (bảng hàng nghìn dòng) ⇒ không lưu bảng, chỉ giữ lời hỏi – đáp dạng chữ.
+    let msgs = c.msgs.slice(0, 200) as unknown[];
+    if (JSON.stringify(msgs).length > 1_500_000) msgs = msgs.map((m) => (m && typeof m === 'object' && 'view' in m ? { role: 'bot', note: M[getSettings().lang].tooBig } : m));
+    saveChat({ id: c.id, title, at: Date.now(), text: chatText(title, msgs), msgs });
   });
   ipcMain.handle('chat:run', async (e, a: { code?: unknown; name?: unknown; form?: unknown }) => {
     own(e);

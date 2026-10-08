@@ -1,6 +1,7 @@
 /**
- * Script thanh ứng dụng dọc (chạy trong trang, không có Node). Không import gì: build ra script thường.
- * ✦ Trợ lý AI · ỨNG DỤNG (ghim) · ĐANG MỞ · hồ sơ + ⊞ ở cuối. Thu gọn ⇒ chỉ biểu tượng (tên ở tooltip).
+ * Script header + thanh ứng dụng dọc (chạy trong trang, không có Node). Không import gì: build ra script thường.
+ * Header: thu gọn, logo, ◀ ▶ ⟳, ô tìm kiếm (Ctrl+K — mở trên lớp khung nổi), ─ □ ✕.
+ * Thanh dọc: ✦ Trợ lý AI · ỨNG DỤNG (ghim) · ĐANG MỞ · hồ sơ + ⊞ ở cuối. Thu gọn ⇒ chỉ biểu tượng (tên ở tooltip).
  * Dựng DOM bằng textContent, không dùng innerHTML (tiêu đề tab là chữ của trang web bất kỳ).
  */
 interface TabView {
@@ -25,6 +26,8 @@ interface TabsState {
   apps: TabView[];
   open: TabView[];
   nav: { back: boolean; forward: boolean; reload: boolean };
+  /** Cửa sổ đang phóng to (nút □ thành "Thu về"). */
+  maximized: boolean;
   /** Bản chạy từ mã nguồn ("Vala Desktop (dev)") ⇒ hiện nhãn DEV. */
   dev: boolean;
   /** Người đang đăng nhập (null ⇒ nút "Đăng nhập"). */
@@ -38,7 +41,9 @@ interface ValaTabsApi {
   close(key: string): Promise<void>;
   nav(cmd: 'back' | 'forward' | 'reload'): Promise<void>;
   collapse(): Promise<void>;
-  overlay(kind: 'profile' | 'apps', r: { x: number; y: number; w: number; h: number }): Promise<void>;
+  overlay(kind: 'profile' | 'apps' | 'search', r: { x: number; y: number; w: number; h: number }): Promise<void>;
+  win(cmd: 'minimize' | 'maximize' | 'close'): Promise<void>;
+  onOpenSearch(cb: () => void): void;
   resized(): void;
   installUpdate(): Promise<void>;
   signIn(): Promise<void>;
@@ -192,8 +197,6 @@ interface ValaTabsApi {
     const c = s.collapsed;
     $('bar').classList.toggle('w-[248px]', !c);
     $('bar').classList.toggle('w-[56px]', c);
-    $('top').classList.toggle('flex-col', c);
-    display($('top-gap'), !c);
     $('me').classList.toggle('flex-col', c);
     display($('profile-text'), !c);
     display($('profile-chev'), !c);
@@ -214,6 +217,17 @@ interface ValaTabsApi {
       b.disabled = !on;
       setIf(b, 'title', tip);
       setIf(b, 'aria-label', tip);
+    }
+    // Header: ô tìm kiếm, nút cửa sổ, nhãn DEV.
+    setText($('search-text'), s.t.search);
+    setIf($('search'), 'title', `${s.t.search} (Ctrl+K)`);
+    setIf($('search'), 'aria-label', s.t.search);
+    display($('dev-badge'), s.dev);
+    display($('win-max-icon'), !s.maximized);
+    display($('win-restore-icon'), s.maximized);
+    for (const [id, tip] of [['win-min', s.t.minimize], ['win-max', s.maximized ? s.t.restore : s.t.maximize], ['win-close', s.t.closeWindow]] as const) {
+      setIf($(id), 'title', tip);
+      setIf($(id), 'aria-label', tip);
     }
     const col = $('collapse');
     setIf(col, 'title', c ? s.t.expand : s.t.collapse);
@@ -250,6 +264,15 @@ interface ValaTabsApi {
   $('forward').addEventListener('click', () => void api.nav('forward'));
   $('reload').addEventListener('click', () => void api.nav('reload'));
   $('collapse').addEventListener('click', () => void api.collapse());
+  const openSearch = () => void api.overlay('search', rect($('search')));
+  $('search').addEventListener('click', openSearch);
+  api.onOpenSearch(openSearch);
+  $('win-min').addEventListener('click', () => void api.win('minimize'));
+  $('win-max').addEventListener('click', () => void api.win('maximize'));
+  $('win-close').addEventListener('click', () => void api.win('close'));
+  // Bấm đúp vào header (chỗ trống) ⇒ phóng to / thu về. Vùng kéo do hệ điều hành xử lý nên thường không tới đây; giữ cho
+  // trường hợp trình quản lý cửa sổ chuyển sự kiện vào trang.
+  $('header').addEventListener('dblclick', (e) => { if (!(e.target as Element).closest('button')) void api.win('maximize'); });
   // Thu gọn mà chưa đăng nhập: bấm ô ảnh đại diện ⇒ đăng nhập.
   $('profile').addEventListener('click', () => void api.overlay('profile', rect($('profile'))));
   $('apps-grid').addEventListener('click', () => void api.overlay('apps', rect($('apps-grid'))));
@@ -259,6 +282,8 @@ interface ValaTabsApi {
   // Ẩn bằng JS: CSP của trang chặn thuộc tính style viết trong HTML.
   display($('update'), false);
   display($('sign-in'), false);
+  display($('dev-badge'), false);
+  display($('win-restore-icon'), false);
   api.onState(render);
   // Trang thanh dọc phủ cả cửa sổ: khung nhìn đổi cỡ = cửa sổ đổi cỡ ⇒ báo tiến trình chính canh lại trang web.
   window.addEventListener('resize', () => api.resized());

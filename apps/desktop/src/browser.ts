@@ -1,13 +1,15 @@
 /**
- * Cửa sổ chính: một BrowserWindow, bên trái là THANH ỨNG DỤNG DỌC (resources/tabs.html — họp 07/10/2026), bên phải là trang
- * web của mục đang chọn (mỗi mục một WebContentsView, chiếm toàn bộ phần còn lại, chỉ mục đang chọn hiện). Có nút
- * Back / Forward / Reload ở góc trên trái; KHÔNG có ô địa chỉ — người dùng không thấy và không gõ địa chỉ trang.
+ * Cửa sổ chính: một BrowserWindow KHÔNG VIỀN (như Lark). Trang cục bộ của cửa sổ (resources/tabs.html) vẽ HEADER trên cùng
+ * (logo, ◀ ▶ ⟳, ô tìm kiếm Ctrl+K, nút cửa sổ ─ □ ✕) và THANH ỨNG DỤNG DỌC bên trái (họp 07/10/2026); trang web của mục đang
+ * chọn (mỗi mục một WebContentsView, chỉ mục đang chọn hiện) nằm trong khung bo góc ở phần còn lại. KHÔNG có ô địa chỉ —
+ * người dùng không thấy và không gõ địa chỉ trang. Electron 32 chưa bo góc được WebContentsView ⇒ 4 lớp mặt nạ góc nhỏ
+ * (resources/corner.html) đặt trên 4 góc khung.
  *
  * Thanh dọc: ✦ Trợ lý AI (trang cục bộ, mặc định khi mở app) · ỨNG DỤNG (ứng dụng ghim: Vala, Báo cáo, các hệ thống nguồn —
  * ghim/bỏ ghim trong khung ⊞) · ĐANG MỞ (trang mở từ liên kết, Cài đặt, Bản ghi, hệ thống nguồn không ghim — đóng được).
  * Đóng tab hệ thống nguồn không mất kết nối: phiên vẫn nằm trong ứng dụng và Vala vẫn lấy dữ liệu theo lịch. Popup có kích
  * thước và form POST vẫn mở cửa sổ thật (tabs-model.ts openTarget). Menu hồ sơ và khung ⊞ vẽ trong một lớp trong suốt
- * trên cùng (resources/overlay.html) để đè được lên trang web.
+ * trên cùng (resources/overlay.html) để đè được lên trang web; ô tìm kiếm cũng mở trên lớp đó (search.ts).
  *
  * Mọi tab dùng portal-preload.js (cầu nối với cổng) — tiến trình chính tự kiểm origin trước khi trả lời, nên tab của
  * trang khác không gọi được gì.
@@ -17,7 +19,8 @@ import { app, BrowserWindow, ipcMain, session, shell, WebContentsView, type Hand
 import { APP_NAME, ICON, IS_DEV } from './channel';
 import { messages, normLang } from './i18n';
 import { attachAutofill } from './autofill';
-import { attachPackages, injectAll, packageEvents } from './scripts';
+import { attachPackages, injectAll, listActions, packageEvents } from './scripts';
+import { recordActions, recordVisit, retitleVisit } from './local-data';
 import { isPortalUrl, mapToUi, UI_ORIGIN, uiEvents, uiPortalUrl } from './ui-cache';
 import { currentPrefs, prefsEvents, setPrefs } from './prefs';
 import { getSettings, setSettings } from './settings';
@@ -30,6 +33,7 @@ const M = messages({
   home: 'Vala', reports: 'Báo cáo', newTab: 'Trang', assistant: 'Trợ lý AI',
   appsSection: 'Ứng dụng', openSection: 'Đang mở', allApps: 'Tất cả ứng dụng',
   back: 'Quay lại (Alt+←)', forward: 'Tiến tới (Alt+→)', reload: 'Tải lại (F5)', collapse: 'Thu gọn thanh bên', expand: 'Mở rộng thanh bên',
+  search: 'Tìm kiếm', minimize: 'Thu nhỏ', maximize: 'Phóng to', restore: 'Thu về', closeWindow: 'Đóng (ẩn xuống khay)',
   close: 'Đóng tab (Ctrl+W)', menu: 'Hệ thống nguồn',
   signIn: 'Đăng nhập', signInTitle: 'Đăng nhập Vala Reporting ở tab Báo cáo', account: 'Tài khoản',
   lightMode: 'Chế độ sáng', darkMode: 'Chế độ tối', recording: 'đang ghi thao tác',
@@ -40,6 +44,7 @@ const M = messages({
   home: 'Vala', reports: 'Reports', newTab: 'Page', assistant: 'AI assistant',
   appsSection: 'Apps', openSection: 'Open', allApps: 'All apps',
   back: 'Back (Alt+←)', forward: 'Forward (Alt+→)', reload: 'Reload (F5)', collapse: 'Collapse sidebar', expand: 'Expand sidebar',
+  search: 'Search', minimize: 'Minimize', maximize: 'Maximize', restore: 'Restore', closeWindow: 'Close (hide to tray)',
   close: 'Close tab (Ctrl+W)', menu: 'Source systems',
   signIn: 'Sign in', signInTitle: 'Sign in to Vala Reporting on the Reports tab', account: 'Account',
   lightMode: 'Light mode', darkMode: 'Dark mode', recording: 'recording actions',
@@ -52,6 +57,11 @@ const M = messages({
 const SIDEBAR_W = 248;
 const SIDEBAR_MIN_W = 56;
 const sidebarWidth = () => (getSettings().sidebarCollapsed ? SIDEBAR_MIN_W : SIDEBAR_W);
+/** Header trên cùng (thay thanh tiêu đề của hệ điều hành) và lề quanh khung trang web — khớp resources/tabs.html. */
+const HEADER_H = 44;
+const GAP = 8;
+/** Bán kính bo góc khung trang web — khớp resources/corner.css. */
+const RADIUS = 12;
 const TAB_PRELOAD = join(__dirname, 'portal-preload.js');
 
 interface PinnedDef { key: string; label: string; url: string }
@@ -140,7 +150,7 @@ function ensureWindow(): BrowserWindow {
   if (win && !win.isDestroyed()) return win;
   const w = new BrowserWindow({
     width: 1280, height: 860, minWidth: 720, minHeight: 480, icon: ICON, title: APP_NAME, show: false,
-    autoHideMenuBar: true,
+    autoHideMenuBar: true, frame: false,
     webPreferences: { preload: join(__dirname, 'tabs-preload.js') },
   });
   win = w;
@@ -149,23 +159,46 @@ function ensureWindow(): BrowserWindow {
   w.once('ready-to-show', () => w.show());
   // Đóng cửa sổ chỉ ẩn xuống khay hệ thống (các tab, phiên vẫn giữ); "Thoát" mới đóng thật.
   w.on('close', (e) => { if (!quitting) { e.preventDefault(); w.hide(); } });
-  w.on('closed', () => { win = null; tabs.clear(); order = []; active = null; });
+  w.on('closed', () => { win = null; tabs.clear(); order = []; active = null; corners = []; });
   // Trên Linux, sự kiện phóng to/đổi cỡ đến TRƯỚC khi cửa sổ đổi kích thước thật ⇒ canh ngay và canh lại sau một nhịp.
   // Tín hiệu chính xác nhất là trang thanh dọc báo khung nhìn đổi cỡ ('tabs:resized').
   const relayout = () => { layout(); setTimeout(layout, 100); };
   for (const ev of ['resize', 'maximize', 'unmaximize', 'restore', 'enter-full-screen', 'leave-full-screen'] as const) w.on(ev as 'resize', relayout);
+  // Nút □ của header đổi giữa "Phóng to" / "Thu về".
+  for (const ev of ['maximize', 'unmaximize'] as const) w.on(ev as 'maximize', () => pushState());
   w.webContents.on('before-input-event', (e, input) => { if (shortcut(input)) e.preventDefault(); });
   void w.loadFile(join(__dirname, '../resources/tabs.html'));
+  corners = (['tl', 'tr', 'bl', 'br'] as const).map((c) => {
+    const v = new WebContentsView();
+    v.setBackgroundColor('#00000000');
+    void v.webContents.loadFile(join(__dirname, '../resources/corner.html'), { hash: c });
+    w.contentView.addChildView(v);
+    return v;
+  });
   syncPinned();
   return w;
+}
+
+/** Mặt nạ 4 góc khung trang web (trên–trái, trên–phải, dưới–trái, dưới–phải). */
+let corners: WebContentsView[] = [];
+
+/** Đưa mặt nạ góc (rồi khung nổi nếu đang mở) lên trên các trang web — gọi sau khi thêm một trang. */
+function raiseChrome(): void {
+  if (!win || win.isDestroyed()) return;
+  for (const c of corners) win.contentView.addChildView(c);
+  if (overlay && overlayOpen) win.contentView.addChildView(overlay);
 }
 
 function layout(): void {
   if (!win || win.isDestroyed()) return;
   const [width, height] = win.getContentSize();
   const w = sidebarWidth();
-  const bounds = { x: w, y: 0, width: Math.max(0, width! - w), height: height! };
+  const bounds = { x: w, y: HEADER_H, width: Math.max(0, width! - w - GAP), height: Math.max(0, height! - HEADER_H - GAP) };
   for (const t of tabs.values()) t.view?.setBounds(bounds);
+  const r = RADIUS;
+  const right = bounds.x + bounds.width - r;
+  const bottom = bounds.y + bounds.height - r;
+  [[bounds.x, bounds.y], [right, bounds.y], [bounds.x, bottom], [right, bottom]].forEach(([x, y], i) => corners[i]?.setBounds({ x: x!, y: y!, width: r, height: r }));
   if (overlay && overlayOpen) overlay.setBounds({ x: 0, y: 0, width: width!, height: height! });
 }
 
@@ -194,6 +227,7 @@ function createLocalView(t: Tab): WebContentsView {
   wc.on('before-input-event', (e, input) => { if (shortcut(input)) e.preventDefault(); });
   const hash = t.key === SETTINGS && settingsSection ? { hash: settingsSection } : undefined;
   void wc.loadFile(join(__dirname, '../resources', def.html), hash);
+  raiseChrome();
   layout();
   return view;
 }
@@ -289,7 +323,21 @@ function createView(t: Tab): WebContentsView {
     wc.on('will-redirect', (e, url) => toUi(e, url));
     wc.on('will-navigate', (e, url) => toUi(e, url));
   }
+  // Lịch sử trang cho ô tìm kiếm (local-data.ts): chỉ trang người dùng đang xem — tab chạy thao tác ngầm không ghi.
+  const visit = (url: string) => { if (active === t.key) recordVisit({ url, title: '', app: t.key.startsWith('t:') ? '' : t.key, appLabel: appLabel(t.key) }); };
+  wc.on('did-navigate', (_e, url) => visit(url));
+  wc.on('did-navigate-in-page', (_e, url, isMainFrame) => { if (isMainFrame) visit(url); });
+  wc.on('page-title-updated', (_e, title) => retitleVisit(wc.getURL(), title));
+  // Tab hệ thống nguồn nạp xong (gói kịch bản đã chèn) ⇒ ghi danh mục thao tác để ô tìm kiếm tìm được.
+  if (t.key.startsWith('src:')) {
+    const code = t.key.slice(4);
+    wc.on('did-finish-load', () => setTimeout(() => {
+      if (wc.isDestroyed()) return;
+      void listActions(wc).then((l) => { if (l.length) recordActions(code, l); });
+    }, 1500));
+  }
   void wc.loadURL(t.url);
+  raiseChrome();
   layout();
   return view;
 }
@@ -421,6 +469,29 @@ export function showWebContents(wc: WebContents): boolean {
   return false;
 }
 
+/** Tên ứng dụng của một tab (lịch sử trang); tab mở từ liên kết ⇒ ''. */
+const appLabel = (key: string): string => appDefs().find((a) => a.key === key)?.label ?? '';
+
+/**
+ * Mở lại một trang từ lịch sử: trang thuộc một ứng dụng còn dùng được ⇒ mở trong tab của ứng dụng đó (đưa tab về trang);
+ * còn lại ⇒ tab mới.
+ */
+export function openPage(url: string, appKey: string): void {
+  if (appKey && appDefs().some((a) => a.key === appKey)) {
+    const t = tabs.get(appKey);
+    if (t) {
+      if (!t.view) { t.url = url; showTab(appKey); } else showTab(appKey, { reloadTo: url });
+      return;
+    }
+    const src = sourceOf(appKey);
+    if (src) { showSourceTab(src, { reloadTo: url }); return; }
+  }
+  openTab(url);
+}
+
+/** Mọi ứng dụng mở được (ô tìm kiếm). */
+export const listApps = (): { key: string; label: string }[] => appDefs();
+
 // ---- ứng dụng trên thanh dọc ----
 interface AppDef { key: string; label: string }
 /** Mọi ứng dụng mở được: Vala, Báo cáo, mọi hệ thống nguồn khai trên cổng (đã đăng nhập). */
@@ -503,6 +574,7 @@ function pushState(): void {
     apps: sec.apps.map((k) => itemOf(k, labels.get(k), t, false)),
     open: sec.open.filter((k) => tabs.has(k)).map((k) => itemOf(k, labels.get(k), t, !tabs.get(k)!.pinned)),
     nav: { back: !!h?.canGoBack(), forward: !!h?.canGoForward(), reload: !!wc },
+    maximized: win.isMaximized(),
     // Hồ sơ cuối thanh: tên + chữ cái đầu (họ + tên) khi đã đăng nhập; chưa thì nút "Đăng nhập".
     profile: s.deviceToken && name ? { name, email: s.user?.email ?? '', initials: initialsOf(name) } : null,
     update: up ? { label: updateLabel(up.version), title: t.updateTitle } : null,
@@ -517,6 +589,7 @@ function shortcut(input: Input): boolean {
   const keys = visibleKeys();
   if (ctrl && key.toLowerCase() === 'w') { if (active) closeTab(active); return true; }
   if (ctrl && key === ',') { hooks.profileCommand('settings'); return true; }
+  if (ctrl && key.toLowerCase() === 'k') { openSearch(); return true; }
   if (ctrl && key === 'Tab') {
     const i = active ? keys.indexOf(active) : 0;
     const next = keys[(i + (input.shift ? -1 : 1) + keys.length) % keys.length];
@@ -554,9 +627,16 @@ function registerIpc(): void {
     layout();
     pushState();
   });
+  ipcMain.handle('tabs:window', (e, cmd: unknown) => {
+    own(e);
+    if (!win) return;
+    if (cmd === 'minimize') win.minimize();
+    else if (cmd === 'maximize') { if (win.isMaximized()) win.unmaximize(); else win.maximize(); }
+    else if (cmd === 'close') win.close();   // ẩn xuống khay (sự kiện 'close' ở ensureWindow)
+  });
   ipcMain.handle('tabs:overlay', (e, a: { kind?: unknown; x?: unknown; y?: unknown; w?: unknown; h?: unknown }) => {
     own(e);
-    if (a?.kind !== 'profile' && a?.kind !== 'apps') return;
+    if (a?.kind !== 'profile' && a?.kind !== 'apps' && a?.kind !== 'search') return;
     const n = (v: unknown) => Math.round(Number(v) || 0);
     openOverlay(a.kind, { x: n(a.x), y: n(a.y), w: n(a.w), h: n(a.h) });
   });
@@ -585,7 +665,8 @@ function registerIpc(): void {
 // ---- khung nổi (menu hồ sơ, khung ⊞ Tất cả ứng dụng): lớp trong suốt trên cùng, chỉ hiện khi mở ----
 let overlay: WebContentsView | null = null;
 let overlayOpen = false;
-let overlayKind: 'profile' | 'apps' = 'profile';
+type OverlayKind = 'profile' | 'apps' | 'search';
+let overlayKind: OverlayKind = 'profile';
 let overlayAnchor = { x: 0, y: 0, w: 0, h: 0 };
 
 function ensureOverlay(): WebContentsView {
@@ -595,13 +676,26 @@ function ensureOverlay(): WebContentsView {
   const wc = v.webContents;
   wc.setWindowOpenHandler(() => ({ action: 'deny' }));
   wc.on('will-navigate', (e) => e.preventDefault());
-  wc.on('before-input-event', (e, input) => { if (input.type === 'keyDown' && input.key === 'Escape') { e.preventDefault(); closeOverlay(); } });
+  wc.on('before-input-event', (e, input) => {
+    if (input.type !== 'keyDown') return;
+    // Esc đóng; Ctrl+K lần nữa ⇒ đóng ô tìm kiếm.
+    if (input.key === 'Escape' || ((input.control || input.meta) && input.key.toLowerCase() === 'k' && overlayKind === 'search')) { e.preventDefault(); closeOverlay(); }
+  });
   void wc.loadFile(join(__dirname, '../resources/overlay.html'));
   overlay = v;
   return v;
 }
 
-function openOverlay(kind: 'profile' | 'apps', anchor: { x: number; y: number; w: number; h: number }): void {
+/** Ctrl+K: nhờ thanh dọc gửi lại vị trí ô tìm kiếm của header rồi mở (đang mở ⇒ đóng). */
+function openSearch(): void {
+  if (!win || win.isDestroyed()) return;
+  if (overlayOpen && overlayKind === 'search') { closeOverlay(); return; }
+  win.webContents.send('tabs:open-search');
+}
+
+export const isOverlayContents = (wc: WebContents): boolean => !!overlay && overlay.webContents === wc;
+
+function openOverlay(kind: OverlayKind, anchor: { x: number; y: number; w: number; h: number }): void {
   if (!win || win.isDestroyed()) return;
   const v = ensureOverlay();
   overlayKind = kind;
@@ -663,12 +757,20 @@ const O = messages({
   settings: 'Cài đặt', language: 'Ngôn ngữ', appearance: 'Giao diện', light: 'Sáng', dark: 'Tối', system: 'Theo hệ thống',
   passwords: 'Quản lý mật khẩu', sync: 'Đồng bộ phiên ngay', checkUpdate: 'Kiểm tra cập nhật', signOut: 'Đăng xuất', quit: 'Thoát',
   signIn: 'Đăng nhập', changePassword: 'Đổi mật khẩu Vala', allApps: 'Tất cả ứng dụng', allAppsHint: 'Bấm để mở. Ghim để luôn hiện trên thanh bên.',
+  searchPlaceholder: 'Tìm ứng dụng, thao tác, hội thoại, trang đã xem…', secRecent: 'Gần đây', secChats: 'Hội thoại gần đây',
+  secApps: 'Ứng dụng', secActions: 'Thao tác', secChatsFound: 'Hội thoại', secHistory: 'Lịch sử', noResults: 'Không tìm thấy kết quả',
+  searchEmpty: 'Chưa có lịch sử. Các trang bạn xem và hội thoại với Trợ lý AI sẽ hiện ở đây.',
+  clearHistory: 'Xoá lịch sử', searchHint: '↑ ↓ chọn · Enter mở · Esc đóng',
   pin: 'Ghim lên thanh bên', unpin: 'Bỏ ghim', noApps: 'Đăng nhập ở tab Báo cáo để thấy các hệ thống của bạn.',
   version: (v: string) => `Phiên bản ${v}`, installUpdate: (v: string) => `Cập nhật lên bản ${v}`,
 }, {
   settings: 'Settings', language: 'Language', appearance: 'Appearance', light: 'Light', dark: 'Dark', system: 'System',
   passwords: 'Manage passwords', sync: 'Sync sessions now', checkUpdate: 'Check for updates', signOut: 'Sign out', quit: 'Quit',
   signIn: 'Sign in', changePassword: 'Change Vala password', allApps: 'All apps', allAppsHint: 'Click to open. Pin to keep it on the sidebar.',
+  searchPlaceholder: 'Search apps, actions, conversations, visited pages…', secRecent: 'Recent', secChats: 'Recent conversations',
+  secApps: 'Apps', secActions: 'Actions', secChatsFound: 'Conversations', secHistory: 'History', noResults: 'No results',
+  searchEmpty: 'No history yet. Pages you visit and conversations with the AI assistant will show up here.',
+  clearHistory: 'Clear history', searchHint: '↑ ↓ select · Enter open · Esc close',
   pin: 'Pin to sidebar', unpin: 'Unpin', noApps: 'Sign in on the Reports tab to see your systems.',
   version: (v: string) => `Version ${v}`, installUpdate: (v: string) => `Update to version ${v}`,
 });

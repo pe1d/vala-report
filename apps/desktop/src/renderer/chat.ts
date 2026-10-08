@@ -14,10 +14,16 @@ type ChatView =
 interface ChatSystem { code: string; ten: string; status: 'ok' | 'warn' | 'off' }
 interface ChatAction { name: string; pkg: string | null; mo_ta: string; params: Record<string, string> | null }
 interface ChatState { lang: 'vi' | 'en'; t: Record<string, string>; greeting: string; systems: ChatSystem[] }
+/** Tin nhắn lưu được (chats.json — mở lại từ ô tìm kiếm của header). */
+type ChatMsg = { role: 'user'; text: string; chip?: string } | { role: 'bot'; view?: ChatView; error?: string; note?: string };
+/** Lệnh từ ô tìm kiếm của header: mở phiếu của một thao tác / mở lại một hội thoại. */
+type ChatCommand = { type: 'action'; code: string; action: ChatAction } | { type: 'open'; id: string; title: string; msgs: ChatMsg[] };
 interface ValaChatApi {
   state(): Promise<ChatState>;
   actions(code: string): Promise<{ ok: boolean; actions?: ChatAction[]; error?: string }>;
   run(code: string, name: string, form: Record<string, string>): Promise<{ ok: boolean; view?: ChatView; error?: string; code?: string }>;
+  save(c: { id: string; title: string; msgs: ChatMsg[] }): Promise<void>;
+  take(): Promise<ChatCommand | null>;
   onChanged(cb: () => void): void;
 }
 
@@ -40,6 +46,14 @@ interface ValaChatApi {
   let st: ChatState | null = null;
   const T = (k: string) => st?.t[k] ?? '';
   let started = false;
+  /** Cuộc trò chuyện đang mở (lưu sau mỗi lượt hỏi – đáp). */
+  let conv: { id: string; title: string; msgs: ChatMsg[] } = { id: '', title: '', msgs: [] };
+  const newId = () => `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+  function remember(m: ChatMsg, title: string) {
+    if (!conv.id) conv = { id: newId(), title, msgs: [] };
+    conv.msgs.push(m);
+    void api.save(conv);
+  }
 
   // ---- bố cục: chưa có tin nhắn ⇒ ô nhập giữa trang; có ⇒ dính đáy ----
   const input = $<HTMLTextAreaElement>('input');
@@ -124,9 +138,21 @@ interface ValaChatApi {
     return dl;
   }
 
+  function errorNode(text: string): HTMLElement {
+    const err = el('div', 'rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300');
+    err.append(el('div', 'font-medium', T('failed')), el('div', '', text));
+    return err;
+  }
+  function botBody(body: HTMLElement, m: Extract<ChatMsg, { role: 'bot' }>) {
+    if (m.view) body.append(viewNode(m.view));
+    else if (m.error !== undefined) body.append(errorNode(m.error));
+    else body.append(el('p', 'text-slate-600 dark:text-slate-300', m.note ?? ''));
+  }
+
   // ---- gửi ----
   function newChat() {
     started = false;
+    conv = { id: '', title: '', msgs: [] };
     $('thread').replaceChildren();
     closePicker();
     layout();
@@ -141,7 +167,10 @@ interface ValaChatApi {
     started = true;
     layout();
     addUser(text);
-    addAssistant().append(el('p', 'text-slate-600 dark:text-slate-300', T('notConnected')));
+    const bot: ChatMsg = { role: 'bot', note: T('notConnected') };
+    botBody(addAssistant(), bot);
+    remember({ role: 'user', text }, text.slice(0, 120));
+    remember(bot, text.slice(0, 120));
   }
 
   // ---- bảng chọn "/": hệ thống ⇒ thao tác ⇒ phiếu tham số ----
@@ -254,7 +283,8 @@ interface ValaChatApi {
       });
       nodes.push(form);
       picker.replaceChildren(...nodes);
-      (form.querySelector('input') as HTMLInputElement | null)?.focus();
+      (form.querySelector('input') as HTMLInputElement | null)?.focus({ preventScroll: true });
+      picker.scrollTop = 0;
       return;
     }
     picker.replaceChildren(...nodes);
@@ -267,18 +297,18 @@ interface ValaChatApi {
     started = true;
     layout();
     const args = Object.entries(values).filter(([, v]) => v.trim()).map(([k, v]) => `${k}: ${v.trim()}`).join('\n');
-    addUser(args, `/${sys.ten} › ${action.name}`);
+    const chip = `/${sys.ten} › ${action.name}`;
+    const title = `${sys.ten}: ${action.mo_ta || action.name}`;
+    addUser(args, chip);
+    remember({ role: 'user', text: args, chip }, title);
     const body = addAssistant();
     const wait = el('p', 'animate-pulse text-slate-500', T('running'));
     body.append(wait);
     const r = await api.run(sys.code, action.name, values);
     wait.remove();
-    if (r.ok && r.view) body.append(viewNode(r.view));
-    else {
-      const err = el('div', 'rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300');
-      err.append(el('div', 'font-medium', T('failed')), el('div', '', r.error ?? ''));
-      body.append(err);
-    }
+    const bot: ChatMsg = r.ok && r.view ? { role: 'bot', view: r.view } : { role: 'bot', error: r.error ?? '' };
+    botBody(body, bot);
+    remember(bot, title);
     scrollEnd();
     input.focus();
   }
@@ -302,9 +332,31 @@ interface ValaChatApi {
   $('slash').addEventListener('click', () => { input.value = '/'; openPicker(); });
   $('new-chat').addEventListener('click', newChat);
 
+  /** Lệnh từ ô tìm kiếm của header (tiến trình chính giữ lệnh chờ đến khi trang lấy). */
+  async function takeCommand() {
+    const c = await api.take();
+    if (!c || !st) return;
+    if (c.type === 'open') {
+      newChat();
+      conv = { id: c.id, title: c.title, msgs: c.msgs };
+      started = true;
+      layout();
+      for (const m of c.msgs) {
+        if (m.role === 'user') addUser(m.text, m.chip);
+        else botBody(addAssistant(), m);
+      }
+      scrollEnd();
+      return;
+    }
+    const sys = st.systems.find((x) => x.code === c.code) ?? { code: c.code, ten: c.code, status: 'off' as const };
+    input.value = '/';
+    step = { kind: 'form', sys, action: c.action };
+    drawPicker();
+  }
+
   display(picker, false);
   layout();
-  const load = () => void api.state().then((s) => { st = s; render(); });
+  const load = () => void api.state().then((s) => { st = s; render(); void takeCommand(); });
   api.onChanged(load);
   load();
   input.focus();

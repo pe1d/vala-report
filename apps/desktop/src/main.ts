@@ -10,6 +10,8 @@ import { accountEvents, logoutDevice } from './account';
 import { registerSettingsPage } from './settings-page';
 import { registerRecordingPage } from './recording-page';
 import { registerChatPage } from './chat-page';
+import { clearLocalData } from './local-data';
+import { registerSearch } from './search';
 import { getSettings } from './settings';
 import { syncAll } from './sync';
 import { forgetPackages, refreshPackages } from './scripts';
@@ -56,7 +58,8 @@ async function signOut() {
 
 // Đăng nhập cổng ở tab Báo cáo ⇒ cổng cấp token thiết bị qua cầu nối (account.ts) ⇒ bắt đầu giữ/gửi phiên.
 accountEvents.on('login', () => { refreshAll(); startSync(); });
-accountEvents.on('logout', () => { forgetPackages(); setPortalUser(null); lockCredentials(); refreshAll(); });
+// Đăng xuất ⇒ xoá cả lịch sử trang, hội thoại Trợ lý, danh mục thao tác trên máy (có dữ liệu của các hệ thống nguồn).
+accountEvents.on('logout', () => { forgetPackages(); setPortalUser(null); lockCredentials(); clearLocalData(); refreshAll(); });
 // Đổi ngôn ngữ / sáng-tối ở bất kỳ đâu ⇒ menu, khay, thanh dọc theo (browser.ts tự báo cổng).
 prefsEvents.on('changed', refreshAll);
 portalUserEvents.on('changed', refreshAll);
@@ -93,6 +96,7 @@ if (!app.requestSingleInstanceLock()) {
     });
     registerRecordingPage({ isRecording: (e) => isRecordingContents(e.sender), push: pushRecording, open: openRecordingTab });
     registerChatPage({ isChat: (e) => isChatContents(e.sender), push: pushChat });
+    registerSearch();
     watchCookies();
     createMenus({ showMain, showDefault, showPortal, openSettings, signOut: () => void signOut(), changePassword: changePortalPassword });
     initBrowser({

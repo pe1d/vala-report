@@ -1,11 +1,12 @@
 /**
  * Script lớp khung nổi (chạy trong trang, không có Node). Không import gì: build ra script thường — tên kiểu đặt riêng
  * (Overlay…) để không trùng script renderer khác. Menu hồ sơ (như Claude: email, Cài đặt, ngôn ngữ, giao diện, mật khẩu,
- * đồng bộ, cập nhật, đăng xuất, thoát) hoặc khung ⊞ Tất cả ứng dụng (mở / ghim). Dựng DOM bằng textContent.
+ * đồng bộ, cập nhật, đăng xuất, thoát), khung ⊞ Tất cả ứng dụng (mở / ghim) hoặc ô tìm kiếm của header (Ctrl+K — đè đúng
+ * chỗ ô tìm kiếm, kết quả xổ xuống). Dựng DOM bằng textContent (tiêu đề trang đã xem là chữ của trang web bất kỳ).
  */
 interface OverlayApp { key: string; label: string; favicon: string | null; pinned: boolean; status: 'ok' | 'warn' | 'off' | null }
 interface OverlayState {
-  kind: 'profile' | 'apps';
+  kind: 'profile' | 'apps' | 'search';
   anchor: { x: number; y: number; w: number; h: number };
   collapsed: boolean;
   lang: 'vi' | 'en';
@@ -16,6 +17,8 @@ interface OverlayState {
   portalPassword: boolean;
   apps: OverlayApp[];
 }
+type OverlayItem = { kind: 'app' | 'action' | 'chat' | 'page'; title: string; sub: string; ref: Record<string, string> };
+interface OverlaySection { kind: 'recent' | 'chats' | 'apps' | 'actions' | 'history'; items: OverlayItem[] }
 interface ValaOverlayApi {
   state(): Promise<OverlayState>;
   close(): Promise<void>;
@@ -23,6 +26,9 @@ interface ValaOverlayApi {
   prefs(p: { lang?: string; theme?: string }): Promise<OverlayState>;
   openApp(key: string): Promise<void>;
   pin(key: string, on: boolean): Promise<OverlayState>;
+  search(q: string): Promise<OverlaySection[]>;
+  pick(item: OverlayItem): Promise<void>;
+  clearHistory(): Promise<OverlaySection[]>;
   onOpen(cb: () => void): void;
 }
 
@@ -52,6 +58,11 @@ interface ValaOverlayApi {
     signIn: ['M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4', 'M10 17l5-5-5-5', 'M15 12H3'],
     quit: ['M18 6L6 18', 'M6 6l12 12'],
     pin: ['M12 17v5', 'M9 3h6l-1 6 3 3v2H7v-2l3-3z'],
+    search: ['M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14z', 'M20 20l-3.5-3.5'],
+    page: ['M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z', 'M12 7v5l3 2'],
+    action: ['M13 2L4 14h7l-1 8 9-12h-7z'],
+    chat: ['M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z'],
+    app: ['M4 4h6v6H4z', 'M14 4h6v6h-6z', 'M4 14h6v6H4z', 'M14 14h6v6h-6z'],
   };
   function icon(name: string, cls = 'h-4 w-4'): SVGSVGElement {
     const svg = document.createElementNS(SVG, 'svg');
@@ -140,9 +151,101 @@ interface ValaOverlayApi {
     return out;
   }
 
+  // ---- ô tìm kiếm (Ctrl+K) ----
+  const SECTION: Record<OverlaySection['kind'], string> = { recent: 'secRecent', chats: 'secChats', apps: 'secApps', actions: 'secActions', history: 'secHistory' };
+  let searchSeq = 0;
+  let hi = 0;
+  let picks: OverlayItem[] = [];
+
+  function searchPanel(s: OverlayState) {
+    const t = s.t;
+    const box = el('div', 'flex h-9 items-center gap-2 border-b border-slate-200 px-3 dark:border-slate-700');
+    box.append(icon('search', 'h-4 w-4 shrink-0 text-slate-400'));
+    const input = el('input', 'h-full min-w-0 flex-1 bg-transparent text-[13px] outline-none placeholder:text-slate-400');
+    input.placeholder = t.searchPlaceholder;
+    input.spellcheck = false;
+    box.append(input, el('kbd', 'shrink-0 rounded-md border border-slate-200 px-1.5 text-[11px] text-slate-400 dark:border-slate-600', 'Esc'));
+    const list = el('div', 'max-h-[min(62vh,520px)] overflow-y-auto p-1.5');
+    const foot = el('div', 'flex items-center gap-2 border-t border-slate-200 px-3 py-1.5 text-[11px] text-slate-400 dark:border-slate-700');
+    foot.append(el('span', 'flex-1 truncate', t.searchHint));
+    const clear = el('button', 'rounded-md px-1.5 py-0.5 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-700 dark:hover:text-slate-200', t.clearHistory);
+    clear.type = 'button';
+    foot.append(clear);
+
+    const draw = (sections: OverlaySection[], q: string) => {
+      picks = sections.flatMap((x) => x.items);
+      hi = Math.min(hi, Math.max(0, picks.length - 1));
+      const nodes: HTMLElement[] = [];
+      if (!sections.length) nodes.push(el('p', 'px-3 py-6 text-center text-slate-500 dark:text-slate-400', q.trim() ? t.noResults : t.searchEmpty));
+      let i = 0;
+      for (const sec of sections) {
+        // Ô trống: "Hội thoại gần đây"; có chữ: "Hội thoại".
+        nodes.push(el('div', 'px-2.5 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400', sec.kind === 'chats' && q.trim() ? t.secChatsFound : t[SECTION[sec.kind]]));
+        for (const it of sec.items) {
+          const idx = i++;
+          const b = el('button', `flex w-full items-center gap-3 rounded-lg px-2.5 py-1.5 text-left ${idx === hi ? 'bg-slate-100 dark:bg-slate-700' : 'hover:bg-slate-50 dark:hover:bg-slate-700/60'}`);
+          b.type = 'button';
+          b.dataset.idx = String(idx);
+          const ic = el('span', 'flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-300');
+          ic.append(icon(it.kind, 'h-4 w-4'));
+          const txt = el('span', 'min-w-0 flex-1');
+          txt.append(el('span', 'block truncate', it.title));
+          if (it.sub) txt.append(el('span', 'block truncate text-[11px] text-slate-500 dark:text-slate-400', it.sub));
+          b.append(ic, txt);
+          b.addEventListener('mousemove', () => { if (hi !== idx) { hi = idx; mark(); } });
+          b.addEventListener('click', () => void api.pick(it));
+          nodes.push(b);
+        }
+      }
+      list.replaceChildren(...nodes);
+    };
+    const mark = () => {
+      for (const b of Array.from(list.querySelectorAll<HTMLElement>('[data-idx]'))) {
+        const on = Number(b.dataset.idx) === hi;
+        b.classList.toggle('bg-slate-100', on); b.classList.toggle('dark:bg-slate-700', on);
+        if (on) b.scrollIntoView({ block: 'nearest' });
+      }
+    };
+    const run = () => {
+      const seq = ++searchSeq;
+      const q = input.value;
+      void api.search(q).then((r) => { if (seq === searchSeq) { hi = 0; draw(r, q); } });
+    };
+    input.addEventListener('input', run);
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        if (picks.length) { hi = (hi + (e.key === 'ArrowDown' ? 1 : -1) + picks.length) % picks.length; mark(); }
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        const it = picks[hi];
+        if (it) void api.pick(it);
+      }
+    });
+    clear.addEventListener('click', () => void api.clearHistory().then((r) => { hi = 0; draw(r, input.value); input.focus(); }));
+    run();
+    return { nodes: [box, list, foot], input };
+  }
+
   function render(s: OverlayState) {
     document.documentElement.lang = s.lang;
     applyTheme();
+    if (s.kind === 'search') {
+      // Đè đúng ô tìm kiếm của header, rộng hơn một chút (tối thiểu 560px), kết quả xổ xuống.
+      const { nodes, input } = searchPanel(s);
+      panel.replaceChildren(...nodes);
+      const w = Math.min(window.innerWidth - 16, Math.max(s.anchor.w + 40, 560));
+      panel.style.width = `${w}px`;
+      panel.style.left = `${Math.max(8, Math.min(window.innerWidth - w - 8, s.anchor.x + s.anchor.w / 2 - w / 2))}px`;
+      panel.style.top = `${Math.max(4, s.anchor.y - 2)}px`;
+      panel.style.bottom = '';
+      panel.classList.remove('p-1.5', 'overflow-y-auto');
+      panel.classList.add('overflow-hidden');
+      input.focus();
+      return;
+    }
+    panel.classList.add('p-1.5', 'overflow-y-auto');
+    panel.classList.remove('overflow-hidden');
     panel.replaceChildren(...(s.kind === 'profile' ? profileMenu(s) : appsPanel(s)));
     panel.style.width = s.kind === 'profile' ? '320px' : '360px';
     // Neo: thanh mở rộng ⇒ ngay trên nút (căn trái thanh); thu gọn ⇒ bên phải thanh, đáy ngang nút.
