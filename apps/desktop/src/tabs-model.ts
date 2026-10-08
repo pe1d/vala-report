@@ -26,14 +26,18 @@ const hostOf = (u: string) => { try { return new URL(u).hostname; } catch { retu
  *   - popup có kích thước (đăng nhập SSO, hộp chọn người nhận…) và form POST ⇒ cửa sổ thật trong app (trang gốc cần
  *     window.opener / dữ liệu POST);
  *   - link target=_blank / window.open thường sang tên miền gốc KHÁC trang đang mở ⇒ trình duyệt mặc định của máy;
- *   - cùng tên miền gốc (vd eGov mở chi tiết văn bản) ⇒ tab trong app, giữ phiên đăng nhập của hệ thống.
+ *   - cùng tên miền gốc (vd eGov mở chi tiết văn bản) ⇒ tab trong app, giữ phiên đăng nhập của hệ thống;
+ *   - tên miền đơn vị khai "mở trong Vala Desktop" (`inside` — gồm cả tên miền con) và tên miền các ứng dụng trong danh mục
+ *     ⇒ luôn là tab trong app, dù khác tên miền gốc trang đang mở.
  */
-export function openTarget(d: { url: string; disposition: string; hasPostBody?: boolean; openerUrl?: string }): OpenTarget {
+export function openTarget(d: { url: string; disposition: string; hasPostBody?: boolean; openerUrl?: string }, inside: readonly string[] = []): OpenTarget {
   if (/^(mailto|tel):/i.test(d.url)) return { kind: 'external' };
   if (!/^https?:/i.test(d.url)) return { kind: 'deny' };
   if (d.disposition === 'new-window' || d.hasPostBody) return { kind: 'window' };
+  const to = hostOf(d.url);
+  const opensInside = inside.some((dm) => to === dm || to.endsWith(`.${dm}`));
   const from = d.openerUrl ? hostOf(d.openerUrl) : '';
-  if (from && siteOf(from) !== siteOf(hostOf(d.url))) return { kind: 'external' };
+  if (from && !opensInside && siteOf(from) !== siteOf(to)) return { kind: 'external' };
   return { kind: 'tab', foreground: d.disposition !== 'background-tab' };
 }
 

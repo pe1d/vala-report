@@ -27,6 +27,18 @@ export interface DesktopApp {
 const COLS = 'ma, ten, kind, url, source_system, icon, sort, pinned_default, is_default, enabled';
 const MA = /^[a-z][a-z0-9_]{1,39}$/;
 
+/**
+ * Một tên miền quản trị nhập (chấp nhận dán cả địa chỉ, "*.", chữ hoa) ⇒ tên miền chuẩn, vd "https://*.Bkav.com/x" ⇒
+ * "bkav.com"; không hợp lệ ⇒ null.
+ */
+export function domainOf(raw: string): string | null {
+  let s = raw.trim().toLowerCase();
+  if (!s) return null;
+  s = s.replace(/^[a-z]+:\/\//, '').replace(/[/?#].*$/, '').replace(/:\d+$/, '').replace(/^\*\./, '').replace(/\.$/, '');
+  return /^(?=.{3,200}$)[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/.test(s) || s === 'localhost' ? s : null;
+}
+export const normalizeDomains = (list: string[]): string[] => [...new Set(list.map(domainOf).filter((d): d is string => !!d))];
+
 /** Bố cục: chỉ giữ mã ứng dụng còn trong danh mục, không trùng, đúng thứ tự người dùng xếp. */
 export function cleanLayout(pinned: unknown, available: string[]): string[] {
   if (!Array.isArray(pinned)) return [];
@@ -49,8 +61,11 @@ export const desktopAppExtRoutes = (deps: ApiDeps): FastifyPluginAsync => async 
         WHERE a.enabled AND (a.kind <> 'source' OR ss.enabled) ORDER BY a.is_default DESC, a.sort, a.ten`);
     const row = await t.oneOrNone<{ pinned: string[] }>('SELECT pinned FROM desktop_app_layouts WHERE app_user_id = $1', [req.user.id]);
     const tenant = await tenantByCode(deps, currentTenant());
+    const inside = await t.oneOrNone<{ d: string[] }>('SELECT desktop_open_inside AS d FROM app_settings WHERE id = 1');
     return {
       apps: apps.map(({ enabled: _e, ...a }) => a),
+      // Tên miền mà link mở cửa sổ mới tới đó mở thành tab trong Desktop (ngoài tên miền của các ứng dụng trong danh mục).
+      open_inside: inside?.d ?? [],
       layout: { pinned: row ? cleanLayout(row.pinned, apps.map((a) => a.ma)) : null },
       // Host SSO của đơn vị: Desktop giữ phiên SSO + mật khẩu SSO dùng chung cho mọi ứng dụng.
       sso_hosts: tenant ? ssoHostsOf(deps, tenant) : [],
@@ -107,6 +122,24 @@ function friendly(e: unknown): never {
 /** Quản trị đơn vị sửa danh mục (đã kiểm is_ops_admin ở adminRoutes). */
 export const adminDesktopAppRoutes = (deps: ApiDeps): FastifyPluginAsync => async (app) => {
   app.get('/admin/desktop-apps', async () => withTenant(deps.writer, (t) => listApps(t, false)));
+
+  /** Liên kết mở trong Vala Desktop (tên miền; gồm cả tên miền con). */
+  app.get('/admin/desktop-links', async () => withTenant(deps.writer, async (t) =>
+    ({ domains: (await t.oneOrNone<{ d: string[] }>('SELECT desktop_open_inside AS d FROM app_settings WHERE id = 1'))?.d ?? [] })));
+  app.put<{ Body: { domains: string[] } }>('/admin/desktop-links', {
+    schema: { body: { type: 'object', required: ['domains'], additionalProperties: false, properties: {
+      domains: { type: 'array', maxItems: 100, items: { type: 'string', maxLength: 200 } } } } },
+  }, async (req) => {
+    const domains = normalizeDomains(req.body.domains);
+    const bad = req.body.domains.filter((d) => d.trim() && !domainOf(d));
+    if (bad.length) throw new Problem('invalid_params', L('Tên miền không hợp lệ', 'Invalid domain'), bad.join(', '));
+    await withTenant(deps.writer, async (t) => {
+      // Hàng cấu hình của đơn vị luôn có (migration / dựng đơn vị tạo); pool ghi chỉ có quyền UPDATE trên bảng này.
+      await t.none('UPDATE app_settings SET desktop_open_inside = $1, updated_at = now(), updated_by = $2 WHERE id = 1', [domains, req.user.id]);
+      await audit(t, req, 'source_change', { type: 'desktop_links' }, { domains });
+    });
+    return { domains };
+  });
 
   app.post<{ Body: AppBody }>('/admin/desktop-apps', { schema: { body: { ...appBodySchema, required: ['ma', 'ten', 'kind'] } } }, async (req, reply) => {
     const b = req.body;

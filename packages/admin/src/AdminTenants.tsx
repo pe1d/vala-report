@@ -59,6 +59,9 @@ const M = messages({
   created: (ten: string, login: string) => `Đang dựng “${ten}” (thường mất vài giây). Quản trị đầu tiên đăng nhập Vala Desktop bằng ${login} và mật khẩu tạm, rồi đặt mật khẩu mới.`,
   saved: (ten: string) => `Đã lưu “${ten}”.`,
   needSso: 'Bật đăng nhập SSO thì cần Issuer hoặc địa chỉ gốc SSO và Client ID.',
+  needSecret: 'Bật đăng nhập SSO thì cần nhập Client secret.',
+  ssoOnlyAdmin: 'Đơn vị chỉ đăng nhập bằng SSO: quản trị đầu tiên đăng nhập bằng SSO của đơn vị với đúng tên đăng nhập / email ở trên (không có mật khẩu tạm). Tài khoản này phải có sẵn trên SSO.',
+  createdSso: (ten: string, login: string) => `Đang dựng “${ten}” (thường mất vài giây). Quản trị đầu tiên đăng nhập Vala Desktop bằng ${login} qua SSO của đơn vị.`,
   needMethod: 'Chọn ít nhất một cách đăng nhập.',
 }, {
   title: 'Organizations',
@@ -92,6 +95,9 @@ const M = messages({
   created: (ten: string, login: string) => `Setting up “${ten}” (usually takes a few seconds). The first administrator signs in to Vala Desktop as ${login} with the temporary password, then sets a new one.`,
   saved: (ten: string) => `Saved “${ten}”.`,
   needSso: 'SSO sign-in needs an Issuer or SSO base address, and a Client ID.',
+  needSecret: 'SSO sign-in needs the client secret.',
+  ssoOnlyAdmin: 'This organization only signs in with SSO: the first administrator signs in with the organization’s SSO using the username / email above (no temporary password). The account must already exist in the SSO.',
+  createdSso: (ten: string, login: string) => `Setting up “${ten}” (usually takes a few seconds). The first administrator signs in to Vala Desktop as ${login} through the organization’s SSO.`,
   needMethod: 'Choose at least one sign-in method.',
 });
 
@@ -138,6 +144,7 @@ export function AdminTenantsPage() {
 
   const bkav = !!draft && !draft.isNew && draft.ma === 'bkav';
   const ssoOk = !draft?.sso || (!!(draft.ssoCfg.issuer?.trim() || draft.ssoCfg.origin?.trim()) && !!draft.ssoCfg.client_id?.trim());
+  const secretOk = !draft?.sso || !!draft.secret || draft.hasSecret;
   const methodOk = !!draft && (draft.password || draft.sso);
 
   const save = async () => {
@@ -157,9 +164,10 @@ export function AdminTenantsPage() {
         const a = draft.admin;
         await api.post('/system/tenants', {
           ma: draft.ma, ten: draft.ten.trim(), domains, copy_from: draft.copy_from || null, ...login,
-          admin: { username: a.username.trim().toLowerCase(), ho_ten: a.ho_ten.trim(), ...(a.email.trim() ? { email: a.email.trim() } : {}), password: a.password },
+          admin: { username: a.username.trim().toLowerCase(), ho_ten: a.ho_ten.trim(), ...(a.email.trim() ? { email: a.email.trim() } : {}), ...(draft.password ? { password: a.password } : {}) },
         });
-        setNote({ tone: 'ok', text: t.created(draft.ten.trim(), `${a.username.trim().toLowerCase()}@${domains[0] ?? ''}`) });
+        const who = `${a.username.trim().toLowerCase()}@${domains[0] ?? ''}`;
+        setNote({ tone: 'ok', text: draft.password ? t.created(draft.ten.trim(), who) : t.createdSso(draft.ten.trim(), who) });
       } else {
         await api.patch(`/system/tenants/${draft.ma}`, { ten: draft.ten.trim(), domains, ...login });
         setNote({ tone: 'ok', text: t.saved(draft.ten.trim()) });
@@ -178,9 +186,10 @@ export function AdminTenantsPage() {
       {hint && <span className="font-normal text-slate-400">{hint}</span>}
     </Field>
   );
-  const weak = !!draft?.isNew && !!draft.admin.password && (draft.admin.password.length < 8 || !/[A-Za-zÀ-ỹ]/.test(draft.admin.password) || !/\d/.test(draft.admin.password));
-  const canSave = !!draft && !busy && draft.ten.trim().length >= 2 && !!draft.domains.trim() && (bkav || (methodOk && ssoOk))
-    && (!draft.isNew || (/^[a-z][a-z0-9]{1,19}$/.test(draft.ma) && !!draft.admin.username.trim() && draft.admin.ho_ten.trim().length >= 2 && !!draft.admin.password && !weak));
+  const weak = !!draft?.isNew && draft.password && !!draft.admin.password && (draft.admin.password.length < 8 || !/[A-Za-zÀ-ỹ]/.test(draft.admin.password) || !/\d/.test(draft.admin.password));
+  const canSave = !!draft && !busy && draft.ten.trim().length >= 2 && !!draft.domains.trim() && (bkav || (methodOk && ssoOk && secretOk))
+    && (!draft.isNew || (/^[a-z][a-z0-9]{1,19}$/.test(draft.ma) && !!draft.admin.username.trim() && draft.admin.ho_ten.trim().length >= 2
+      && (!draft.password || (!!draft.admin.password && !weak))));
   const H = ({ children }: { children: ReactNode }) => <h3 className="mt-2 border-t border-slate-200 pt-3 text-sm font-semibold dark:border-slate-700">{children}</h3>;
 
   return (
@@ -241,6 +250,7 @@ export function AdminTenantsPage() {
                     <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={!!draft.ssoCfg.auto_create} onChange={(e) => setSso({ auto_create: e.target.checked })} />{t.autoCreate}</label>
                     <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={!!draft.ssoCfg.pkce} onChange={(e) => setSso({ pkce: e.target.checked })} />{t.pkce}</label>
                     {!ssoOk && <p className="text-sm text-amber-800 dark:text-amber-300">{t.needSso}</p>}
+                    {ssoOk && !secretOk && <p className="text-sm text-amber-800 dark:text-amber-300">{t.needSecret}</p>}
                     <details className="rounded-lg border border-slate-200 px-3 py-2 dark:border-slate-700">
                       <summary className="cursor-pointer text-sm font-medium">{t.secAdvanced}</summary>
                       <div className="mt-3 grid gap-3">
@@ -280,9 +290,11 @@ export function AdminTenantsPage() {
                 <Field label={t.adminEmail}>
                   <Input type="email" value={draft.admin.email} placeholder={t.adminEmailPh} onChange={(e) => set({ admin: { ...draft.admin, email: e.target.value } })} />
                 </Field>
-                <Field label={t.adminPassword}>
-                  <Input type="password" autoComplete="new-password" value={draft.admin.password} onChange={(e) => set({ admin: { ...draft.admin, password: e.target.value } })} />
-                </Field>
+                {draft.password ? (
+                  <Field label={t.adminPassword}>
+                    <Input type="password" autoComplete="new-password" value={draft.admin.password} onChange={(e) => set({ admin: { ...draft.admin, password: e.target.value } })} />
+                  </Field>
+                ) : <p className="text-sm text-amber-800 dark:text-amber-300">{t.ssoOnlyAdmin}</p>}
               </>
             )}
 

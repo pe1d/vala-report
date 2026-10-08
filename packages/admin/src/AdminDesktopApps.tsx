@@ -71,6 +71,76 @@ function AppIcon({ a }: { a: Pick<DesktopApp, 'icon' | 'ten'> }) {
   return <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-blue-600 text-[11px] font-semibold text-white">{(a.ten.trim()[0] ?? '•').toUpperCase()}</span>;
 }
 
+const L = messages({
+  title: 'Liên kết mở trong Vala Desktop',
+  hint: 'Bấm link (mở cửa sổ / tab mới) tới các tên miền này thì mở thành tab trong Vala Desktop, giữ phiên đăng nhập — thay vì trình duyệt của máy. Gồm cả tên miền con: khai "hanoi.gov.vn" là cả "qlvb.hanoi.gov.vn". Tên miền của các ứng dụng ở trên và link cùng tên miền với trang đang xem luôn mở trong app, không cần khai.',
+  placeholder: 'vd hanoi.gov.vn hoặc dán cả địa chỉ', add: 'Thêm', remove: (d: string) => `Bỏ ${d}`, empty: 'Chưa khai tên miền nào.',
+  save: 'Lưu', saving: 'Đang lưu…', saved: 'Đã lưu. Vala Desktop nhận thay đổi ở lần làm mới kế tiếp (tối đa 15 phút).', invalid: 'Tên miền không hợp lệ',
+}, {
+  title: 'Links that open in Vala Desktop',
+  hint: 'Links (opening a new window / tab) to these domains open as a tab in Vala Desktop, keeping the sign-in session — instead of the computer\'s browser. Subdomains are included: "hanoi.gov.vn" also covers "qlvb.hanoi.gov.vn". Domains of the apps above, and links on the same domain as the current page, always open in the app.',
+  placeholder: 'e.g. hanoi.gov.vn, or paste a full address', add: 'Add', remove: (d: string) => `Remove ${d}`, empty: 'No domains yet.',
+  save: 'Save', saving: 'Saving…', saved: 'Saved. Vala Desktop picks up the change at its next refresh (within 15 minutes).', invalid: 'Invalid domain',
+});
+
+/** Tên miền từ chữ quản trị nhập (chấp nhận dán cả địa chỉ, "*.") — máy chủ kiểm lại (desktopApps.ts domainOf). */
+const domainOf = (raw: string) => {
+  const s = raw.trim().toLowerCase().replace(/^[a-z]+:\/\//, '').replace(/[/?#].*$/, '').replace(/:\d+$/, '').replace(/^\*\./, '').replace(/\.$/, '');
+  return /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/.test(s) ? s : null;
+};
+
+/** Danh sách tên miền mở trong Desktop của đơn vị. */
+function OpenInsideCard() {
+  const t = useT(L);
+  const data = useAsync(() => api.get<{ domains: string[] }>('/admin/desktop-links'), []);
+  const [list, setList] = useState<string[] | null>(null);
+  const [text, setText] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<{ tone: 'ok' | 'err'; text: ReactNode } | null>(null);
+  const cur = list ?? data.data?.domains ?? [];
+  const add = () => {
+    const parts = text.split(/[\s,;]+/).filter(Boolean);
+    const ok = parts.map(domainOf);
+    if (ok.some((d) => !d)) { setNote({ tone: 'err', text: `${t.invalid}: ${parts.filter((_, i) => !ok[i]).join(', ')}` }); return; }
+    setNote(null);
+    setList([...new Set([...cur, ...(ok as string[])])]);
+    setText('');
+  };
+  const save = async () => {
+    setBusy(true); setNote(null);
+    try {
+      const r = await api.put<{ domains: string[] }>('/admin/desktop-links', { domains: cur });
+      setList(r.domains);
+      setNote({ tone: 'ok', text: t.saved });
+    } catch (e) { setNote({ tone: 'err', text: e instanceof ApiProblem ? <><b>{e.title}</b>{e.detail ? ` — ${e.detail}` : ''}</> : String(e) }); }
+    setBusy(false);
+  };
+  const dirty = list !== null && JSON.stringify(list) !== JSON.stringify(data.data?.domains ?? []);
+  return (
+    <Card className="mt-6 max-w-2xl rounded-2xl">
+      <h2 className="mb-1 text-base font-semibold">{t.title}</h2>
+      <Muted className="mb-3 block text-sm">{t.hint}</Muted>
+      {note && <Banner tone={note.tone} role={note.tone === 'err' ? 'alert' : 'status'}>{note.text}</Banner>}
+      {data.error ? <ErrorBox error={data.error} onRetry={data.reload} /> : null}
+      <div className="mb-3 flex flex-wrap gap-1.5">
+        {cur.length ? cur.map((d) => (
+          <span key={d} className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 py-0.5 pl-2.5 pr-1 font-mono text-xs dark:border-slate-700 dark:bg-slate-800">
+            {d}
+            <button type="button" aria-label={t.remove(d)} title={t.remove(d)} onClick={() => setList(cur.filter((x) => x !== d))}
+              className="flex h-5 w-5 items-center justify-center rounded-full text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-700">×</button>
+          </span>
+        )) : <Muted className="text-sm">{t.empty}</Muted>}
+      </div>
+      <div className="flex gap-2">
+        <Input className="min-w-0 flex-1" value={text} placeholder={t.placeholder} onChange={(e) => setText(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); add(); } }} />
+        <Button onClick={add} disabled={!text.trim()}>{t.add}</Button>
+        <Button variant="primary" onClick={() => void save()} disabled={busy || !dirty}>{busy ? t.saving : t.save}</Button>
+      </div>
+    </Card>
+  );
+}
+
 export function AdminDesktopAppsPage() {
   const t = useT(M);
   const apps = useAsync(() => api.get<DesktopApp[]>('/admin/desktop-apps'), []);
@@ -240,6 +310,7 @@ export function AdminDesktopAppsPage() {
           </tbody>
         </Table>
       )}
+      <OpenInsideCard />
     </div>
   );
 }

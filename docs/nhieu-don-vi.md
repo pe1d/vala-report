@@ -53,8 +53,12 @@ Thiết kế: `docs/superpowers/specs/2026-10-08-multi-tenant-login-design.md`. 
 ## Danh mục ứng dụng Vala Desktop (theo đơn vị)
 
 - Bảng `desktop_apps` + `desktop_app_layouts` (migration đơn vị `002_desktop_apps.sql`); thiết kế:
-  `docs/superpowers/specs/2026-10-08-desktop-app-catalog-design.md`. Quản trị đơn vị sửa ở cổng: Quản trị → Ứng dụng
-  Desktop (`/ung-dung-desktop`). Desktop đọc `GET /ext/apps`, lưu bố cục `PUT /ext/layout`.
+  `docs/superpowers/specs/2026-10-08-desktop-app-catalog-design.md`. Quản trị đơn vị sửa ở Vala Desktop → Quản trị →
+  Ứng dụng Desktop (cổng web không còn trang này). Desktop đọc `GET /ext/apps`, lưu bố cục `PUT /ext/layout`.
+- **Liên kết mở trong Vala Desktop** (`app_settings.desktop_open_inside`, migration đơn vị 003): tên miền (gồm tên miền con)
+  mà link mở cửa sổ / tab mới tới đó mở thành tab trong app thay vì trình duyệt; quản trị khai ở Quản trị → Ứng dụng Desktop
+  (`GET/PUT /admin/desktop-links`). `/ext/apps` trả `open_inside`; Desktop cộng thêm tên miền các ứng dụng trong danh mục
+  (`apps.ts insideDomains`, `tabs-model.ts openTarget`).
 - Báo cáo (`kind = reports`) luôn đi kèm Desktop: không tắt / xoá được; danh mục thiếu thì Desktop tự thêm.
 - `app_settings.desktop_home_url` chỉ còn cho Desktop ≤ 0.2.4.
 

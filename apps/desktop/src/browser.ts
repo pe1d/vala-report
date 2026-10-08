@@ -22,7 +22,7 @@ import { attachAutofill } from './autofill';
 import { attachPackages, injectAll, listActions, packageEvents } from './scripts';
 import { recordActions, recordAppVisit } from './local-data';
 import { portalApi } from './account';
-import { appByKey, appKey, canAdmin, catalog, pinnedKeys as catalogPinnedKeys, setAppPinned } from './apps';
+import { appByKey, appKey, canAdmin, catalog, insideDomains, pinnedKeys as catalogPinnedKeys, setAppPinned } from './apps';
 import { isPortalUrl, mapToUi, UI_ORIGIN, uiEvents, uiPortalUrl } from './ui-cache';
 import { currentPrefs, prefsEvents, setPrefs } from './prefs';
 import { getSettings, setSettings } from './settings';
@@ -315,6 +315,8 @@ export const LOGIN = 'login';
 /** Quản trị đơn vị (admin-page.ts; giao diện admin/ build ra dist/admin) — chỉ quản trị đơn vị. */
 const ADMIN = 'admin';
 let settingsSection = '';
+/** Mục mở đầu của trang Quản trị (vd 'he-thong-nguon') khi tạo view lần đầu. */
+let adminSection = '';
 const LOCAL: Record<string, { preload: string; html: string }> = {
   [SETTINGS]: { preload: 'settings-preload.js', html: 'settings.html' },
   [RECORDING]: { preload: 'recording-preload.js', html: 'recording.html' },
@@ -335,7 +337,8 @@ function createLocalView(t: Tab): WebContentsView {
   wc.on('will-navigate', (e) => e.preventDefault());
   wc.on('page-title-updated', () => pushState());
   wc.on('before-input-event', (e, input) => { if (shortcut(input)) e.preventDefault(); });
-  const hash = t.key === SETTINGS && settingsSection ? { hash: settingsSection } : undefined;
+  const section = t.key === SETTINGS ? settingsSection : t.key === ADMIN ? adminSection : '';
+  const hash = section ? { hash: section } : undefined;
   void wc.loadFile(join(__dirname, '../resources', def.html), hash);
   raiseChrome();
   layout();
@@ -413,7 +416,7 @@ function createView(t: Tab): WebContentsView {
   const wc = view.webContents;
   wc.setWindowOpenHandler((d: HandlerDetails) => {
     // Trang đang mở trong tab này: link sang tên miền gốc khác ⇒ trình duyệt mặc định (tabs-model.ts openTarget).
-    const target = openTarget({ url: d.url, disposition: d.disposition, hasPostBody: !!d.postBody, openerUrl: wc.getURL() });
+    const target = openTarget({ url: d.url, disposition: d.disposition, hasPostBody: !!d.postBody, openerUrl: wc.getURL() }, insideDomains());
     if (target.kind === 'window') return { action: 'allow', overrideBrowserWindowOptions: { icon: ICON, autoHideMenuBar: true } };
     if (target.kind === 'external') void shell.openExternal(d.url);
     if (target.kind === 'tab') openTab(d.url, target.foreground, t.key);
@@ -651,12 +654,15 @@ export function preloadDefaultApp(): void {
 }
 
 /** Mở trang Quản trị đơn vị (trang cục bộ của app — admin-page.ts), chỉ quản trị đơn vị. */
-export function openAdminTab(): void {
+/** `section` (vd 'he-thong-nguon', 'don-vi') ⇒ mở đúng mục đó (tab đang mở thì chuyển mục). */
+export function openAdminTab(section = ''): void {
   if (!canAdmin()) return;
+  const s = /^[a-z-]{1,40}$/.test(section) ? section : '';
+  adminSection = s;
   if (!tabs.has(ADMIN)) {
     tabs.set(ADMIN, { key: ADMIN, pinned: false, url: '', view: null });
     order.push(ADMIN);
-  }
+  } else if (s) sendToAdmin('admin:navigate', s);
   showTab(ADMIN);
 }
 

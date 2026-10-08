@@ -16,7 +16,7 @@ import { useInDesktop } from '../desktopPrefs';
 const NAV_VI = {
   reports: 'Báo cáo', overview: 'Tổng quan', catalog: 'Danh mục báo cáo', schedules: 'Lịch cập nhật',
   connections: 'Kết nối', sourceAccounts: 'Tài khoản nguồn', dataConnections: 'Kết nối dữ liệu',
-  admin: 'Quản trị', sourceSystems: 'Hệ thống nguồn', crawlScripts: 'Script crawl', desktopScripts: 'Kịch bản Desktop', desktopApps: 'Ứng dụng Desktop', users: 'Người dùng',
+  admin: 'Quản trị', crawlScripts: 'Script crawl',
   reportBuilder: 'Cấu hình báo cáo', ops: 'Vận hành', settings: 'Cấu hình chung',
 };
 type NavKey = keyof typeof NAV_VI;
@@ -32,7 +32,7 @@ const M = messages({
   nav: {
     reports: 'Reports', overview: 'Overview', catalog: 'Report catalog', schedules: 'Update schedule',
     connections: 'Connections', sourceAccounts: 'Source accounts', dataConnections: 'Data connections',
-    admin: 'Admin', sourceSystems: 'Source systems', crawlScripts: 'Crawl scripts', desktopScripts: 'Desktop scripts', desktopApps: 'Desktop apps', users: 'Users',
+    admin: 'Admin', crawlScripts: 'Crawl scripts',
     reportBuilder: 'Report builder', ops: 'Operations', settings: 'General settings',
   },
   expandMenu: 'Expand menu', collapseMenu: 'Collapse menu', collapse: 'Collapse', openMenu: 'Open menu',
@@ -60,11 +60,7 @@ const GROUPS: NavGroup[] = [
     { to: '/ket-noi', label: 'dataConnections', admin: true, icon: I('M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM22 21v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8') },
   ] },
   { id: 'quan-tri', label: 'admin', icon: I('M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z'), items: [
-    { to: '/he-thong-nguon', label: 'sourceSystems', admin: true, icon: I('M2 4h20v6H2zM2 14h20v6H2zM6 7h.01M6 17h.01') },
     { to: '/script-crawl', label: 'crawlScripts', admin: true, icon: I('M16 18l6-6-6-6M8 6l-6 6 6 6') },
-    { to: '/ung-dung-desktop', label: 'desktopApps', admin: true, icon: I('M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z') },
-    { to: '/kich-ban-desktop', label: 'desktopScripts', admin: true, icon: I('M2 4h20v13H2zM8 21h8M12 17v4M9 9l-2 2 2 2M15 9l2 2-2 2') },
-    { to: '/nguoi-dung', label: 'users', admin: true, icon: I('M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM19 8v6M22 11h-6') },
     { to: '/cau-hinh-bao-cao', label: 'reportBuilder', admin: true, icon: I('M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6') },
     { to: '/van-hanh', label: 'ops', admin: true, icon: I('M22 12h-4l-3 9L9 3l-3 9H2') },
     { to: '/cau-hinh-chung', label: 'settings', admin: true, icon: I('M12 2l2.4 4.8 5.3.8-3.8 3.7.9 5.3L12 14.1 7.2 16.6l.9-5.3L4.3 7.6l5.3-.8z') },

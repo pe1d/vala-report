@@ -3,10 +3,10 @@
  * không đọc được password_hash). Khoá tạm thời sau nhiều lần sai để chống dò mật khẩu.
  */
 import type { FastifyPluginAsync } from 'fastify';
-import { L, Problem, hashPassword, passwordPolicyError, runInTenant, verifyPassword, withTenant } from '@vala/core';
+import { L, Problem, currentTenant, hashPassword, passwordPolicyError, runInTenant, verifyPassword, withTenant } from '@vala/core';
 import { authenticate, issuePortalToken } from '../auth.js';
 import type { ApiDeps } from '../deps.js';
-import { accountExists, domainTenantStatus, fillFor, inLoginTenant, loginMethodsOf, parseLogin, ssoAutoCreate, ssoHostsOf, takeN, tenantByDomain } from '../login-target.js';
+import { accountExists, domainTenantStatus, fillFor, inLoginTenant, loginMethodsOf, parseLogin, ssoAutoCreate, ssoHostsOf, takeN, tenantByCode, tenantByDomain } from '../login-target.js';
 
 const MAX_FAILS = 5;
 const LOCK_MINUTES = 15;
@@ -128,6 +128,11 @@ export const authRoutes = (deps: ApiDeps): FastifyPluginAsync => async (app) => 
     schema: { body: { type: 'object', required: ['current_password', 'new_password'], properties: {
       current_password: { type: 'string' }, new_password: { type: 'string', maxLength: 400 } } } },
   }, async (req, reply) => {
+    const tenant = await tenantByCode(deps, currentTenant());
+    if (tenant && !loginMethodsOf(deps, tenant).includes('password')) {
+      throw new Problem('forbidden', L('Đăng nhập bằng mật khẩu đang tắt', 'Password sign-in is disabled'),
+        L(`${tenant.ten} chỉ đăng nhập bằng SSO — đổi mật khẩu ở trang SSO của đơn vị`, `${tenant.ten} only allows SSO sign-in. Change your password on your organization's SSO page`));
+    }
     const policy = passwordPolicyError(req.body.new_password!);
     if (policy) throw new Problem('invalid_params', L('Mật khẩu chưa đạt', 'Password does not meet the requirements'), policy);
     const row = await withTenant(deps.writer, (t) => t.one<{ password_hash: string | null }>(

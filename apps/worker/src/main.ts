@@ -16,6 +16,15 @@ import { log } from './log.js';
 const connection = redisConnection();
 const writer = writerDb();
 const secrets = secretStore();
+// Máy vừa khởi động lại: Postgres có thể chưa nhận kết nối ("the database system is starting up") ⇒ chờ tối đa ~2 phút
+// thay vì dừng hẳn (bản dev chạy tsx watch không tự khởi động lại; k8s thì đỡ một vòng khởi động lại pod).
+for (let i = 0; ; i++) {
+  try { await writer.one('SELECT 1'); break; } catch (e) {
+    if (i >= 60) throw e;
+    if (i % 5 === 0) log.warn('chờ CSDL sẵn sàng', { err: (e as Error).message });
+    await new Promise((r) => setTimeout(r, 2000));
+  }
+}
 // Cấu hình adapter nằm trong CSDL (trang "Hệ thống nguồn", schema của từng đơn vị); nạp lại mỗi phút để thấy thay đổi.
 const registry = new SourceRegistries(writer);
 const registryError = (tenant: string, e: Error) => log.error('nạp lại cấu hình hệ thống nguồn lỗi', { tenant, err: e.message });

@@ -96,6 +96,8 @@ export const systemTenantRoutes = (deps: ApiDeps): FastifyPluginAsync => async (
     withTenant(deps.writer, (t) => audit(t, req, 'source_change', { type: 'tenant', id: ma }, detail));
   const one = (t: Tx, ma: string) => t.oneOrNone<Record<string, unknown>>(`SELECT ${COLS} FROM tenants WHERE ma = $1`, [ma]);
   const notFound = () => new Problem('not_found', L('Không có đơn vị này', 'Organization not found'));
+  const needSecret = () => new Problem('invalid_params', L('Bật đăng nhập SSO thì phải nhập Client secret', 'Enabling SSO sign-in requires the client secret'),
+    L('Đội quản trị SSO của đơn vị cấp Client ID và Client secret', "The organization's SSO team issues the client ID and secret"));
   const hasSecret = async (ma: string) => !!(await deps.secrets.get<{ client_secret?: string }>(tenantSsoRef(ma)))?.client_secret;
 
   app.get('/system/tenants', async () => {
@@ -120,7 +122,7 @@ export const systemTenantRoutes = (deps: ApiDeps): FastifyPluginAsync => async (
       ...editable,
       ma: { type: 'string', pattern: '^[a-z][a-z0-9]{1,19}$' },
       copy_from: { anyOf: [{ type: 'string', pattern: '^[a-z][a-z0-9]{1,19}$' }, { type: 'null' }] },
-      admin: { type: 'object', additionalProperties: false, required: ['username', 'ho_ten', 'password'], properties: {
+      admin: { type: 'object', additionalProperties: false, required: ['username', 'ho_ten'], properties: {
         username: { type: 'string', pattern: USERNAME }, ho_ten: { type: 'string', minLength: 2, maxLength: 120 },
         email: { type: 'string', pattern: EMAIL, maxLength: 200 }, password: { type: 'string', maxLength: 400 } } },
     } } },
@@ -128,19 +130,24 @@ export const systemTenantRoutes = (deps: ApiDeps): FastifyPluginAsync => async (
     const b = req.body;
     const ma = b.ma!;
     if (!isTenantCode(ma)) throw new Problem('invalid_params', L('Mã đơn vị không hợp lệ', 'Invalid organization code'));
-    const policy = passwordPolicyError(b.admin!.password!);
-    if (policy) throw new Problem('invalid_params', L('Mật khẩu chưa đạt', 'Password does not meet the requirements'), policy);
     const domains = [...new Set(b.domains!.map((d) => d.toLowerCase()))];
     const sso = cleanSso(b.sso);
     const methods = b.login_methods ?? ['password'];
     if (methods.includes('sso') && !sso) throw new Problem('invalid_params', L('Bật đăng nhập SSO thì phải khai cấu hình SSO', 'Enabling SSO sign-in requires an SSO configuration'));
+    if (methods.includes('sso') && !b.sso_client_secret) throw needSecret();
+    // Đơn vị chỉ SSO ⇒ quản trị đầu tiên đăng nhập bằng SSO (ghép theo tên đăng nhập / email), không có mật khẩu tạm.
+    const withPassword = methods.includes('password');
+    if (withPassword) {
+      const policy = passwordPolicyError(b.admin!.password ?? '');
+      if (policy) throw new Problem('invalid_params', L('Mật khẩu chưa đạt', 'Password does not meet the requirements'), policy);
+    }
     const username = b.admin!.username!.toLowerCase();
     const provision = {
       copy_from: b.copy_from ?? null,
       admin: {
         username, ho_ten: b.admin!.ho_ten!.trim(),
         email: (b.admin!.email?.trim() || `${username}@${domains[0]}`).toLowerCase(),
-        password_hash: await hashPassword(b.admin!.password!),
+        password_hash: withPassword ? await hashPassword(b.admin!.password!) : null,
       },
     };
     await withCore(deps.writer, async (t) => {
@@ -168,8 +175,9 @@ export const systemTenantRoutes = (deps: ApiDeps): FastifyPluginAsync => async (
   }, async (req) => {
     const { ma } = req.params;
     const b = req.body;
-    const cur = await withCore(deps.writer, (t) => t.oneOrNone<{ status: string }>('SELECT status FROM tenants WHERE ma = $1', [ma]));
+    const cur = await withCore(deps.writer, (t) => t.oneOrNone<{ status: string; login_methods: string[] }>('SELECT status, login_methods FROM tenants WHERE ma = $1', [ma]));
     if (!cur) throw notFound();
+    if (ma !== DEFAULT_TENANT && (b.login_methods ?? cur.login_methods).includes('sso') && !b.sso_client_secret && !(await hasSecret(ma))) throw needSecret();
     if (ma === DEFAULT_TENANT && (b.login_methods || b.sso !== undefined || b.sso_client_secret || b.login_fill || b.login_selectors !== undefined)) {
       throw new Problem('invalid_params', L('Cách đăng nhập của Bkav đặt ở cấu hình máy chủ (.env)', "Bkav's sign-in settings are configured on the server (.env)"));
     }

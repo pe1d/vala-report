@@ -14,6 +14,7 @@ chưa có mục ở đây (src/release-notes.ts, scripts/release-notes.cjs).
 - Nút "Thêm" cuối danh sách ứng dụng: mở nhanh các ứng dụng chưa ghim, ghim ngay tại chỗ.
 - Bấm chuột phải vào ứng dụng để mở, ghim / bỏ ghim, đóng tab hoặc quản lý mật khẩu đã lưu.
 - Đổi sáng / tối là các trang ứng dụng đổi theo ngay.
+- Quản trị chọn được các trang web mở ngay trong Vala Desktop (giữ đăng nhập) thay vì mở ra trình duyệt.
 - Đăng xuất xoá sạch phiên đăng nhập trong ứng dụng — người khác dùng máy không vào được tài khoản của bạn.
 - Không cần tiện ích Chrome nữa: mọi việc đều làm trong Vala Desktop.
 - Giao diện mới: thanh ứng dụng bên trái, trang Trợ lý AI mở đầu tiên — gõ / để chạy ngay thao tác của các hệ thống.
@@ -42,6 +43,7 @@ chưa có mục ở đây (src/release-notes.ts, scripts/release-notes.cjs).
 - A "More" button at the end of the app list opens apps that aren't pinned, and lets you pin them right there.
 - Right-click an app to open it, pin / unpin it, close its tab or manage its saved password.
 - Switching light / dark updates app pages right away.
+- Administrators can choose which websites open right inside Vala Desktop (staying signed in) instead of the browser.
 - Signing out clears all sign-in sessions in the app, so someone else using the computer can't get into your account.
 - The Chrome extension is no longer needed: everything happens in Vala Desktop.
 

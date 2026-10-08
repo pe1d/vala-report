@@ -15,7 +15,7 @@ import { notify } from './notify';
 import { adoptDeviceToken, DEVICE_TOKEN, deviceName, portalToken } from './account';
 import { api } from './api';
 import { tryAutoRelogin } from './autofill';
-import { backgroundSourceTab, showSourceTab, showTab, showWebContents, sourceTabKey } from './browser';
+import { backgroundSourceTab, openAdminTab, showSourceTab, showTab, showWebContents, sourceTabKey } from './browser';
 import { matchesSessionDomain, sessionDomain } from './cookies';
 import { ICON } from './channel';
 import { messages } from './i18n';
@@ -241,6 +241,11 @@ export function registerBridge(): void {
     const ho_ten = typeof a.user?.ho_ten === 'string' ? a.user.ho_ten.slice(0, 200) : '';
     const email = typeof a.user?.email === 'string' ? a.user.email.slice(0, 200) : '';
     await adoptDeviceToken(a.token, { ho_ten, email });
+    return true;
+  });
+  ipcMain.handle('vala:open-admin', (e, section: unknown) => {
+    if (!fromPortal(e) || typeof section !== 'string') return false;
+    openAdminTab(section);
     return true;
   });
   // Người dùng đổi ngôn ngữ / sáng-tối ngay trong cổng ⇒ cả ứng dụng đổi theo.

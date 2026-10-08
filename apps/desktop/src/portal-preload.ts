@@ -34,6 +34,10 @@ window.addEventListener('message', (e) => {
       (r: Record<string, unknown>) => post({ ...r, type: 'action-result', id }),
       (err: Error) => post({ type: 'action-result', id, ok: false, error: String(err?.message ?? err) }));
   }
+  // Cổng bấm "Sửa hệ thống nguồn"… ⇒ mở đúng mục trong trang Quản trị của app (tiến trình chính kiểm quyền quản trị).
+  if (d.type === 'open-admin' && typeof (d as { section?: unknown }).section === 'string') {
+    void ipcRenderer.invoke('vala:open-admin', (d as { section: string }).section);
+  }
   // Cổng đổi ngôn ngữ / sáng-tối ⇒ báo ứng dụng (tiến trình chính kiểm origin, giá trị lạ bị bỏ qua).
   if (d.type === 'set-prefs') {
     const p = d as { lang?: unknown; theme?: unknown };

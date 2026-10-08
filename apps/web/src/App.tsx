@@ -12,17 +12,13 @@ import { LoginPage } from './pages/Login';
 import { MyConnectionsPage } from './pages/MyConnections';
 import { AdminSpidersPage } from './pages/AdminSpiders';
 // Các trang Quản trị đơn vị thuộc Vala Desktop (@vala/admin) — cổng dùng tạm cho tới khi Desktop có đủ.
-import { AdminDesktopScriptsPage } from '@vala/admin/AdminDesktopScripts';
-import { AdminDesktopAppsPage } from '@vala/admin/AdminDesktopApps';
 import { AdminEnvProvider, type AdminEnv } from '@vala/admin/env';
 import { CatalogPage } from './pages/Catalog';
 import { ReportPage } from './pages/Report';
 import { DataSchedulesPage } from './pages/DataSchedules';
 import { OpsPage } from './pages/Ops';
 import { AdminConnectionsPage } from './pages/AdminConnections';
-import { AdminSourcesPage } from '@vala/admin/AdminSources';
 import { AdminReportsPage } from './pages/AdminReports';
-import { AdminUsersPage } from '@vala/admin/AdminUsers';
 import { AdminSettingsPage } from '@vala/admin/AdminSettings';
 import { DashboardPage } from './pages/Dashboard';
 import { DesktopDownloadPage } from './pages/DesktopDownload';
@@ -82,13 +78,9 @@ function Authed({ onLogout }: { onLogout: () => void }) {
           <Route path="/lich-chay" element={<DataSchedulesPage />} />
           <Route path="/uy-quyen" element={<MyConnectionsPage />} />
           <Route path="/script-crawl" element={me.data.is_ops_admin ? <AdminSpidersPage /> : <Navigate to="/" />} />
-          <Route path="/kich-ban-desktop" element={me.data.is_ops_admin ? <AdminDesktopScriptsPage /> : <Navigate to="/" />} />
-          <Route path="/ung-dung-desktop" element={me.data.is_ops_admin ? <AdminDesktopAppsPage /> : <Navigate to="/" />} />
           <Route path="/cau-hinh-bao-cao" element={me.data.is_ops_admin ? <AdminReportsPage /> : <Navigate to="/" />} />
-          <Route path="/he-thong-nguon" element={me.data.is_ops_admin ? <AdminSourcesPage /> : <Navigate to="/" />} />
           <Route path="/ket-noi" element={me.data.is_ops_admin ? <AdminConnectionsPage /> : <Navigate to="/" />} />
           <Route path="/van-hanh" element={me.data.is_ops_admin ? <OpsPage /> : <Navigate to="/" />} />
-        <Route path="/nguoi-dung" element={me.data.is_ops_admin ? <AdminUsersPage /> : <Navigate to="/" />} />
         <Route path="/cau-hinh-chung" element={me.data.is_ops_admin ? <AdminSettingsPage /> : <Navigate to="/" />} />
           <Route path="*" element={<Navigate to="/" />} />
         </Routes>

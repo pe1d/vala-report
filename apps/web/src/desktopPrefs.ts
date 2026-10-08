@@ -34,6 +34,9 @@ window.addEventListener('message', (e) => {
 /** Đang chạy trong Vala Desktop (thanh tab của app đã có ngôn ngữ, sáng/tối, hồ sơ ⇒ cổng ẩn header). */
 export const useInDesktop = (): boolean => useSyncExternalStore((f) => { listeners.add(f); return () => { listeners.delete(f); }; }, () => inDesktop);
 
+/** Mở một mục của trang Quản trị trong Vala Desktop (vd 'he-thong-nguon') — chỉ có tác dụng khi đang ở trong app. */
+export const openDesktopAdmin = (section: string) => { if (inDesktop) post({ type: 'open-admin', section }); };
+
 onLangChange((lang, external) => { if (inDesktop && !external) post({ type: 'set-prefs', lang }); });
 onThemeChange((theme, external) => { if (inDesktop && !external) post({ type: 'set-prefs', theme }); });
 

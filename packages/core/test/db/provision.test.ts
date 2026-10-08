@@ -30,8 +30,8 @@ async function shape(t: Tx, schema: string) {
   return { cols, idx, pol, fn, rls, grants, con };
 }
 
-async function request(ma: string, copyFrom: string | null) {
-  const password_hash = await hashPassword('Tam@2026x');
+async function request(ma: string, copyFrom: string | null, withPassword = true) {
+  const password_hash = withPassword ? await hashPassword('Tam@2026x') : null;
   await withCore(writer(), (t) => t.none(
     `INSERT INTO tenants (ma, ten, domains, status, provision) VALUES ($1, $2, $3, 'dang_tao', $4)`,
     [ma, `Đơn vị ${ma}`, [`${ma}.vn`], { copy_from: copyFrom, admin: { username: 'qtv', ho_ten: 'Quản trị viên', email: `qtv@${ma}.vn`, password_hash } }]));
@@ -78,6 +78,15 @@ describe('dựng đơn vị từ bản nền', () => {
     await runInTenant('trong', () => withTenant(writer(), async (t) => {
       expect(await t.one(`SELECT count(*)::int AS n FROM source_systems`)).toEqual({ n: 0 });
       expect(await t.one(`SELECT ten_don_vi FROM app_settings`)).toEqual({ ten_don_vi: 'Đơn vị trong' });
+    }));
+  });
+
+  it('đơn vị chỉ SSO: quản trị đầu tiên không có mật khẩu, không bị bắt đổi mật khẩu', async () => {
+    await request('chisso', null, false);
+    expect(await provisionTenant(owner, 'chisso')).toBe('done');
+    await runInTenant('chisso', () => withTenant(writer(), async (t) => {
+      expect(await t.one(`SELECT username, is_ops_admin, password_hash, must_change_password FROM app_users`))
+        .toEqual({ username: 'qtv', is_ops_admin: true, password_hash: null, must_change_password: false });
     }));
   });
 

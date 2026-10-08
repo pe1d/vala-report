@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { openDesktopAdmin, useInDesktop } from '../desktopPrefs';
 import { api, fmtDateTime, type AuthMethod, type Connection } from '../api';
 import { ConnectionEditor } from '../components/ConnectionEditor';
 import { useAsync } from '../hooks';
@@ -15,7 +15,7 @@ const M = messages({
   title: 'Kết nối dữ liệu',
   subtitle: 'Cấu hình cách hệ thống lấy dữ liệu thay cho từng người dùng. Mật khẩu và cookie chỉ được lưu trong kho bí mật (vault); hệ thống không hiển thị lại.',
   search: 'Tìm người dùng, email, tài khoản nguồn…', system: 'Hệ thống', filterBySystem: 'Lọc theo hệ thống',
-  all: (n: number) => `Tất cả (${n})`, editSources: 'Thêm / sửa hệ thống nguồn →', noUsers: 'Chưa có người dùng nào.',
+  all: (n: number) => `Tất cả (${n})`, editSources: 'Thêm / sửa hệ thống nguồn →', editSourcesHint: 'Thêm / sửa hệ thống nguồn: Vala Desktop → Quản trị → Hệ thống nguồn', noUsers: 'Chưa có người dùng nào.',
   currentFilter: 'bộ lọc hiện tại', user: 'Người dùng', method_: 'Cách lấy dữ liệu', sourceAccount: 'Tài khoản nguồn',
   status: 'Trạng thái', lastSuccess: 'Lấy thành công gần nhất', configure: 'Cấu hình', edit: 'Sửa', unit: 'kết nối',
 }, {
@@ -24,7 +24,7 @@ const M = messages({
   title: 'Data connections',
   subtitle: 'Configure how the system fetches data on behalf of each user. Passwords and cookies are stored only in the secrets vault and are never shown again.',
   search: 'Search users, emails, source accounts…', system: 'System', filterBySystem: 'Filter by system',
-  all: (n: number) => `All (${n})`, editSources: 'Add / edit source systems →', noUsers: 'No users yet.',
+  all: (n: number) => `All (${n})`, editSources: 'Add / edit source systems →', editSourcesHint: 'Add / edit source systems: Vala Desktop → Administration → Source systems', noUsers: 'No users yet.',
   currentFilter: 'current filter', user: 'User', method_: 'Fetch method', sourceAccount: 'Source account',
   status: 'Status', lastSuccess: 'Last successful fetch', configure: 'Configure', edit: 'Edit', unit: 'connections',
 });
@@ -44,6 +44,7 @@ export { METHOD_LABEL };
  */
 export function AdminConnectionsPage() {
   const t = useT(M);
+  const inDesktop = useInDesktop();
   const conns = useAsync(() => api.get<Connection[]>('/admin/connections'), []);
   const [editing, setEditing] = useState<Connection | null>(null);
   const [note, setNote] = useState<string | null>(null);
@@ -66,7 +67,10 @@ export function AdminConnectionsPage() {
           </Select>
         </label>
         <span className="flex-1" />
-        <Link to="/he-thong-nguon" className="text-sm text-blue-700 no-underline hover:underline dark:text-blue-400">{t.editSources}</Link>
+        {/* Hệ thống nguồn sửa ở trang Quản trị của Vala Desktop (web phụ thuộc Desktop). */}
+        {inDesktop
+          ? <button type="button" onClick={() => openDesktopAdmin('he-thong-nguon')} className="text-sm text-blue-700 hover:underline dark:text-blue-400">{t.editSources}</button>
+          : <Muted>{t.editSourcesHint}</Muted>}
       </div>
       {conns.loading && <Loading />}
       {conns.error ? <ErrorBox error={conns.error} onRetry={conns.reload} /> : null}

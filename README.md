@@ -28,7 +28,7 @@ giao diện *Hệ thống nguồn*. Tài khoản quản trị dev: `ops` / `Vala
 
 Thử toàn luồng:
 1. `ops` → *Hệ thống nguồn* → thêm hệ thống + dán adapter; → *Script crawl* → **Đồng bộ Crawlab**.
-2. Người dùng → *Tài khoản nguồn* → kết nối bằng **tiện ích trình duyệt** (đăng nhập nguồn trên trình duyệt, tiện ích tự gửi phiên) hoặc mật khẩu (nếu adapter có tự-đăng-nhập).
+2. Người dùng → *Tài khoản nguồn* → kết nối bằng **Vala Desktop** (đăng nhập hệ thống nguồn trong app, app tự giữ và gửi phiên) hoặc mật khẩu (nếu adapter có tự-đăng-nhập).
 3. *Cấu hình báo cáo* tạo báo cáo → *Lịch chạy* → **Chạy ngay** → dashboard có số liệu.
 
 ```bash
@@ -40,7 +40,7 @@ pnpm test           # bộ test cũ (phụ thuộc eGov/eTask giả lập) đã 
 
 | Thư mục | Nội dung |
 | --- | --- |
-| `db/migrations/` | `001` = lược đồ gốc (sửa 2 chỗ để chạy được), `002`–`004` = bản vá, `003` = danh mục báo cáo, `005` = đăng nhập mật khẩu + kết nối, `006` = spider Crawlab, `007` = tiện ích trình duyệt, `008` = quản trị thêm hệ thống nguồn, `009` = cấu hình adapter nằm trong CSDL, `010` = bảng dữ liệu chung + báo cáo cấu hình, `011` = tham số lọc lấy từ dữ liệu, …, `027` = nhiều đơn vị (`core.tenants`, bảng nguồn vào schema đơn vị). `db/migrations/tenant/` = migration áp cho từng đơn vị — xem `docs/nhieu-don-vi.md` |
+| `db/migrations/` | `001` = lược đồ gốc (sửa 2 chỗ để chạy được), `002`–`004` = bản vá, `003` = danh mục báo cáo, `005` = đăng nhập mật khẩu + kết nối, `006` = spider Crawlab, `007` = tiện ích trình duyệt, `008` = quản trị thêm hệ thống nguồn, `009` = cấu hình adapter nằm trong CSDL, `010` = bảng dữ liệu chung + báo cáo cấu hình, `011` = tham số lọc lấy từ dữ liệu, …, `027` = nhiều đơn vị (`core.tenants`, bảng nguồn vào schema đơn vị), `028` = dựng đơn vị từ giao diện + quản trị hệ thống. `db/tenant-baseline.sql` = bản nền schema đơn vị. `db/migrations/tenant/` = migration áp cho từng đơn vị — xem `docs/nhieu-don-vi.md` |
 | `adapters/` | **Mẫu khởi tạo** adapter (hiện để trống). Nếu có file `*.yaml`, lần chạy đầu chép vào CSDL cho hệ thống chưa có `adapter_yaml`; hiện egov/etask cấu hình hoàn toàn trên giao diện |
 | `packages/core` | CSDL (2 pool), phân quyền, adapter runtime, pipeline nạp, vault, hàng đợi fan-out |
 | `apps/api` | Fastify, theo `openapi.yaml` |
@@ -104,7 +104,7 @@ Sửa mã trên trang *Script crawl* rồi đồng bộ. Đừng sửa trực ti
 | `password` | Tài khoản + mật khẩu hệ thống nguồn | Có — hệ thống tự đăng nhập lại |
 | `cookie` | Chuỗi cookie copy từ trình duyệt | Không — hết hạn phải dán lại |
 | `sso` | (người dùng tự uỷ quyền qua Bkav SSO) | Có — refresh token |
-| `extension` | (không nhập gì — tiện ích trình duyệt tự gửi) | Tiện ích gửi lại mỗi khi người dùng đăng nhập nguồn |
+| `extension` | (không nhập gì — Vala Desktop tự gửi; tên giữ từ thời tiện ích trình duyệt) | Vala Desktop gửi lại mỗi khi người dùng đăng nhập nguồn trong app |
 
 Bí mật (mật khẩu/cookie nguồn) **chỉ nằm trong vault**, không trả qua API, không ghi log. **Vault chạy chế độ lưu bền**
 (cập nhật 30/09/2026, [infra/vault](infra/vault)): dữ liệu ở volume `vault-file`, tự khởi tạo + tự mở khoá khi khởi động
@@ -125,7 +125,7 @@ Thử trên dev:
 | Tình trạng | Ô hiện |
 | --- | --- |
 | `ok` | thẻ số liệu / biểu đồ đầu tiên / 5 dòng đầu, kèm "Cập nhật ngay" |
-| `can_ket_noi` | nút **Kết nối <nguồn>**: có tiện ích thì kết nối qua tiện ích, không thì mở *Tài khoản nguồn* (`?ket-noi=<nguồn>`) |
+| `can_ket_noi` | nút **Kết nối <nguồn>**: trong Vala Desktop thì mở hệ thống đó trong app để đăng nhập, ngoài app thì mở *Tài khoản nguồn* (`?ket-noi=<nguồn>`) |
 | `het_han` | nút **Kết nối lại** |
 | `chua_co_du_lieu` | nút **Lấy dữ liệu ngay** (`POST /me/sources/:nguồn/run-now`, một lần / 10 phút) |
 
@@ -133,9 +133,9 @@ Khối vẽ bằng **ECharts** theo loại biểu đồ trong định nghĩa bá
 
 Bảng màu lấy theo palette tham chiếu của skill dataviz ([apps/web/src/viz.ts](apps/web/src/viz.ts)) và đã chạy validator trên đúng nền thẻ của cổng, cả sáng lẫn tối. Số liệu có hiệu ứng đếm lên, biểu đồ có hiệu ứng xuất hiện; cả hai tắt khi người dùng bật *giảm chuyển động*.
 
-Kết nối qua tiện ích xong thì Tổng quan tự gọi "Lấy dữ liệu ngay", rồi làm mới mỗi 5 giây trong 1 phút.
+Kết nối qua Vala Desktop xong thì Tổng quan tự gọi "Lấy dữ liệu ngay", rồi làm mới mỗi 5 giây trong 1 phút.
 
-**Hệ thống nguồn** (`/he-thong-nguon`, chỉ quản trị): thêm hệ thống mới ngay trên cổng, không chỉ có eGov/eTask cố định. Khai mã, tên, địa chỉ, cách kết nối cho phép, cookie phiên (tên thay thế ngăn bằng `|`), cookie tuỳ chọn, tên miền cookie, trang kiểm tra phiên và mẫu regex nhận diện tài khoản; phần này lưu ở `core.source_systems.auth_profile`. Hệ thống mới tự hiện ở *Kết nối dữ liệu*, *Tài khoản nguồn* và trong tiện ích. Người dùng kết nối được ngay bằng tiện ích hoặc dán cookie; mật khẩu và SSO cần adapter YAML có cách tự đăng nhập. Muốn có **báo cáo** từ hệ thống mới: thêm spider ngay trên trang *Script crawl* (viết `main.py`, không cần sửa code) rồi tạo báo cáo. Với eGov/eTask (adapter YAML) chỉ sửa được tên, địa chỉ, bật/tắt và cách kết nối. Hệ thống không xoá được, chỉ tắt, vì dữ liệu và lịch sử chạy tham chiếu tới nó.
+**Hệ thống nguồn** (Vala Desktop → Quản trị → Hệ thống nguồn, chỉ quản trị — không còn trên cổng web): thêm hệ thống mới, không chỉ có eGov/eTask cố định. Khai mã, tên, địa chỉ, cách kết nối cho phép, cookie phiên (tên thay thế ngăn bằng `|`), cookie tuỳ chọn, tên miền cookie, trang kiểm tra phiên và mẫu regex nhận diện tài khoản; phần này lưu ở `core.source_systems.auth_profile`. Hệ thống mới tự hiện ở *Kết nối dữ liệu*, *Tài khoản nguồn* và trong Vala Desktop. Người dùng kết nối được ngay bằng Vala Desktop hoặc dán cookie; mật khẩu và SSO cần adapter YAML có cách tự đăng nhập. Muốn có **báo cáo** từ hệ thống mới: thêm spider ngay trên trang *Script crawl* (viết `main.py`, không cần sửa code) rồi tạo báo cáo. Với eGov/eTask (adapter YAML) chỉ sửa được tên, địa chỉ, bật/tắt và cách kết nối. Hệ thống không xoá được, chỉ tắt, vì dữ liệu và lịch sử chạy tham chiếu tới nó.
 
 **Cấu hình nằm trong CSDL, không nằm trong code (cập nhật 28/09/2026).** Mỗi hệ thống, kể cả eGov và eTask, có một *cấu hình adapter* (YAML) trong `core.source_systems.adapter_yaml`. Quản trị sửa ở *Hệ thống nguồn → Cấu hình adapter*, có nút **Kiểm tra** trước khi **Lưu**. Cấu hình gồm:
 - xác thực: cookie phiên, tên miền cookie, trang kiểm tra phiên, cách tự đăng nhập;
@@ -156,7 +156,7 @@ qua hàm CSDL `ensure_record_index` (tự dựng tên/biểu thức, kiểm đ�
 
 **Thêm hệ thống mới từ đầu đến Tổng quan, không sửa code (cập nhật 28/09/2026):**
 1. *Hệ thống nguồn → Thêm*: dán cấu hình adapter. Capability khai `sink: { table: records }`: trường theo `output_schema` (nhãn lấy từ `label`, `index: true` cho trường hay lọc/nhóm), có lịch sử SCD2 và RLS cá nhân/đơn vị.
-2. Người dùng kết nối: tiện ích, cookie, hoặc mật khẩu nếu adapter có `password_login`.
+2. Người dùng kết nối: Vala Desktop, cookie, hoặc mật khẩu nếu adapter có `password_login`.
 3. *Lấy dữ liệu*: báo cáo không có spider thì **worker chạy thẳng các bước trong adapter**. Mỗi phút worker kiểm tra lịch đến hạn (`runDueSchedules`) và dời `next_run_at` ngay, nên lỗi không làm chạy lặp. Nút "Lấy dữ liệu ngay" cũng đi đường này. Spider Python chỉ còn cần cho trang phức tạp.
 4. *Cấu hình báo cáo → Tạo báo cáo* (`/cau-hinh-bao-cao`), không viết SQL. Chọn:
    - hệ thống, tập dữ liệu, kiểu *Thống kê* (nhóm theo, phép tính, biểu đồ) hoặc *Danh sách* (cột);

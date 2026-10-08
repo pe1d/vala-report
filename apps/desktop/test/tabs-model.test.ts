@@ -2,6 +2,15 @@ import { describe, expect, it } from 'vitest';
 import { catalogPinned, openTarget, siteOf, sidebarSections, tabStatus } from '../src/tabs-model';
 
 describe('openTarget (link mở cửa sổ mới)', () => {
+  it('tên miền đơn vị khai "mở trong Vala Desktop" (gồm tên miền con) ⇒ tab trong app dù khác tên miền gốc', () => {
+    const from = 'https://egov.bkav.com/vb';
+    const inside = ['hanoi.gov.vn'];
+    expect(openTarget({ url: 'https://qlvb.hanoi.gov.vn/x', disposition: 'foreground-tab', openerUrl: from }, inside)).toEqual({ kind: 'tab', foreground: true });
+    expect(openTarget({ url: 'https://hanoi.gov.vn/', disposition: 'foreground-tab', openerUrl: from }, inside)).toEqual({ kind: 'tab', foreground: true });
+    // Không khớp đuôi tên miền (xhanoi.gov.vn) ⇒ vẫn ra trình duyệt.
+    expect(openTarget({ url: 'https://xhanoi.gov.vn/', disposition: 'foreground-tab', openerUrl: from }, inside)).toEqual({ kind: 'external' });
+    expect(openTarget({ url: 'https://vnexpress.net/', disposition: 'foreground-tab', openerUrl: from }, inside)).toEqual({ kind: 'external' });
+  });
   it('target=_blank / window.open không kèm kích thước ⇒ tab mới', () => {
     expect(openTarget({ url: 'https://egov.bkav.com/vb/1', disposition: 'foreground-tab' })).toEqual({ kind: 'tab', foreground: true });
     expect(openTarget({ url: 'https://egov.bkav.com/vb/1', disposition: 'background-tab' })).toEqual({ kind: 'tab', foreground: false });

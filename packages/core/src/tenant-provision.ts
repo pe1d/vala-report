@@ -26,7 +26,8 @@ export const TENANT_BASELINE = join(REPO_ROOT, 'db/tenant-baseline.sql');
 export interface ProvisionRequest {
   /** Đơn vị lấy cấu hình (hệ thống nguồn, báo cáo, kịch bản, ứng dụng Desktop…); null ⇒ đơn vị trống. */
   copy_from?: string | null;
-  admin: { username: string; ho_ten: string; email: string; password_hash: string };
+  /** password_hash null ⇒ đơn vị chỉ đăng nhập SSO: quản trị đầu tiên vào bằng SSO (ghép theo tên đăng nhập / email). */
+  admin: { username: string; ho_ten: string; email: string; password_hash: string | null };
 }
 
 /** Bảng cấu hình chép sang đơn vị mới, theo thứ tự khoá ngoại. `reset`: cột đặt lại (người sửa ở đơn vị cũ, id Crawlab). */
@@ -87,7 +88,7 @@ export async function provisionTenant(owner: Db, ma: string, opts: { baseline?: 
         `SELECT ten, provision FROM core.tenants WHERE ma = $1 AND status = 'dang_tao' FOR UPDATE SKIP LOCKED`, [ma]);
       if (!row) return 'skip' as const;
       const req = row.provision;
-      if (!req?.admin?.username || !req.admin.password_hash) throw new Error('Thiếu thông tin quản trị đầu tiên');
+      if (!req?.admin?.username) throw new Error('Thiếu thông tin quản trị đầu tiên');
       if (await t.oneOrNone('SELECT 1 FROM pg_namespace WHERE nspname = $1', [schema])) throw new Error(`Schema ${schema} đã tồn tại`);
 
       // 1–2. Cấu trúc + migration đơn vị.
@@ -114,15 +115,16 @@ export async function provisionTenant(owner: Db, ma: string, opts: { baseline?: 
 
       // 4. Cấu hình chung (thương hiệu theo đơn vị nguồn), đơn vị tổ chức gốc, quản trị đầu tiên, phân vùng.
       if (from) {
-        await t.none(`INSERT INTO app_settings (id, ten_ung_dung, ten_don_vi, logo, mau_chu_dao, ten_sso)
-                        SELECT 1, ten_ung_dung, $1, logo, mau_chu_dao, ten_sso FROM $2:name.app_settings WHERE id = 1`, [row.ten, tenantSchema(from)]);
+        await t.none(`INSERT INTO app_settings (id, ten_ung_dung, ten_don_vi, logo, mau_chu_dao, ten_sso, desktop_open_inside)
+                        SELECT 1, ten_ung_dung, $1, logo, mau_chu_dao, ten_sso, desktop_open_inside FROM $2:name.app_settings WHERE id = 1`, [row.ten, tenantSchema(from)]);
       }
       await t.none('INSERT INTO app_settings (id, ten_don_vi) VALUES (1, $1) ON CONFLICT (id) DO NOTHING', [row.ten]);
       await t.none(`INSERT INTO org_units (id, ten, parent_id, path) VALUES (1, $1, NULL, '{1}')`, [row.ten]);
       const a = req.admin;
       const uid = await t.one<{ id: number }>(
         `INSERT INTO app_users (username, ho_ten, email, is_ops_admin, password_hash, password_changed_at, must_change_password)
-         VALUES ($1, $2, $3, true, $4, now(), true) RETURNING id`, [a.username, a.ho_ten, a.email, a.password_hash]);
+         VALUES ($1, $2, $3, true, $4, CASE WHEN $4::text IS NULL THEN NULL ELSE now() END, $4::text IS NOT NULL) RETURNING id`,
+        [a.username, a.ho_ten, a.email, a.password_hash ?? null]);
       await t.none(`INSERT INTO user_org_units (app_user_id, org_unit_id, vai_tro, is_primary) VALUES ($1, 1, 'thanh_vien', true)`, [uid.id]);
       await t.any('SELECT ensure_raw_partitions(2)');
 

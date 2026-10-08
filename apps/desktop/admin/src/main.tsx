@@ -5,7 +5,7 @@
  */
 import { StrictMode, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { MemoryRouter, NavLink, Navigate, Route, Routes } from 'react-router-dom';
+import { MemoryRouter, NavLink, Navigate, Route, Routes, useNavigate } from 'react-router-dom';
 import { api, configureApi, type Me, type RawResponse } from '@vala/ui/api';
 import { BrandingProvider } from '@vala/ui/branding';
 import { ErrorBox, Loading } from '@vala/ui/States';
@@ -25,6 +25,8 @@ interface ValaAdminApi {
   listActions(source: string): Promise<DesktopActionResult>;
   runAction(source: string, name: string, args: Record<string, unknown>): Promise<DesktopActionResult>;
   onPrefs(cb: (p: { lang: Lang; theme: ThemeMode }) => void): void;
+  /** Mở một mục khi trang đang mở (vd cổng Báo cáo bấm "Sửa hệ thống nguồn"). */
+  onNavigate(cb: (section: string) => void): void;
 }
 const bridge = (window as unknown as { valaAdmin: ValaAdminApi }).valaAdmin;
 
@@ -59,6 +61,8 @@ const SYSTEM_NAV: Array<{ to: string; key: NavKey; icon: string }> = [
 
 function AdminApp() {
   const t = useT(M);
+  const navigate = useNavigate();
+  useEffect(() => bridge.onNavigate((s) => navigate(`/${s}`)), []); // eslint-disable-line react-hooks/exhaustive-deps
   const [me, setMe] = useState<Me | null>(null);
   const [err, setErr] = useState<unknown>(null);
   const load = () => { setErr(null); api.get<Me>('/me').then(setMe, setErr); };

@@ -25,7 +25,15 @@ export interface CatalogApp {
 interface Catalog { apps: CatalogApp[]; layout: { pinned: string[] | null }; /** Host SSO của đơn vị (sso-session.ts). */ sso_hosts?: string[]; /** Quản trị đơn vị ⇒ mục "Quản trị đơn vị". */ is_admin?: boolean;
   /** Quản trị hệ thống ⇒ trang Quản trị có thêm mục Đơn vị. */ is_system_admin?: boolean;
   /** Đổi mật khẩu: có mật khẩu Vala ⇒ form trong app; chỉ SSO ⇒ trang đổi mật khẩu của SSO (nếu đơn vị khai). */
-  account?: { has_password: boolean; sso_password_url: string | null } }
+  account?: { has_password: boolean; sso_password_url: string | null };
+  /** Tên miền đơn vị khai "mở trong Vala Desktop" (link mở cửa sổ mới tới đó ⇒ tab trong app). */
+  open_inside?: string[] }
+
+/** Tên miền mở trong app: đơn vị khai + tên miền của các ứng dụng trong danh mục (trang web, hệ thống nguồn). */
+export function insideDomains(c: Catalog = catalog()): string[] {
+  const hosts = c.apps.map((a) => { try { return a.url ? new URL(a.url).hostname.toLowerCase() : ''; } catch { return ''; } }).filter(Boolean);
+  return [...new Set([...(c.open_inside ?? []), ...hosts])];
+}
 
 /** 'changed' — danh mục / bố cục đổi ⇒ vẽ lại thanh ứng dụng. */
 export const appsEvents = new EventEmitter();
