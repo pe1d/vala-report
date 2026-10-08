@@ -24,7 +24,7 @@ import { isPortalUrl } from './ui-cache';
 const M = messages({
   vala: 'Vala', openMain: 'Trang chính',
   reports: 'Báo cáo', openPortal: 'Mở cổng báo cáo',
-  sources: 'Hệ thống nguồn', noSources: '(chưa có hệ thống nào)', signInFirst: '(đăng nhập ở tab Báo cáo trước)',
+  sources: 'Hệ thống nguồn', noSources: '(chưa có hệ thống nào)', signInFirst: '(đăng nhập trước)',
   syncNow: 'Đồng bộ phiên ngay',
   view: 'Xem', reload: 'Tải lại', back: 'Quay lại', forward: 'Tiến tới', zoomIn: 'Phóng to', zoomOut: 'Thu nhỏ', zoomReset: 'Cỡ gốc',
   settingsMenu: 'Cài đặt', settings: 'Cài đặt…', signIn: 'Đăng nhập…', signOut: 'Đăng xuất', quit: 'Thoát', changePassword: 'Đổi mật khẩu…',
@@ -42,7 +42,7 @@ const M = messages({
 }, {
   vala: 'Vala', openMain: 'Home page',
   reports: 'Reports', openPortal: 'Open reporting portal',
-  sources: 'Source systems', noSources: '(no systems yet)', signInFirst: '(sign in on the Reports tab first)',
+  sources: 'Source systems', noSources: '(no systems yet)', signInFirst: '(sign in first)',
   syncNow: 'Sync sessions now',
   view: 'View', reload: 'Reload', back: 'Back', forward: 'Forward', zoomIn: 'Zoom in', zoomOut: 'Zoom out', zoomReset: 'Actual size',
   settingsMenu: 'Settings', settings: 'Settings…', signIn: 'Sign in…', signOut: 'Sign out', quit: 'Quit', changePassword: 'Change password…',
@@ -60,7 +60,7 @@ const M = messages({
 });
 
 export interface MenuActions {
-  showMain: () => void; showPortal: () => void;
+  showMain: () => void; showPortal: () => void; signIn: () => void;
   /** Mở cửa sổ ở mục đang xem (mặc định Trợ lý AI) — bấm biểu tượng khay. */
   showDefault: () => void; openSettings: (section?: string) => void; signOut: () => void;
   /** Mở hộp đổi mật khẩu của cổng (cổng ẩn header trong app — mục này thay cho menu người dùng của cổng). */
@@ -153,7 +153,7 @@ function appMenu(): Menu {
     { label: t.vala, submenu: [{ label: t.openMain, accelerator: 'CmdOrCtrl+1', click: actions.showMain }] },
     { label: t.reports, submenu: [s.deviceToken
       ? { label: t.openPortal, accelerator: 'CmdOrCtrl+2', click: actions.showPortal }
-      : { label: t.signIn, click: actions.showPortal }] },
+      : { label: t.signIn, click: actions.signIn }] },
     { label: t.sources, submenu: sourceItems() },
     { label: t.view, submenu: [
       { label: t.back, accelerator: 'Alt+Left', click: (_i, w) => { const h = history(w); if (h?.canGoBack()) h.goBack(); } },
@@ -180,7 +180,7 @@ export function trayMenu(): Menu {
   const t = M[s.lang];
   return Menu.buildFromTemplate([
     { label: t.openMain, click: actions.showMain },
-    s.deviceToken ? { label: t.openPortal, click: actions.showPortal } : { label: t.signIn, click: actions.showPortal },
+    s.deviceToken ? { label: t.openPortal, click: actions.showPortal } : { label: t.signIn, click: actions.signIn },
     { label: t.sources, submenu: sourceItems() },
     { type: 'separator' },
     // Tài khoản đăng nhập bằng mật khẩu (không phải SSO) ⇒ đổi mật khẩu ngay trong cổng.

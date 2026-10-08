@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:" />
+  <title>Đăng nhập</title>
+  <link rel="stylesheet" href="../dist/renderer/ui.css" />
+</head>
+<!--
+  Màn hình đăng nhập (login-page.ts): 2 bước tên@đơn vị ⇒ mật khẩu / SSO của đơn vị. Bước SSO: #sso-slot là khung trống, tiến
+  trình chính đặt trang SSO của đơn vị (một view riêng) đúng vào khung này. Chữ do tiến trình chính gửi (data-t).
+-->
+<body class="h-screen select-none overflow-hidden bg-white text-slate-900 antialiased dark:bg-slate-950 dark:text-slate-100">
+  <main class="flex h-full flex-col items-center justify-center overflow-y-auto px-6 py-8">
+    <section id="card" class="w-full max-w-[420px]">
+      <div class="mb-7 flex flex-col items-center text-center">
+        <svg viewBox="0 0 24 24" class="mb-3 h-10 w-10 text-orange-500" fill="currentColor" aria-hidden="true"><path d="M12 2l2.4 6.1L20.5 10l-6.1 2.4L12 18.5l-2.4-6.1L3.5 10l6.1-1.9z" /><path d="M19 15l1 2.5 2.5 1-2.5 1L19 22l-1-2.5-2.5-1 2.5-1z" /></svg>
+        <h1 class="font-serif text-3xl text-slate-800 dark:text-slate-100" data-t="title"></h1>
+        <p class="mt-1.5 text-sm text-slate-500 dark:text-slate-400" data-t="subtitle"></p>
+      </div>
+
+      <div id="error" role="alert" class="mb-4 rounded-xl border border-red-200 bg-red-50 px-3.5 py-2.5 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300"></div>
+
+      <!-- Bước 1 -->
+      <form id="step1" class="space-y-3">
+        <label class="block">
+          <span class="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400" data-t="account"></span>
+          <input id="login" type="text" inputmode="email" autocomplete="username" spellcheck="false" class="input w-full rounded-xl py-2.5 text-[15px]" />
+          <span class="mt-1 block text-xs text-slate-400" data-t="accountHint"></span>
+        </label>
+        <button id="next" type="submit" class="btn-primary w-full rounded-xl py-2.5"></button>
+      </form>
+
+      <!-- Bước 2 -->
+      <div id="step2" class="space-y-4">
+        <div class="flex items-center gap-3 rounded-2xl bg-slate-50 px-3 py-2.5 dark:bg-slate-900">
+          <span id="avatar" class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-blue-600 text-sm font-semibold text-white"></span>
+          <span class="min-w-0 flex-1">
+            <span id="who" class="block truncate text-sm font-medium"></span>
+            <span id="org" class="block truncate text-xs text-slate-500 dark:text-slate-400"></span>
+          </span>
+          <button id="change" type="button" class="shrink-0 rounded-lg px-2 py-1 text-xs text-blue-700 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-slate-800" data-t="changeAccount"></button>
+        </div>
+        <form id="pw-form" class="space-y-3">
+          <label class="block">
+            <span class="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400" data-t="password"></span>
+            <input id="password" type="password" autocomplete="current-password" class="input w-full rounded-xl py-2.5 text-[15px]" />
+          </label>
+          <button id="sign-in" type="submit" class="btn-primary w-full rounded-xl py-2.5"></button>
+        </form>
+        <p id="sso-only" class="text-sm text-slate-600 dark:text-slate-300" data-t="ssoOnly"></p>
+        <button id="sso" type="button" class="btn w-full rounded-xl py-2.5"></button>
+        <p id="no-method" class="text-sm text-amber-700 dark:text-amber-400" data-t="noMethod"></p>
+      </div>
+
+      <!-- Đổi mật khẩu tạm -->
+      <form id="step-change" class="space-y-3">
+        <div>
+          <h2 class="text-base font-semibold" data-t="changeTitle"></h2>
+          <p class="mt-0.5 text-sm text-slate-500 dark:text-slate-400" data-t="changeHint"></p>
+        </div>
+        <label class="block">
+          <span class="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400" data-t="newPassword"></span>
+          <input id="new-password" type="password" autocomplete="new-password" class="input w-full rounded-xl py-2.5" />
+        </label>
+        <label class="block">
+          <span class="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400" data-t="confirmPassword"></span>
+          <input id="confirm-password" type="password" autocomplete="new-password" class="input w-full rounded-xl py-2.5" />
+        </label>
+        <button id="save" type="submit" class="btn-primary w-full rounded-xl py-2.5"></button>
+      </form>
+
+      <p id="finishing" class="animate-pulse text-center text-sm text-slate-500" data-t="finishing"></p>
+      <p id="server" class="mt-8 text-center text-xs text-slate-400"></p>
+    </section>
+
+    <!-- Bước SSO: trang SSO của đơn vị (view riêng) đặt vào #sso-slot -->
+    <section id="sso-step" class="flex h-full w-full max-w-[720px] flex-col">
+      <div class="flex shrink-0 items-center gap-2 pb-3">
+        <button id="sso-back" type="button" class="btn rounded-xl px-3 py-1.5 text-sm"></button>
+        <span id="sso-title" class="min-w-0 flex-1 truncate text-sm text-slate-500 dark:text-slate-400"></span>
+      </div>
+      <div id="sso-slot" class="min-h-0 flex-1 overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-900"></div>
+    </section>
+  </main>
+  <script src="../dist/renderer/login.js"></script>
+</body>
+</html>

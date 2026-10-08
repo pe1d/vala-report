@@ -3,15 +3,18 @@
  * `state` (ký HMAC, hết hạn 10 phút) cho biết đây là quay về sau khi ĐĂNG NHẬP cổng hay sau khi UỶ QUYỀN.
  */
 import type { FastifyPluginAsync, FastifyReply } from 'fastify';
-import { Problem, emailOf, pkcePair, usernameOf, withTenant, withUserContext, type SsoUser, type UserContext } from '@vala/core';
+import { DEFAULT_TENANT, Problem, emailOf, isTenantCode, pkcePair, runInTenant, usernameOf, withTenant, withUserContext, type SsoClient, type SsoUser, type UserContext } from '@vala/core';
 import { audit } from '../audit.js';
 import { issuePortalToken } from '../auth.js';
 import type { ApiDeps } from '../deps.js';
+import { tenantByCode } from '../login-target.js';
+import { ssoFor } from '../sso-clients.js';
 import { sign, verify } from '../tokens.js';
 
 export const callbackUrl = (deps: ApiDeps) => `${deps.config.publicApiUrl}/api/v1/sso/callback`;
 
-type LoginState = { kind: 'login'; next: string };
+/** `tnt`: đơn vị đăng nhập (multi-tenant) — callback chạy trong ngữ cảnh đơn vị đó với SSO của đơn vị; không có ⇒ Bkav. */
+type LoginState = { kind: 'login'; next: string; tnt?: string };
 type GrantState = { kind: 'grant'; uid: number; src: string; caps: string[] };
 
 const safeNext = (n: unknown) => (typeof n === 'string' && n.startsWith('/') && !n.startsWith('//') ? n : '/');
@@ -35,24 +38,35 @@ export const ssoRoutes = (deps: ApiDeps): FastifyPluginAsync => async (app) => {
    * của máy chủ: Vala Desktop chạy giao diện từ bản trong máy và chuyển tiếp /api hộ trang (không giữ cookie) — bước này
    * biến thành một lần điều hướng thật tới máy chủ, nên cookie PKCE được lưu đúng như trên trình duyệt thường.
    */
-  app.get<{ Querystring: { next?: string } }>('/auth/sso/login', async (req, reply) => {
-    const q = new URLSearchParams({ next: safeNext(req.query.next) });
-    return reply.redirect(`${deps.config.publicApiUrl.replace(/\/+$/, '')}/api/v1/auth/sso/start?${q}`);
-  });
+  type StartQuery = { next?: string; tenant?: string; login_hint?: string };
+  const startQuery = (q: StartQuery) => {
+    const out: Record<string, string> = { next: safeNext(q.next) };
+    if (isTenantCode(q.tenant)) out.tenant = q.tenant;
+    if (typeof q.login_hint === 'string' && q.login_hint.length <= 200) out.login_hint = q.login_hint;
+    return new URLSearchParams(out);
+  };
+  app.get<{ Querystring: StartQuery }>('/auth/sso/login', async (req, reply) =>
+    reply.redirect(`${deps.config.publicApiUrl.replace(/\/+$/, '')}/api/v1/auth/sso/start?${startQuery(req.query)}`));
 
-  app.get<{ Querystring: { next?: string } }>('/auth/sso/start', async (req, reply) => {
-    try { await deps.sso.discover(); } catch (e) {
-      req.log.error({ err: (e as Error).message }, 'không đọc được cấu hình SSO (discovery)');
+  /** `tenant` (mã đơn vị, bước 1 của đăng nhập 2 bước) ⇒ IdP của đơn vị đó; `login_hint` ⇒ IdP điền sẵn tài khoản. */
+  app.get<{ Querystring: StartQuery }>('/auth/sso/start', async (req, reply) => {
+    const ma = isTenantCode(req.query.tenant) ? req.query.tenant : DEFAULT_TENANT;
+    const row = await tenantByCode(deps, ma);
+    const sso = row ? await ssoFor(deps, row) : null;
+    if (!sso) return toWeb(reply, deps, '/dang-nhap', { loi: 'sso_loi' });
+    try { await sso.discover(); } catch (e) {
+      req.log.error({ err: (e as Error).message, tenant: ma }, 'không đọc được cấu hình SSO (discovery)');
       return toWeb(reply, deps, '/dang-nhap', { loi: 'sso_loi' });
     }
-    const state = sign({ kind: 'login', next: safeNext(req.query.next) }, deps.config.jwtSecret, 600);
+    const state = sign({ kind: 'login', next: safeNext(req.query.next), tnt: ma }, deps.config.jwtSecret, 600);
     let codeChallenge: string | undefined;
-    if (deps.sso.cfg.pkce) {
+    if (sso.cfg.pkce) {
       const p = pkcePair();
       codeChallenge = p.challenge;
       reply.header('Set-Cookie', pkceCookie(deps, p.verifier, 600));
     }
-    return reply.redirect(deps.sso.authorizeUrl({ state, redirectUri: callbackUrl(deps), scope: deps.sso.cfg.loginScope, codeChallenge }));
+    const loginHint = typeof req.query.login_hint === 'string' ? req.query.login_hint.slice(0, 200) : undefined;
+    return reply.redirect(sso.authorizeUrl({ state, redirectUri: callbackUrl(deps), scope: sso.cfg.loginScope, codeChallenge, loginHint }));
   });
 
   app.get<{ Querystring: { state?: string; code?: string; error?: string } }>('/sso/callback', async (req, reply) => {
@@ -61,7 +75,11 @@ export const ssoRoutes = (deps: ApiDeps): FastifyPluginAsync => async (app) => {
     if (st.kind === 'login') {
       const verifier = readCookie(req.headers.cookie, PKCE_COOKIE);
       reply.header('Set-Cookie', pkceCookie(deps, '', 0));          // dùng một lần
-      return handleLogin(deps, req, reply, st, req.query.code, verifier);
+      const ma = isTenantCode(st.tnt) ? st.tnt : DEFAULT_TENANT;
+      const row = await tenantByCode(deps, ma);
+      const sso = row ? await ssoFor(deps, row) : null;
+      if (!sso) return toWeb(reply, deps, '/dang-nhap', { loi: 'sso_loi' });
+      return runInTenant(ma, () => handleLogin(deps, sso, req, reply, st, req.query.code, verifier));
     }
     return handleGrant(deps, req, reply, st, req.query.code);
   });
@@ -75,20 +93,20 @@ function toWeb(reply: FastifyReply, deps: ApiDeps, path: string, q: Record<strin
   return reply.redirect(u.toString());
 }
 
-async function handleLogin(deps: ApiDeps, req: Parameters<typeof audit>[1], reply: FastifyReply, st: LoginState, code?: string, verifier?: string) {
+async function handleLogin(deps: ApiDeps, sso: SsoClient, req: Parameters<typeof audit>[1], reply: FastifyReply, st: LoginState, code?: string, verifier?: string) {
   if (!code) return toWeb(reply, deps, '/dang-nhap', { loi: 'sso_tu_choi' });
   let who: SsoUser;
   try {
-    const tokens = await deps.sso.exchangeCode(code, callbackUrl(deps), verifier);
+    const tokens = await sso.exchangeCode(code, callbackUrl(deps), verifier);
     // Tình trạng từng nguồn (access token / id_token / userinfo): dùng được, có những TRƯỜNG nào, hay bị loại vì sao.
-    who = await deps.sso.userinfo(tokens.access_token, tokens.id_token, (d) => req.log?.info({ nguon: d }, 'SSO: nguồn thông tin người dùng'));
+    who = await sso.userinfo(tokens.access_token, tokens.id_token, (d) => req.log?.info({ nguon: d }, 'SSO: nguồn thông tin người dùng'));
     // Chỉ ghi TÊN các claim (không giá trị) — để biết SSO có trả email / tên đăng nhập không khi ghép tài khoản lỗi.
     req.log?.info({ claims: Object.keys(who).sort() }, 'SSO trả thông tin người dùng');
   } catch (e) {
     req.log?.warn({ err: (e as Error).message, detail: e instanceof Problem ? e.detail : undefined }, 'đăng nhập SSO thất bại');
     return toWeb(reply, deps, '/dang-nhap', { loi: 'sso_loi' });
   }
-  const found = await findOrLinkUser(deps, who);
+  const found = await findOrLinkUser(deps, sso, who);
   if ('loi' in found) return toWeb(reply, deps, '/dang-nhap', { loi: found.loi });
   const user = found;
   const token = issuePortalToken(user.id, deps.config.jwtSecret);
@@ -134,8 +152,8 @@ async function handleGrant(deps: ApiDeps, req: Parameters<typeof audit>[1], repl
  *      rồi tên đăng nhập), liên kết sub vào tài khoản đó; tài khoản đã liên kết với định danh SSO KHÁC ⇒ từ chối;
  *   3. vẫn chưa có ⇒ tự tạo nếu SSO_AUTO_CREATE=true (người dùng thường), không thì báo chưa có tài khoản.
  */
-async function findOrLinkUser(deps: ApiDeps, who: SsoUser): Promise<{ id: number } | { loi: string }> {
-  const cfg = deps.sso.cfg;
+async function findOrLinkUser(deps: ApiDeps, sso: SsoClient, who: SsoUser): Promise<{ id: number } | { loi: string }> {
+  const cfg = sso.cfg;
   // Email SSO trả; không có ⇒ <tên đăng nhập>@SSO_EMAIL_DOMAIN (nếu đặt). Tên đăng nhập: preferred_username hoặc sub (WSO2).
   const email = emailOf(who, cfg);
   const username = usernameOf(who, cfg);

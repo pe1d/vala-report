@@ -10,6 +10,8 @@ export interface ExtensionInfo {
   desktop?: boolean; device?: string;
   /** Vala Desktop chạy được thao tác của gói kịch bản (trang Kịch bản Desktop → Chạy thử). */
   scripts?: boolean;
+  /** Vala Desktop đã đăng nhập (màn hình đăng nhập của app) ⇒ cấp sẵn phiên cổng, tab Báo cáo không phải đăng nhập lại. */
+  portal_token?: string;
 }
 export type ExtensionEvent =
   | { type: 'connect-started'; code: string; status: string; message?: string }
@@ -32,6 +34,7 @@ export function useValaExtension(onEvent: (e: ExtensionEvent) => void) {
       if (d.type === 'ready') setInfo({
         installed: true, logged_in: !!d.logged_in, email: (d.email as string) ?? null, version: d.version as string,
         desktop: d.desktop === true, device: typeof d.device === 'string' ? d.device : undefined, scripts: d.scripts === true,
+        portal_token: typeof d.portal_token === 'string' ? d.portal_token : undefined,
       });
       else if (d.type === 'action-result') return;   // kết quả thao tác: desktopAction() tự nhận
       else handler.current(d as unknown as ExtensionEvent);

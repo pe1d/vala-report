@@ -1,7 +1,7 @@
 # Nhiều đơn vị (multi-tenant) — cách code chạy
 
-Thiết kế: `docs/superpowers/specs/2026-10-08-multi-tenant-login-design.md`. Đợt 1 (nền tảng) xong 08/10/2026; đăng nhập 2
-bước (đợt 2) và trang Quản trị hệ thống → Đơn vị (đợt 3) làm sau.
+Thiết kế: `docs/superpowers/specs/2026-10-08-multi-tenant-login-design.md`. Đợt 1 (nền tảng) và đợt 2 (đăng nhập 2 bước)
+xong 08/10/2026; trang Quản trị hệ thống → Đơn vị (đợt 3) làm sau.
 
 ## Mỗi đơn vị một schema
 
@@ -29,6 +29,26 @@ bước (đợt 2) và trang Quản trị hệ thống → Đơn vị (đợt 3)
 - Danh mục adapter trong bộ nhớ: `SourceRegistries` (mỗi đơn vị một `SourceRegistry`); `loadAllSpecs()` trả adapter
   của đơn vị đang chạy.
 - Đường dẫn vault: `vault://tenant_<mã>/users/<id>/<nguồn>` (của Bkav không đổi).
+
+## Đăng nhập 2 bước
+
+- **Bước 1** `POST /auth/lookup {login: "tk@tênmiền"}` (công khai, 20 lần/phút/IP + 10 lần/phút/chuỗi): tên miền ⇒ đơn vị
+  (`core.tenant_domains`, đơn vị `hoat_dong`); tài khoản = phần trước @, khớp `username` (hoặc `email` đầy đủ) trong schema
+  đơn vị. Trả `{tenant: {ma, ten}, account, methods, fill, selectors}`; lỗi rõ: không có đơn vị / chưa có tài khoản (bỏ
+  qua khi đơn vị bật SSO tự tạo tài khoản).
+- **Bước 2**: `/auth/login` và `/ext/login` nhận `tenant` (hoặc `username` dạng `tk@tênmiền`; tài khoản trơn ⇒ Bkav);
+  SSO `/auth/sso/login?tenant=…&login_hint=…` ⇒ IdP của đơn vị, `state` mang mã đơn vị.
+- **Cách đăng nhập**: Bkav theo `.env` như trước (`LOGIN_SSO`, `SSO_*`); đơn vị khác theo `core.tenants.login_methods`
+  + `core.tenants.sso` (jsonb: các khoá như `.env` viết thường bỏ `SSO_` — `origin`, `issuer`, `client_id`,
+  `authorize_url`, `match_by`, `auto_create`, `email_domain`, `pkce`…; client secret ở vault
+  `vault://core/tenants/<mã>/sso`, khoá `client_secret`). `login_fill` = điền `account` hay `email` ở bước 2;
+  `login_selectors` = `{username, password}` bộ chọn ô trên trang SSO (Desktop tự điền + khoá; mặc định WSO2).
+  Uỷ quyền hệ thống nguồn qua SSO (`grant`) vẫn dùng cấu hình Bkav.
+- **Cổng web** `/dang-nhap`: 2 bước, nhớ tài khoản (`localStorage vala.lastLogin`).
+- **Vala Desktop 0.2.5**: chưa đăng nhập ⇒ màn hình đăng nhập (`login-page.ts`); SSO mở trong view trong thẻ, bắt
+  `/dang-nhap/xong#token=…`. Token cổng ⇒ `/me/extension-devices` ⇒ token thiết bị. Tab Báo cáo lấy phiên qua cầu nối
+  (`portal_token`, app xin `POST /ext/portal-token` — chỉ token `extension_devices.kind = 'desktop'`).
+- **Tiện ích 0.4.5**: ô tài khoản nhận `tên@đơn vị`.
 
 ## Migration
 

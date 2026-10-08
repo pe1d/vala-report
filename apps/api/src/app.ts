@@ -52,7 +52,8 @@ export async function buildApp(deps: ApiDeps, opts: { logger?: boolean } = {}) {
   await app.register(async (pub) => {
     await pub.register(authRoutes(deps));                       // đăng nhập bằng mật khẩu + đổi mật khẩu
     await pub.register(brandingRoutes(deps));                   // tên / logo / màu của đơn vị (trang đăng nhập cần)
-    if (deps.config.loginMethods.includes('sso')) await pub.register(ssoRoutes(deps));
+    // Luôn đăng ký: mỗi đơn vị tự có (hoặc không) SSO — /auth/sso/start báo lỗi rõ cho đơn vị chưa cấu hình.
+    await pub.register(ssoRoutes(deps));
     await pub.register(extensionLoginRoutes(deps));             // tiện ích trình duyệt đăng nhập
   }, { prefix: '/api/v1' });
 

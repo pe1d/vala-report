@@ -28,6 +28,7 @@ import { cachedSources, events, statusOf, type SourceFull } from './sync';
 import { openTarget, pinnedApps, sidebarSections, tabStatus, type TabStatus } from './tabs-model';
 import { pendingUpdate, promptInstall } from './updater';
 import { recordingKey } from './recorder';
+import { closeLoginSso, layoutSso } from './login-page';
 
 const M = messages({
   home: 'Vala', reports: 'Báo cáo', newTab: 'Trang', assistant: 'Trợ lý AI',
@@ -56,7 +57,9 @@ const M = messages({
 /** Độ rộng thanh ứng dụng dọc (mở rộng / thu gọn chỉ biểu tượng) — khớp resources/tabs.html. */
 const SIDEBAR_W = 248;
 const SIDEBAR_MIN_W = 56;
-const sidebarWidth = () => (getSettings().sidebarCollapsed ? SIDEBAR_MIN_W : SIDEBAR_W);
+/** Đã đăng nhập (có token thiết bị). Chưa ⇒ chỉ màn hình đăng nhập, không có thanh ứng dụng. */
+const signedIn = () => !!getSettings().deviceToken;
+const sidebarWidth = () => (!signedIn() ? 0 : getSettings().sidebarCollapsed ? SIDEBAR_MIN_W : SIDEBAR_W);
 /** Header trên cùng (thay thanh tiêu đề của hệ điều hành) và lề quanh khung trang web — khớp resources/tabs.html. */
 const HEADER_H = 44;
 const GAP = 8;
@@ -192,14 +195,26 @@ function raiseChrome(): void {
 function layout(): void {
   if (!win || win.isDestroyed()) return;
   const [width, height] = win.getContentSize();
-  const w = sidebarWidth();
-  const bounds = { x: w, y: HEADER_H, width: Math.max(0, width! - w - GAP), height: Math.max(0, height! - HEADER_H - GAP) };
+  const bounds = contentBounds()!;
   for (const t of tabs.values()) t.view?.setBounds(bounds);
   const r = RADIUS;
   const right = bounds.x + bounds.width - r;
   const bottom = bounds.y + bounds.height - r;
   [[bounds.x, bounds.y], [right, bounds.y], [bounds.x, bottom], [right, bottom]].forEach(([x, y], i) => corners[i]?.setBounds({ x: x!, y: y!, width: r, height: r }));
   if (overlay && overlayOpen) overlay.setBounds({ x: 0, y: 0, width: width!, height: height! });
+  layoutSso();
+}
+
+/** Cửa sổ chính (null nếu chưa tạo / đã đóng). */
+export const browserWindow = (): BrowserWindow | null => (win && !win.isDestroyed() ? win : null);
+
+/** Vị trí khung trang (trang cục bộ / trang web) trong cửa sổ — màn hình đăng nhập đặt view SSO theo đó. */
+export function contentBounds(): { x: number; y: number; width: number; height: number } | null {
+  if (!win || win.isDestroyed()) return null;
+  const [width, height] = win.getContentSize();
+  // Không có thanh ứng dụng (màn hình đăng nhập) ⇒ lề trái bằng lề phải.
+  const w = sidebarWidth() || GAP;
+  return { x: w, y: HEADER_H, width: Math.max(0, width! - w - GAP), height: Math.max(0, height! - HEADER_H - GAP) };
 }
 
 // ---- tab trang cục bộ: Cài đặt (như chrome://settings), Bản ghi thao tác — preload riêng, không điều hướng đi đâu ----
@@ -207,11 +222,14 @@ const SETTINGS = 'settings';
 const RECORDING = 'recording';
 /** Trợ lý AI — mục cố định đầu thanh dọc, mặc định khi mở app (chat-page.ts). */
 export const CHAT = 'chat';
+/** Màn hình đăng nhập (login-page.ts) — trang duy nhất khi chưa đăng nhập. */
+export const LOGIN = 'login';
 let settingsSection = '';
 const LOCAL: Record<string, { preload: string; html: string }> = {
   [SETTINGS]: { preload: 'settings-preload.js', html: 'settings.html' },
   [RECORDING]: { preload: 'recording-preload.js', html: 'recording.html' },
   [CHAT]: { preload: 'chat-preload.js', html: 'chat.html' },
+  [LOGIN]: { preload: 'login-preload.js', html: 'login.html' },
 };
 
 function createLocalView(t: Tab): WebContentsView {
@@ -259,6 +277,18 @@ export function openRecordingTab(): void {
 
 export const isRecordingContents = (wc: WebContents): boolean => tabs.get(RECORDING)?.view?.webContents === wc;
 export const isChatContents = (wc: WebContents): boolean => tabs.get(CHAT)?.view?.webContents === wc;
+export const isLoginContents = (wc: WebContents): boolean => tabs.get(LOGIN)?.view?.webContents === wc;
+
+/** Báo màn hình đăng nhập (nếu đang mở) vẽ lại. */
+export function pushLogin(): void {
+  const wc = tabs.get(LOGIN)?.view?.webContents;
+  if (wc && !wc.isDestroyed()) wc.send('login:changed');
+}
+
+/** Mở màn hình đăng nhập (chưa đăng nhập: nút "Đăng nhập", khay, đăng xuất). Đã đăng nhập ⇒ trang mặc định. */
+export function showLogin(): void {
+  showTab(signedIn() ? CHAT : LOGIN);
+}
 
 /** Báo trang Trợ lý AI (nếu đang mở) vẽ lại. */
 export function pushChat(): void {
@@ -369,7 +399,7 @@ function reveal(w: BrowserWindow, force = false) {
 
 /** Mở cửa sổ ở mục đang xem; chưa có ⇒ Trợ lý AI (mặc định khi mở app, bấm biểu tượng khay, mở lần hai). */
 export function showDefault(): void {
-  showTab(active ?? CHAT);
+  showTab(signedIn() ? active ?? CHAT : LOGIN);
 }
 
 /** Bấm thông báo: hiện cửa sổ ở tab đang chọn (chưa có tab nào ⇒ tab Vala), kể cả khi ứng dụng đang ẩn ở khay. */
@@ -382,6 +412,10 @@ export function revealWindow(): void {
 export function showTab(key: string, opts: { reloadTo?: string } = {}): boolean {
   const w = ensureWindow();
   syncPinned();
+  // Chưa đăng nhập: chỉ màn hình đăng nhập (và Cài đặt). Đã đăng nhập: không còn màn hình đăng nhập.
+  if (!signedIn() && key !== SETTINGS) key = LOGIN;
+  else if (signedIn() && key === LOGIN) key = CHAT;
+  if (key === LOGIN && !tabs.has(LOGIN)) tabs.set(LOGIN, { key: LOGIN, pinned: false, url: '', view: null });
   const t = tabs.get(key);
   if (!t) return false;
   const prev = active ? tabs.get(active) : undefined;
@@ -533,7 +567,16 @@ export function setPinned(key: string, on: boolean): void {
 export function refreshBrowser(): void {
   if (!win || win.isDestroyed()) return;
   syncPinned();
+  // Vừa đăng nhập ⇒ bỏ màn hình đăng nhập, vào Trợ lý AI; vừa đăng xuất ⇒ về màn hình đăng nhập.
+  if (signedIn() && tabs.has(LOGIN)) {
+    closeLoginSso();
+    const wasActive = active === LOGIN;
+    destroyTab(LOGIN);
+    if (wasActive || !active) { layout(); showTab(CHAT); return; }
+  }
+  if (!signedIn() && active !== LOGIN && active !== SETTINGS) { layout(); showTab(LOGIN); return; }
   if (active && !tabs.has(active)) { showTab(CHAT); return; }
+  layout();
   pushState();
 }
 
@@ -569,7 +612,7 @@ function pushState(): void {
   const up = pendingUpdate();
   const name = s.user?.ho_ten || s.user?.email || '';
   win.webContents.send('tabs:state', {
-    lang: s.lang, t: plain, active, dev: IS_DEV, collapsed: !!s.sidebarCollapsed,
+    lang: s.lang, t: plain, active, dev: IS_DEV, collapsed: !!s.sidebarCollapsed, signedIn: signedIn(),
     chat: itemOf(CHAT, t.assistant, t, false),
     apps: sec.apps.map((k) => itemOf(k, labels.get(k), t, false)),
     open: sec.open.filter((k) => tabs.has(k)).map((k) => itemOf(k, labels.get(k), t, !tabs.get(k)!.pinned)),
@@ -586,6 +629,8 @@ function shortcut(input: Input): boolean {
   if (input.type !== 'keyDown') return false;
   const ctrl = input.control || input.meta;
   const key = input.key;
+  // Chưa đăng nhập: chỉ có màn hình đăng nhập ⇒ bỏ phím chuyển tab / tìm kiếm (Ctrl+, vẫn mở Cài đặt).
+  if (!signedIn() && !(ctrl && key === ',')) return false;
   const keys = visibleKeys();
   if (ctrl && key.toLowerCase() === 'w') { if (active) closeTab(active); return true; }
   if (ctrl && key === ',') { hooks.profileCommand('settings'); return true; }
@@ -610,7 +655,7 @@ function shortcut(input: Input): boolean {
 /** IPC của thanh dọc — chỉ nhận từ chính trang thanh dọc của cửa sổ này. */
 function registerIpc(): void {
   const own = (e: IpcMainInvokeEvent) => { if (!win || e.sender !== win.webContents) throw new Error('forbidden'); };
-  ipcMain.handle('tabs:ready', (e) => { own(e); if (!active) showTab(CHAT); else pushState(); });
+  ipcMain.handle('tabs:ready', (e) => { own(e); if (!active) showDefault(); else pushState(); });
   ipcMain.handle('tabs:activate', (e, key: unknown) => { own(e); if (typeof key === 'string') activate(key); });
   ipcMain.handle('tabs:close', (e, key: unknown) => { own(e); if (typeof key === 'string') closeTab(key); });
   ipcMain.handle('tabs:nav', (e, cmd: unknown) => {

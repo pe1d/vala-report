@@ -28,6 +28,8 @@ interface TabsState {
   nav: { back: boolean; forward: boolean; reload: boolean };
   /** Cửa sổ đang phóng to (nút □ thành "Thu về"). */
   maximized: boolean;
+  /** Chưa đăng nhập ⇒ chỉ màn hình đăng nhập: ẩn thanh ứng dụng, ô tìm kiếm, nút điều hướng. */
+  signedIn: boolean;
   /** Bản chạy từ mã nguồn ("Vala Desktop (dev)") ⇒ hiện nhãn DEV. */
   dev: boolean;
   /** Người đang đăng nhập (null ⇒ nút "Đăng nhập"). */
@@ -218,6 +220,11 @@ interface ValaTabsApi {
       setIf(b, 'title', tip);
       setIf(b, 'aria-label', tip);
     }
+    // Chưa đăng nhập: chỉ còn logo + nút cửa sổ trên header, không có thanh ứng dụng.
+    for (const id of ['bar', 'collapse', 'back', 'forward', 'reload', 'nav-sep']) display($(id), s.signedIn);
+    // Ô tìm kiếm giữ chỗ (cột giữa của lưới header) để nút cửa sổ vẫn ở mép phải.
+    $('search').style.visibility = s.signedIn ? '' : 'hidden';
+    $('card').classList.toggle('ml-2', !s.signedIn);
     // Header: ô tìm kiếm, nút cửa sổ, nhãn DEV.
     setText($('search-text'), s.t.search);
     setIf($('search'), 'title', `${s.t.search} (Ctrl+K)`);

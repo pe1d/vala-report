@@ -31,6 +31,18 @@ export interface Settings {
   sidebarCollapsed?: boolean;
   /** Ứng dụng ghim trên thanh dọc (khoá tab: home, portal, src:<mã>); null/không có ⇒ ghim tất cả (tabs-model pinnedApps). */
   pinnedApps?: string[] | null;
+  /** Lần đăng nhập gần nhất (bước 1 đã tra xong) ⇒ màn hình đăng nhập mở thẳng bước 2 (login-page.ts). */
+  lastLogin?: LoginTarget | null;
+}
+
+/** Kết quả bước 1 của đăng nhập (POST /auth/lookup). */
+export interface LoginTarget {
+  login: string;
+  tenant: { ma: string; ten: string };
+  account: string;
+  methods: Array<'password' | 'sso'>;
+  fill: string;
+  selectors: { username?: string; password?: string } | null;
 }
 
 /**

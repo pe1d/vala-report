@@ -10,9 +10,10 @@ import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
 import { L, Problem, canAutoRenew, langOf, localizeStored, saveSourceAccount, vaultRef, withTenant, type AuthMethod, type SignedFields, currentSchema, currentTenant, DEFAULT_TENANT } from '@vala/core';
 import { loadAllSpecs } from '@vala/core/adapter';
 import { audit } from '../audit.js';
-import type { AuthUser } from '../auth.js';
 import type { ApiDeps } from '../deps.js';
-import { checkPortalPassword, loginBodySchema } from './auth.js';
+import { checkPortalPassword, emailOf, loginBodySchema } from './auth.js';
+import { issuePortalToken, PORTAL_TOKEN_TTL, type AuthUser } from '../auth.js';
+import { inLoginTenant } from '../login-target.js';
 import { autoRefresh } from './dataSchedules.js';
 import { consentsFor, giveConsent } from '../consent.js';
 
@@ -36,9 +37,9 @@ async function issueDeviceToken(deps: ApiDeps, req: FastifyRequest, userId: numb
   const token = `vxt_${tnt === DEFAULT_TENANT ? '' : `${tnt}.`}${randomBytes(32).toString('base64url')}`;
   const user = await withTenant(deps.writer, async (t) => {
     const d = await t.one<{ id: number }>(
-      `INSERT INTO extension_devices (app_user_id, token_hash, ten, expires_at)
-       VALUES ($1, $2, $3, now() + make_interval(days => $4)) RETURNING id`,
-      [userId, hashToken(token), deviceName?.trim() || 'Trình duyệt', DEVICE_TTL_DAYS]);
+      `INSERT INTO extension_devices (app_user_id, token_hash, ten, expires_at, kind)
+       VALUES ($1, $2, $3, now() + make_interval(days => $4), $5) RETURNING id`,
+      [userId, hashToken(token), deviceName?.trim() || 'Trình duyệt', DEVICE_TTL_DAYS, via]);
     await audit(t, req, 'login', { type: 'extension_device', id: String(d.id) }, { via }, userId);
     return t.one<{ ho_ten: string; email: string }>('SELECT ho_ten, email FROM app_users WHERE id = $1', [userId]);
   });
@@ -47,16 +48,17 @@ async function issueDeviceToken(deps: ApiDeps, req: FastifyRequest, userId: numb
 
 /** POST /ext/login — tiện ích đăng nhập bằng tài khoản cổng, nhận token thiết bị. */
 export const extensionLoginRoutes = (deps: ApiDeps): FastifyPluginAsync => async (app) => {
-  app.post<{ Body: { username: string; password: string; device_name?: string } }>('/ext/login', {
+  app.post<{ Body: { username: string; password: string; device_name?: string; tenant?: string } }>('/ext/login', {
     schema: { body: { ...loginBodySchema, properties: { ...loginBodySchema.properties, device_name: { type: 'string', maxLength: 100 } } } },
-  }, async (req) => {
-    const row = await checkPortalPassword(deps, req.body.username, req.body.password);
+  }, async (req) => inLoginTenant(deps, req.body.username, req.body.tenant, async (account, t) => {
+    // Tài khoản dạng tk@tênmiền ⇒ đúng đơn vị; tài khoản trơn (tiện ích cũ) ⇒ Bkav.
+    const row = await checkPortalPassword(deps, account, req.body.password, emailOf(account, req.body.username, t.domains));
     if (row.must_change_password) {
       throw new Problem('password_change_required', L('Cần đổi mật khẩu', 'Password change required'),
         L('Đăng nhập cổng Vala một lần để đổi mật khẩu tạm, rồi đăng nhập lại tiện ích', 'Sign in to the Vala portal once to change your temporary password, then sign in to the extension again'));
     }
     return issueDeviceToken(deps, req, row.id, req.body.device_name, 'extension');
-  });
+  }));
 };
 
 /** Xác thực token thiết bị cho /ext/*. */
@@ -86,6 +88,18 @@ export const extensionRoutes = (deps: ApiDeps): FastifyPluginAsync => async (app
   app.addHook('onRequest', authenticateDevice(deps));
 
   app.get('/ext/me', async (req) => ({ ho_ten: req.user.ho_ten, email: req.user.email }));
+
+  /**
+   * Vala Desktop đăng nhập ở màn hình đăng nhập của ứng dụng ⇒ tab Báo cáo (cổng) lấy phiên từ đây qua cầu nối, người
+   * dùng không đăng nhập lần nữa. Chỉ token của Desktop (không phải tiện ích trình duyệt) đổi được.
+   */
+  app.post('/ext/portal-token', async (req) => {
+    const kind = await withTenant(deps.writer, (t) => t.oneOrNone<{ kind: string }>(
+      'SELECT kind FROM extension_devices WHERE id = $1', [req.extDeviceId]));
+    if (kind?.kind !== 'desktop') throw new Problem('forbidden', L('Chỉ Vala Desktop dùng được', 'Only Vala Desktop can use this'));
+    if (req.user.must_change_password) throw new Problem('password_change_required', L('Cần đổi mật khẩu', 'Password change required'));
+    return { access_token: issuePortalToken(req.user.id, deps.config.jwtSecret), expires_in: PORTAL_TOKEN_TTL };
+  });
 
   /**
    * Người dùng vừa làm việc trên một hệ thống nguồn (vd xử lý văn bản trên eGov) rồi rời tab ⇒ tiện ích báo về để lấy

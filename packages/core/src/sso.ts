@@ -58,40 +58,60 @@ const placeholder = (v: string) => !v || v === 'chua-dang-ky' || v === 'chua-cau
  * được (lấy dữ liệu theo lịch không phụ thuộc SSO); thiếu gì ⇒ ready=false + problem, API tắt nút SSO và ghi cảnh báo.
  */
 export function ssoConfigFromEnv(): SsoConfig {
+  return ssoConfigFrom(process.env);
+}
+
+/**
+ * Cấu hình SSO của một đơn vị khác Bkav (core.tenants.sso, multi-tenant): cùng các khoá như .env nhưng viết thường, bỏ
+ * tiền tố SSO_ (origin, issuer, client_id, authorize_url, …); client secret lấy từ vault, không nằm trong CSDL.
+ */
+export function ssoConfigFromJson(j: Record<string, unknown>, clientSecret: string | null): SsoConfig {
+  const src: Record<string, string | undefined> = {};
+  for (const [k, v] of Object.entries(j)) {
+    if (v === null || v === undefined) continue;
+    src[`SSO_${k.toUpperCase()}`] = Array.isArray(v) ? v.join(',') : String(v);
+  }
+  delete src.SSO_CLIENT_SECRET;
+  if (clientSecret) src.SSO_CLIENT_SECRET = clientSecret;
+  return ssoConfigFrom(src);
+}
+
+function ssoConfigFrom(env: Record<string, string | undefined>): SsoConfig {
+  const envBool = (name: string) => { const v = env[name]; return v === 'true' || v === '1'; };
   const problems: string[] = [];
-  let issuer = (process.env.SSO_ISSUER ?? '').trim().replace(/\/$/, '') || undefined;
+  let issuer = (env.SSO_ISSUER ?? '').trim().replace(/\/$/, '') || undefined;
   let issuerOrigin = '';
   if (issuer) {
     try { issuerOrigin = new URL(issuer).origin; } catch { problems.push(`SSO_ISSUER không phải địa chỉ hợp lệ: "${issuer}"`); issuer = undefined; }
   }
-  let raw = (process.env.SSO_ORIGIN ?? '').trim() || issuerOrigin;
+  let raw = (env.SSO_ORIGIN ?? '').trim() || issuerOrigin;
   if (raw) { try { new URL(raw); } catch { problems.push(`SSO_ORIGIN không phải địa chỉ hợp lệ: "${raw}"`); raw = ''; } }
   if (!raw) problems.push('chưa đặt SSO_ISSUER hoặc SSO_ORIGIN (địa chỉ SSO của đơn vị)');
-  const clientId = (process.env.SSO_CLIENT_ID ?? '').trim();
-  const clientSecret = (process.env.SSO_CLIENT_SECRET ?? '').trim();
+  const clientId = (env.SSO_CLIENT_ID ?? '').trim();
+  const clientSecret = (env.SSO_CLIENT_SECRET ?? '').trim();
   if (placeholder(clientId)) problems.push('chưa có SSO_CLIENT_ID (đội quản trị SSO cấp)');
   if (placeholder(clientSecret)) problems.push('chưa có SSO_CLIENT_SECRET (đội quản trị SSO cấp)');
   const pinned = ([['SSO_AUTHORIZE_URL', 'authorizeUrl'], ['SSO_TOKEN_URL', 'tokenUrl'], ['SSO_USERINFO_URL', 'userinfoUrl'], ['SSO_REVOKE_URL', 'revokeUrl']] as const)
-    .filter(([k]) => !!process.env[k]).map(([, f]) => f);
-  const matchBy = (process.env.SSO_MATCH_BY ?? 'email,username').split(',').map((x) => x.trim())
+    .filter(([k]) => !!env[k]).map(([, f]) => f);
+  const matchBy = (env.SSO_MATCH_BY ?? 'email,username').split(',').map((x) => x.trim())
     .filter((x): x is 'email' | 'username' => x === 'email' || x === 'username');
   const origin = (raw || SSO_NOT_CONFIGURED).replace(/\/$/, '');
   return {
     origin,
     // Đường dẫn chuẩn của WSO2 Identity Server (vd Bkav SSO iam.bkav.com).
-    authorizeUrl: process.env.SSO_AUTHORIZE_URL ?? `${origin}/oauth2/authorize`,
-    tokenUrl: process.env.SSO_TOKEN_URL ?? `${origin}/oauth2/token`,
-    userinfoUrl: process.env.SSO_USERINFO_URL ?? `${origin}/oauth2/userinfo`,
-    revokeUrl: process.env.SSO_REVOKE_URL ?? `${origin}/oauth2/revoke`,
+    authorizeUrl: env.SSO_AUTHORIZE_URL ?? `${origin}/oauth2/authorize`,
+    tokenUrl: env.SSO_TOKEN_URL ?? `${origin}/oauth2/token`,
+    userinfoUrl: env.SSO_USERINFO_URL ?? `${origin}/oauth2/userinfo`,
+    revokeUrl: env.SSO_REVOKE_URL ?? `${origin}/oauth2/revoke`,
     clientId: clientId || 'chua-cau-hinh',
     clientSecret: clientSecret || 'chua-cau-hinh',
-    loginScope: process.env.SSO_LOGIN_SCOPE ?? 'openid profile email',
-    grantScope: process.env.SSO_GRANT_SCOPE ?? 'openid offline_access',
+    loginScope: env.SSO_LOGIN_SCOPE ?? 'openid profile email',
+    grantScope: env.SSO_GRANT_SCOPE ?? 'openid offline_access',
     issuer, pinned, matchBy,
-    pkce: process.env.SSO_PKCE !== 'false',
-    usernameClaim: process.env.SSO_USERNAME_CLAIM ?? 'preferred_username',
+    pkce: env.SSO_PKCE !== 'false',
+    usernameClaim: env.SSO_USERNAME_CLAIM ?? 'preferred_username',
     autoCreate: envBool('SSO_AUTO_CREATE'),
-    emailDomain: (process.env.SSO_EMAIL_DOMAIN ?? '').trim().replace(/^@/, '').toLowerCase() || undefined,
+    emailDomain: (env.SSO_EMAIL_DOMAIN ?? '').trim().replace(/^@/, '').toLowerCase() || undefined,
     ready: problems.length === 0,
     ...(problems.length ? { problem: problems.join('; ') } : {}),
   };
@@ -189,7 +209,7 @@ export class SsoClient {
     return this.discovered;
   }
 
-  authorizeUrl(o: { state: string; redirectUri: string; scope: string; prompt?: 'login' | 'consent'; codeChallenge?: string }): string {
+  authorizeUrl(o: { state: string; redirectUri: string; scope: string; prompt?: 'login' | 'consent'; codeChallenge?: string; loginHint?: string }): string {
     const u = new URL(this.cfg.authorizeUrl);
     u.searchParams.set('response_type', 'code');
     u.searchParams.set('client_id', this.cfg.clientId);
@@ -197,6 +217,8 @@ export class SsoClient {
     u.searchParams.set('scope', o.scope);
     u.searchParams.set('state', o.state);
     if (o.prompt) u.searchParams.set('prompt', o.prompt);
+    // Tài khoản người dùng đã nhập ở bước 1 (đăng nhập 2 bước) — IdP hỗ trợ thì điền sẵn.
+    if (o.loginHint) u.searchParams.set('login_hint', o.loginHint);
     if (o.codeChallenge) {
       u.searchParams.set('code_challenge', o.codeChallenge);
       u.searchParams.set('code_challenge_method', 'S256');

@@ -60,7 +60,7 @@ const M = messages({
   tipPost: '. Lần sau phiên hết hạn, tiện ích sẽ báo — bấm vào thông báo là trình duyệt tự điền, bạn chỉ cần bấm Đăng nhập.',
   signInTitle: 'Đăng nhập tài khoản Vala',
   server: 'Máy chủ Vala', serverHint: 'Địa chỉ cổng báo cáo của đơn vị, ví dụ https://bao-cao.ten-don-vi.vn',
-  username: 'Tên đăng nhập', password: 'Mật khẩu', signingIn: 'Đang đăng nhập…', signOut: 'Đăng xuất',
+  username: 'Tài khoản (tên@đơn vị)', usernamePh: 'vd nguyenvana@bkav.com', password: 'Mật khẩu', signingIn: 'Đang đăng nhập…', signOut: 'Đăng xuất',
   sources: 'Hệ thống nguồn', allowAll: (n: number) => `Cho phép đọc phiên (${n})`,
   aboutTitle: 'Tiện ích làm gì',
   about1Pre: 'Bạn đăng nhập các hệ thống nguồn (danh sách ở trên, do quản trị cấu hình) như mọi ngày. Tiện ích đọc ',
@@ -113,7 +113,7 @@ const M = messages({
   tipPost: '. Next time the session expires, the extension will notify you — click the notification and the browser fills in your details; just click Sign in.',
   signInTitle: 'Sign in to your Vala account',
   server: 'Vala server', serverHint: 'Your organization\'s reporting portal address, e.g. https://reports.your-org.example',
-  username: 'Username', password: 'Password', signingIn: 'Signing in…', signOut: 'Sign out',
+  username: 'Account (name@organization)', usernamePh: 'e.g. nguyenvana@bkav.com', password: 'Password', signingIn: 'Signing in…', signOut: 'Sign out',
   sources: 'Source systems', allowAll: (n: number) => `Allow reading sessions (${n})`,
   aboutTitle: 'What the extension does',
   about1Pre: 'You sign in to your source systems (listed above, configured by your administrator) as usual. The extension reads ',
@@ -457,7 +457,7 @@ export function Options() {
           <Field label={t.server} hint={t.serverHint}>
             <Input value={server} onChange={(e) => setServer(e.target.value)} placeholder="https://…" required />
           </Field>
-          <Field label={t.username}><Input autoComplete="username" value={username} onChange={(e) => setUsername(e.target.value)} required /></Field>
+          <Field label={t.username}><Input autoComplete="username" placeholder={t.usernamePh} value={username} onChange={(e) => setUsername(e.target.value)} required /></Field>
           <Field label={t.password}><Input type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required /></Field>
           <Button type="submit" variant="primary" disabled={busy} className="justify-self-start">{busy ? t.signingIn : t.signIn}</Button>
         </form>

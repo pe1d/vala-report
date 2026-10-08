@@ -1,0 +1,46 @@
+/** Chữ hiển thị của màn hình đăng nhập (login-page.ts). Bản tiếng Anh phải đủ khoá như tiếng Việt. */
+const vi = {
+  title: 'Đăng nhập', subtitle: 'Đăng nhập để dùng Vala Desktop',
+  account: 'Tài khoản', accountPh: 'tên@đơn vị, vd nguyenvana@bkav.com', accountHint: 'Phần sau @ cho biết đơn vị của bạn.',
+  next: 'Tiếp tục', checking: 'Đang kiểm tra…', changeAccount: 'Đổi tài khoản',
+  password: 'Mật khẩu', signIn: 'Đăng nhập', signingIn: 'Đang đăng nhập…',
+  sso: 'Đăng nhập bằng SSO của đơn vị', orSso: 'Hoặc đăng nhập bằng SSO của đơn vị', ssoTitle: 'Đăng nhập SSO', back: 'Quay lại',
+  ssoOnly: 'Đơn vị của bạn đăng nhập qua SSO.',
+  noMethod: 'Đơn vị này chưa bật cách đăng nhập nào. Liên hệ quản trị.',
+  changeTitle: 'Đổi mật khẩu tạm', changeHint: 'Bạn đang dùng mật khẩu tạm — đặt mật khẩu mới để tiếp tục.',
+  newPassword: 'Mật khẩu mới', confirmPassword: 'Nhập lại mật khẩu mới', mismatch: 'Hai mật khẩu mới không khớp.',
+  save: 'Lưu và đăng nhập', saving: 'Đang lưu…',
+  finishing: 'Đang hoàn tất đăng nhập…', badCredentials: 'Sai tài khoản hoặc mật khẩu.',
+  ssoFailed: 'Không đăng nhập được qua SSO của đơn vị. Thử lại hoặc dùng mật khẩu.', ssoCancelled: 'Bạn đã huỷ đăng nhập SSO.',
+  server: 'Máy chủ',
+  ssoErrors: {
+    chua_co_tai_khoan: 'Tài khoản SSO của bạn chưa có trên Vala. Nhờ quản trị của đơn vị tạo tài khoản rồi thử lại.',
+    tai_khoan_da_lien_ket: 'Tài khoản Vala này đã liên kết với một tài khoản SSO khác. Liên hệ quản trị của đơn vị.',
+    tai_khoan_bi_khoa: 'Tài khoản Vala của bạn đang bị vô hiệu hoá. Liên hệ quản trị của đơn vị.',
+    sso_thieu_email: 'SSO của đơn vị không cung cấp email nên không tự tạo được tài khoản. Liên hệ quản trị.',
+    state_khong_hop_le: 'Phiên đăng nhập đã quá hạn — thử lại.',
+  } as Record<string, string>,
+};
+const en: typeof vi = {
+  title: 'Sign in', subtitle: 'Sign in to use Vala Desktop',
+  account: 'Account', accountPh: 'name@organization, e.g. nguyenvana@bkav.com', accountHint: 'The part after @ identifies your organization.',
+  next: 'Continue', checking: 'Checking…', changeAccount: 'Change account',
+  password: 'Password', signIn: 'Sign in', signingIn: 'Signing in…',
+  sso: "Sign in with your organization's SSO", orSso: "Or sign in with your organization's SSO", ssoTitle: 'SSO sign-in', back: 'Back',
+  ssoOnly: 'Your organization signs in with SSO.',
+  noMethod: 'This organization has no sign-in method enabled yet. Contact an administrator.',
+  changeTitle: 'Change temporary password', changeHint: 'You are using a temporary password — set a new one to continue.',
+  newPassword: 'New password', confirmPassword: 'Repeat new password', mismatch: "The new passwords don't match.",
+  save: 'Save and sign in', saving: 'Saving…',
+  finishing: 'Finishing sign-in…', badCredentials: 'Incorrect username or password.',
+  ssoFailed: "Couldn't sign in with your organization's SSO. Try again or use your password.", ssoCancelled: 'You cancelled SSO sign-in.',
+  server: 'Server',
+  ssoErrors: {
+    chua_co_tai_khoan: "Your SSO account doesn't exist in Vala yet. Ask your organization's administrator to create it, then try again.",
+    tai_khoan_da_lien_ket: "This Vala account is already linked to a different SSO account. Contact your organization's administrator.",
+    tai_khoan_bi_khoa: "Your Vala account is disabled. Contact your organization's administrator.",
+    sso_thieu_email: "Your organization's SSO didn't provide an email address, so an account couldn't be created. Contact an administrator.",
+    state_khong_hop_le: 'Your sign-in session expired — try again.',
+  } as Record<string, string>,
+};
+export const strings = { vi, en };

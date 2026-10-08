@@ -10,6 +10,7 @@ import { accountEvents, logoutDevice } from './account';
 import { registerSettingsPage } from './settings-page';
 import { registerRecordingPage } from './recording-page';
 import { registerChatPage } from './chat-page';
+import { registerLoginPage } from './login-page';
 import { clearLocalData } from './local-data';
 import { registerSearch } from './search';
 import { getSettings } from './settings';
@@ -20,7 +21,7 @@ import { portalHasPassword, setPortalUser } from './portal-state';
 import { registerAutofill } from './autofill';
 import { lockCredentials } from './credentials';
 import { installUiProtocol, refreshUi, registerUiScheme } from './ui-cache';
-import { forgetPortalLogin, initBrowser, showDefault, isChatContents, isRecordingContents, pushChat, isSettingsContents, openRecordingTab, openSettingsTab, pushRecording, pushSettings, refreshBrowser, revealWindow } from './browser';
+import { contentBounds, browserWindow, forgetPortalLogin, initBrowser, isLoginContents, pushLogin, showLogin, showDefault, isChatContents, isRecordingContents, pushChat, isSettingsContents, openRecordingTab, openSettingsTab, pushRecording, pushSettings, refreshBrowser, revealWindow } from './browser';
 import { setNotifyReveal } from './notify';
 import { createMenus, refreshMenus, tabContextMenu } from './menu';
 import { refreshHomeFromServer } from './homepage';
@@ -90,17 +91,18 @@ if (!app.requestSingleInstanceLock()) {
     registerBridge();
     registerAutofill();
     registerSettingsPage({
-      signIn: showPortal, signOut, openPortal: showPortal,
+      signIn: showLogin, signOut, openPortal: showPortal,
       onHomeChanged: () => { void refreshHome().then(() => showMain()); },
       isSettings: (e) => isSettingsContents(e.sender), push: pushSettings,
     });
     registerRecordingPage({ isRecording: (e) => isRecordingContents(e.sender), push: pushRecording, open: openRecordingTab });
     registerChatPage({ isChat: (e) => isChatContents(e.sender), push: pushChat });
+    registerLoginPage({ isLogin: (e) => isLoginContents(e.sender), push: pushLogin, win: browserWindow, pageBounds: contentBounds });
     registerSearch();
     watchCookies();
-    createMenus({ showMain, showDefault, showPortal, openSettings, signOut: () => void signOut(), changePassword: changePortalPassword });
+    createMenus({ showMain, showDefault, showPortal, signIn: showLogin, openSettings, signOut: () => void signOut(), changePassword: changePortalPassword });
     initBrowser({
-      onLeave: onTabLeave, signIn: showPortal, tabMenu: tabContextMenu, portalHasPassword,
+      onLeave: onTabLeave, signIn: showLogin, tabMenu: tabContextMenu, portalHasPassword,
       // Menu hồ sơ ở cuối thanh dọc (khung nổi).
       profileCommand: (cmd) => {
         if (cmd === 'settings') openSettings();
@@ -119,7 +121,7 @@ if (!app.requestSingleInstanceLock()) {
 
     void refreshHome();
     void refreshUi();
-    // Không bật cửa sổ Cài đặt: chưa đăng nhập thì thanh dọc có nút "Đăng nhập" (sang tab Báo cáo đăng nhập cổng).
+    // Chưa đăng nhập ⇒ cửa sổ mở màn hình đăng nhập (2 bước, nhiều đơn vị — login-page.ts).
     if (getSettings().deviceToken) startSync();
     if (!HIDDEN) showDefault();
   });

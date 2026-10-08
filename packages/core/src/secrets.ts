@@ -25,8 +25,11 @@ export function vaultRef(tenant: string, userId: number, source: string): string
 
 export function refToPath(ref: string): string {
   const m = /^vault:\/\/([a-z0-9_]+)\/users\/(\d+)\/([a-z0-9_]+)$/.exec(ref);
-  if (!m) throw new Error('vault_ref không hợp lệ');
-  return `${m[1]}/users/${m[2]}/${m[3]}`;
+  if (m) return `${m[1]}/users/${m[2]}/${m[3]}`;
+  // Bí mật của một đơn vị (nhiều đơn vị): client secret SSO — vault://core/tenants/<mã>/sso.
+  const t = /^vault:\/\/core\/tenants\/([a-z][a-z0-9]{1,19})\/(sso)$/.exec(ref);
+  if (t) return `core/tenants/${t[1]}/${t[2]}`;
+  throw new Error('vault_ref không hợp lệ');
 }
 
 export class MemorySecretStore implements SecretStore {

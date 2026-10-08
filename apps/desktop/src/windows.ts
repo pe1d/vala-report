@@ -12,7 +12,7 @@
 import { join } from 'node:path';
 import { app, ipcMain, session, shell, type IpcMainInvokeEvent, type WebContents } from 'electron';
 import { notify } from './notify';
-import { adoptDeviceToken, DEVICE_TOKEN, deviceName } from './account';
+import { adoptDeviceToken, DEVICE_TOKEN, deviceName, portalToken } from './account';
 import { api } from './api';
 import { EventEmitter } from 'node:events';
 import { tryAutoRelogin } from './autofill';
@@ -229,10 +229,12 @@ const plainArgs = (a: unknown): Record<string, unknown> | null => {
 
 /** Cầu nối IPC cho portal-preload.ts. */
 export function registerBridge(): void {
-  ipcMain.handle('vala:bridge-hello', (e) => {
+  ipcMain.handle('vala:bridge-hello', async (e) => {
     if (!fromPortal(e)) return null;
     const s = getSettings();
     return {
+      // Đã đăng nhập ở màn hình đăng nhập của ứng dụng ⇒ cấp sẵn phiên cổng: tab Báo cáo không phải đăng nhập lần nữa.
+      portal_token: (await portalToken()) ?? undefined,
       installed: true, version: app.getVersion(), logged_in: !!s.deviceToken, email: s.user?.email ?? null,
       // Cổng thấy đây là Vala Desktop ⇒ tự cấp token thiết bị cho người đang đăng nhập cổng (apps/web DesktopLink).
       desktop: true, device: deviceName(),
