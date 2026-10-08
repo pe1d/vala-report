@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cleanChiTiet, cleanDanhSach, cleanThongTin, declaresVanBan, formValues, isVbAction, vanBanKeys, type ThaoTac } from '../src/vanban-model';
+import { cleanChiTiet, cleanDanhSach, cleanThongTin, cookieForHosts, declaresVanBan, formValues, isVbAction, vanBanHosts, vanBanKeys, type ThaoTac } from '../src/vanban-model';
 
 describe('ứng dụng nào dùng giao diện Văn bản', () => {
   it('gói khai báo vb_danh_sach + địa chỉ ứng dụng khớp mẫu của gói', () => {
@@ -72,6 +72,21 @@ describe('form có tệp', () => {
     expect(formValues(f, { tep: [{ ten: 'a.pdf', loai: 'application/pdf', base64: 'QUJD' }, { ten: 'b', base64: 'QQ==' }] }))
       .toEqual({ ok: true, values: { tep: [{ ten: 'a.pdf', loai: 'application/pdf', base64: 'QUJD' }] } });
     expect(formValues(f, { tep: [{ ten: 'x', base64: 'không phải base64!' }] })).toEqual({ ok: false, missing: 'Tệp' });
+  });
+});
+
+describe('giữ phiên đăng nhập của ứng dụng văn bản', () => {
+  const goi = [{ matches: ['https://quanlyvanban.hanoi.gov.vn/*'], script: "vala.action('vb_danh_sach', f)" }];
+  it('chỉ máy của ứng dụng có phiên dịch văn bản', () => {
+    expect(vanBanHosts([{ key: 'web:hn', url: 'https://quanlyvanban.hanoi.gov.vn/' }, { key: 'web:vala', url: 'https://vala.bkav.com/' }], goi)).toEqual(['quanlyvanban.hanoi.gov.vn']);
+  });
+  it('cookie của đúng máy, hoặc cookie tên miền cha (dấu chấm đầu) bao máy đó; không lấy cookie máy khác cùng miền', () => {
+    const h = ['quanlyvanban.hanoi.gov.vn'];
+    expect(cookieForHosts('quanlyvanban.hanoi.gov.vn', h)).toBe(true);
+    expect(cookieForHosts('.hanoi.gov.vn', h)).toBe(true);
+    expect(cookieForHosts('dichvucong.hanoi.gov.vn', h)).toBe(false);
+    expect(cookieForHosts('hanoi.gov.vn', h)).toBe(false);
+    expect(cookieForHosts('', h)).toBe(false);
   });
 });
 

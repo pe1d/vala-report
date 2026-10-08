@@ -19,6 +19,19 @@ export function vanBanKeys(apps: ReadonlyArray<{ key: string; url: string }>, pk
   return new Set(apps.filter((a) => a.url && vb.some((p) => matchesUrl(p.matches, a.url))).map((a) => a.key));
 }
 
+/** Tên máy của các ứng dụng văn bản (giữ phiên đăng nhập qua lần mở app — sso-session.ts). */
+export function vanBanHosts(apps: ReadonlyArray<{ key: string; url: string }>, pkgs: ReadonlyArray<{ matches: string[]; script: string }>): string[] {
+  const keys = vanBanKeys(apps, pkgs);
+  const hosts = apps.filter((a) => keys.has(a.key)).map((a) => { try { return new URL(a.url).hostname.toLowerCase(); } catch { return ''; } });
+  return [...new Set(hosts.filter(Boolean))];
+}
+
+/** Cookie (tên miền của cookie, có thể có dấu chấm đầu) thuộc một trong các máy `hosts`. */
+export function cookieForHosts(domain: string, hosts: readonly string[]): boolean {
+  const d = domain.replace(/^\./, '').toLowerCase();
+  return !!d && hosts.some((h) => h === d || (domain.startsWith('.') && h.endsWith(`.${d}`)));
+}
+
 // ---- làm sạch kết quả ----
 const MAX_TEXT = 20_000;
 const str = (v: unknown, max = 500): string | undefined => {
