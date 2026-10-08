@@ -13,6 +13,7 @@ import { audit } from '../audit.js';
 import type { ApiDeps } from '../deps.js';
 import { issuePortalToken, PORTAL_TOKEN_TTL, type AuthUser } from '../auth.js';
 import { desktopAppExtRoutes } from './desktopApps.js';
+import { desktopErrorExtRoutes } from './desktopErrors.js';
 import { autoRefresh } from './dataSchedules.js';
 import { consentsFor, giveConsent } from '../consent.js';
 
@@ -80,6 +81,8 @@ export const extensionRoutes = (deps: ApiDeps): FastifyPluginAsync => async (app
   app.get('/ext/me', async (req) => ({ ho_ten: req.user.ho_ten, email: req.user.email }));
   // Danh mục ứng dụng + bố cục của người dùng (Vala Desktop).
   await app.register(desktopAppExtRoutes(deps));
+  // Báo lỗi của Vala Desktop (routes/desktopErrors.ts).
+  await app.register(desktopErrorExtRoutes(deps));
 
   /**
    * Vala Desktop đăng nhập ở màn hình đăng nhập của ứng dụng ⇒ tab Báo cáo (cổng) lấy phiên từ đây qua cầu nối, người
