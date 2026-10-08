@@ -15,6 +15,8 @@ Muốn thử mà không cần hệ thống thật: `tools/qlvb-webforms`, là m�
 
 ### Dùng
 
+Chỉ tài khoản quản trị (đơn vị hoặc hệ thống) thấy mục ghi thao tác — chưa mở cho người dùng thường.
+
 1. Mở hệ thống trong Vala Desktop, đăng nhập nếu cần.
 2. Chuột phải lên tab của hệ thống ⇒ **Bắt đầu ghi thao tác**. Tab hiện chấm đỏ.
 3. Thao tác như bình thường. Mỗi nghiệp vụ nên ghi một lượt riêng, ví dụ chỉ một lần "chuyển văn bản".

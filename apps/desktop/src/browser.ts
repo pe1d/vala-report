@@ -155,6 +155,8 @@ function syncPinned(): void {
     if (!signedIn() && t.key !== LOGIN && t.key !== SETTINGS) destroyTab(t.key);
     else if (t.pinned && !keep.has(t.key)) destroyTab(t.key);
     else if (loaded && (t.key === 'portal' || t.key.startsWith('web:')) && !appByKey(t.key)) destroyTab(t.key);
+    // Mất quyền quản trị ⇒ đóng tab Bản ghi thao tác (ghi thao tác chưa mở cho người dùng).
+    else if (loaded && t.key === RECORDING && !canAdmin()) destroyTab(t.key);
   }
   if (signedIn()) for (const d of defs) if (!tabs.get(d.key)) tabs.set(d.key, { key: d.key, pinned: true, url: d.url, view: null });
 }
@@ -360,8 +362,9 @@ export function openSettingsTab(section = ''): void {
 
 export const isSettingsContents = (wc: WebContents): boolean => tabs.get(SETTINGS)?.view?.webContents === wc;
 
-/** Mở (hoặc chuyển tới) tab Bản ghi thao tác (bản ghi gần nhất — recorder.ts). */
+/** Mở (hoặc chuyển tới) tab Bản ghi thao tác (bản ghi gần nhất — recorder.ts). Ghi thao tác chỉ dành cho quản trị. */
 export function openRecordingTab(): void {
+  if (!canAdmin()) return;
   ensureWindow();
   if (!tabs.has(RECORDING)) {
     tabs.set(RECORDING, { key: RECORDING, pinned: false, url: '', view: null });

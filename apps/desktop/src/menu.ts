@@ -15,7 +15,7 @@ import { targetForUrl } from './autofill';
 import { openCredentialDialog } from './credential-window';
 import { checkNow, pendingUpdate, promptInstall } from './updater';
 import { openSourceTab } from './windows';
-import { catalog } from './apps';
+import { canAdmin, catalog } from './apps';
 import { openRecordingTab, tabWebContents } from './browser';
 import { notify } from './notify';
 import { RecorderError, recordingKey, startRecording, stopRecording } from './recorder';
@@ -112,13 +112,14 @@ export function tabContextMenu(key: string, url: string): Menu | null {
 }
 
 /**
- * Ghi thao tác (T07 phần 2, recorder.ts): mọi tab trang web — trừ tab Vala, Báo cáo và các tab trang cục bộ. Dừng ⇒ mở tab
- * Bản ghi thao tác.
+ * Ghi thao tác (T07 phần 2, recorder.ts): chỉ quản trị (đơn vị / hệ thống) — chưa mở cho người dùng; mọi tab trang web — trừ
+ * tab Vala, Báo cáo và các tab trang cục bộ. Dừng ⇒ mở tab Bản ghi thao tác. Đang ghi thì luôn dừng được (kể cả vừa mất quyền).
  */
 function recordItems(key: string, url: string): MenuItemConstructorOptions[] {
   if (!/^https?:/.test(url) || isPortalUrl(url) || key === 'home' || key === 'portal' || !tabWebContents(key)) return [];
   const t = M[getSettings().lang];
   if (recordingKey() === key) return [{ label: t.recStop, click: () => { stopRecording(); openRecordingTab(); } }];
+  if (!canAdmin()) return [];
   return [{
     label: t.recStart,
     click: () => {
