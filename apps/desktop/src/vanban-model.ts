@@ -64,7 +64,8 @@ export interface Dong {
 }
 export interface DanhSach { tong: number; so_trang: number; dong: Dong[] }
 /** `tep`: tệp đính kèm (giá trị = [{ ten, loai, base64 }]); `nhieu` = nhiều tệp / nhiều lựa chọn. */
-export interface Truong { ma: string; ten: string; loai: 'chu' | 'doan' | 'ngay' | 'chon' | 'tep'; bat_buoc?: boolean; nhieu?: boolean; goi_y?: string; lua_chon?: Array<{ ma: string; ten: string }> }
+/** `mac_dinh`: giá trị điền sẵn (như form của hệ thống gốc: loại văn bản, độ khẩn, đơn vị…). */
+export interface Truong { ma: string; ten: string; loai: 'chu' | 'doan' | 'ngay' | 'chon' | 'tep'; bat_buoc?: boolean; nhieu?: boolean; goi_y?: string; mac_dinh?: string | string[]; lua_chon?: Array<{ ma: string; ten: string }> }
 export interface MauTao { ten: string; truong: Truong[] }
 /** Số văn bản theo hộp: { mã hộp: { tong, chua_doc?, qua_han? } }. */
 export type Dem = Record<string, { tong: number; chua_doc?: number; qua_han?: number }>;
@@ -147,6 +148,7 @@ function cleanTruong(v: unknown): Truong | null {
   const loai = o.loai === 'doan' || o.loai === 'ngay' || o.loai === 'chon' || o.loai === 'tep' ? o.loai : 'chu';
   return {
     ma, ten, loai, bat_buoc: o.bat_buoc === true || undefined, nhieu: o.nhieu === true || undefined, goi_y: str(o.goi_y, 300),
+    mac_dinh: loai === 'tep' ? undefined : Array.isArray(o.mac_dinh) ? arr(o.mac_dinh, (x) => str(x, 300) ?? null, 200) : str(o.mac_dinh, 2000),
     lua_chon: loai === 'chon' ? arr(o.lua_chon, (x) => { const c = obj(x); const m = str(c?.ma, 300); const t = str(c?.ten, 300); return m && t ? { ma: m, ten: t } : null; }, 2000) : undefined,
   };
 }

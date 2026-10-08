@@ -48,6 +48,19 @@ dòng. Tham số thứ 2 là số dòng mỗi trang. Bộ lọc là JSON (chuỗ
 Hộp khác trong menu (cùng trang, đổi tham số): `VAN_BAN_DA_XU_LY`, `VANBAN_THONGBAO` (xem để biết), `CHO_DUYET_KET_THUC`,
 `VAN_BAN_UY_QUYEN`, `VAN_BAN_THEO_DOI`, `vanban_di`.
 
+## Tạo văn bản đi, chi tiết, tệp (kiểm 08/10/2026 với văn bản thử 2005200)
+
+- Tạo: tải tệp lên (`POST /qlvbdh/main` multipart, trả mã tệp, vd `851`) rồi `DataRemoting.getDoc` ·
+  `qlvb.vanban_di.act_activiti.addNew('{…~90 trường…}')` ⇒ `TRUE|<mã văn bản>`. Bắt buộc có **tệp đính kèm**
+  ("Không có file đính kèm!") và chọn **Văn bản theo dõi nhiệm vụ**. Phiên dịch dùng chính form của hệ thống
+  (`newVanBanMenuTop` ⇒ điền ⇒ ô `#fileUpload` ⇒ `vbdi_savedoc('1')` = Lưu để theo dõi, không trình) — hệ thống tự dựng
+  đủ trường như khi người dùng bấm.
+- Văn bản vừa tạo nằm ở kho `vanban_di_canhan` (`getListPaging` với `typeget: 'vanban_di_canhan'` — trang 1, 2… trả JSON).
+- Chi tiết: `qlvb.vanban_di.act_activiti.sf_get_detail_doc("<mã>")`; tệp: `qlvb.van_ban_den.getFileAttachLst("<mã>","0")`
+  (`hdd_file`, `name`, `file_size`); nội dung tệp: `GET /qlvbdh/viewfile?file=<base64(hdd_file)>&TFbm5O..=dmI~&version=1`
+  trả thẳng tệp nhị phân; quá trình: `getDcmTrack` (lấy `schema_id`) ⇒ `getDcmTrackActivitiLog(...)` (HTML bảng).
+- Luồng tạo văn bản: `DataRemoting.getValue('qlvb.common.get_menu_top_tao_van_ban()')` (trang cũng lưu ở sessionStorage).
+
 ## Phiên dịch cho giao diện Văn bản chung
 
 `tools/vnpt-ioffice/kich-ban.js` (docs/van-ban-chung.md): gọi DWR bằng `vala.dwr` của bộ hàm kịch bản — qua đối tượng

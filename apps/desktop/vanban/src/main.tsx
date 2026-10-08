@@ -121,6 +121,8 @@ function Problem({ err, system, onRetry, t }: { err: unknown; system: string; on
 type Val = string | string[] | TepGui[];
 const INPUT = 'w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100';
 const empty = (f: Truong): Val => (f.loai === 'tep' || (f.loai === 'chon' && f.nhieu) ? [] : '');
+/** Giá trị ban đầu của form: giá trị mặc định phiên dịch khai (như form gốc), không có thì rỗng. */
+const initial = (f: Truong): Val => (f.mac_dinh === undefined || f.loai === 'tep' ? empty(f) : f.nhieu ? [f.mac_dinh].flat() : Array.isArray(f.mac_dinh) ? f.mac_dinh[0] ?? '' : f.mac_dinh);
 const isEmpty = (v: Val | undefined) => (Array.isArray(v) ? !v.length : !v);
 
 const readFile = (f: File) => new Promise<TepGui>((ok, fail) => {
@@ -201,7 +203,7 @@ function FieldInput({ f, value, onChange, t, compact }: { f: Truong; value: Val;
 
 /** Form theo `truong`: kiểm bắt buộc + dung lượng tệp trước khi gửi. */
 function useForm(truong: Truong[]) {
-  const [v, setV] = useState<Record<string, Val>>(() => Object.fromEntries(truong.map((f) => [f.ma, empty(f)])));
+  const [v, setV] = useState<Record<string, Val>>(() => Object.fromEntries(truong.map((f) => [f.ma, initial(f)])));
   const check = (t: T): string => {
     const miss = truong.find((f) => f.bat_buoc && isEmpty(v[f.ma]));
     if (miss) return t.required(miss.ten);

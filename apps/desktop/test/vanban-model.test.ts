@@ -48,7 +48,7 @@ describe('làm sạch kết quả phiên dịch', () => {
     expect(cleanChiTiet({ id: '1', trich_yeu: 'X', tep: [{ ten: 'chỉ tên.docx' }], them: [{ ten: 'Sổ đến', gia_tri: 12 }, { ten: 'rỗng' }] }))
       .toMatchObject({ tep: [{ id: undefined, ten: 'chỉ tên.docx' }], them: [{ ten: 'Sổ đến', gia_tri: '12' }] });
     expect(ct?.qua_trinh).toEqual([{ luc: undefined, nguoi: undefined, viec: 'Chuyển' }]);
-    expect(ct?.thao_tac).toEqual([{ ma: 'chuyen', ten: 'Chuyển', xac_nhan: undefined, truong: [{ ma: 'nguoi', ten: 'Người', loai: 'chon', bat_buoc: undefined, nhieu: true, goi_y: undefined, lua_chon: [{ ma: '1|2', ten: 'B' }] }] }]);
+    expect(ct?.thao_tac).toEqual([{ ma: 'chuyen', ten: 'Chuyển', xac_nhan: undefined, truong: [{ ma: 'nguoi', ten: 'Người', loai: 'chon', bat_buoc: undefined, nhieu: true, goi_y: undefined, mac_dinh: undefined, lua_chon: [{ ma: '1|2', ten: 'B' }] }] }]);
   });
 });
 
