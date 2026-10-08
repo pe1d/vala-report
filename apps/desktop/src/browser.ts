@@ -525,6 +525,7 @@ export function showTab(key: string, opts: { reloadTo?: string } = {}): boolean 
     prev.since = undefined;
   }
   t.since = t.since ?? Date.now();
+  if (prev && prev.key !== key && t.view && !LOCAL[key]) reclaimVala(t.view.webContents);
   // Lịch sử cho ô tìm kiếm: chỉ ghi đã vào ỨNG DỤNG nào (không lưu địa chỉ / tiêu đề trang).
   if (isAppKey(key) && active !== key) recordAppVisit(key, appLabel(key));
   active = key;
@@ -532,6 +533,23 @@ export function showTab(key: string, opts: { reloadTo?: string } = {}): boolean 
   t.view!.webContents.focus();
   pushState();
   return true;
+}
+
+/**
+ * Mạng xã hội Vala chưa cho mở nhiều tab: mọi tab cùng phiên dùng chung clientId MQTT ⇒ tab kết nối sau đá tab trước
+ * (MQTT 5 reason 142), tab bị đá hiện "Kết nối trực tuyến bị ngắt…" + nút "Kết nối lại" và thôi nhận tin. Trong lúc chờ
+ * Vala sửa (mỗi tab một clientId — docs/vala-mqtt-nhieu-tab.md): chuyển sang tab nào mà trang có đúng nút đó ⇒ bấm hộ, để
+ * tab đang xem luôn nhận tin (tab vừa rời sẽ bị đá, tới lượt nó được chọn lại thì nối lại). Nút nhận ra bằng class
+ * `snw-cursor-pointer` (riêng của Vala) + chữ của nút theo ngôn ngữ Vala.
+ */
+const VALA_RECONNECT = `(() => {
+  const labels = ['Kết nối lại', 'Reconnect', 'Neu verbinden'];
+  const b = [...document.querySelectorAll('button.snw-cursor-pointer')].find((x) => labels.includes(x.textContent.trim()));
+  if (b) b.click();
+})()`;
+function reclaimVala(wc: WebContents): void {
+  if (wc.isDestroyed() || !/^https:\/\/[^/]*vala[^/]*\//i.test(wc.getURL())) return;
+  void wc.executeJavaScript(VALA_RECONNECT, true).catch(() => { /* trang đang tải / đã đóng */ });
 }
 
 /** Mở (hoặc chuyển tới) tab của một hệ thống nguồn; `reloadTo` ⇒ đưa về trang đó (vd trang đăng nhập khi kết nối). */
