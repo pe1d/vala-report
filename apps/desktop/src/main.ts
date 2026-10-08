@@ -9,6 +9,7 @@ import { cleanUserAgent } from './ua';
 import { accountEvents, clearWebSession, logoutDevice } from './account';
 import { registerSettingsPage } from './settings-page';
 import { registerRecordingPage } from './recording-page';
+import { registerVanbanPage } from './vanban-page';
 import { registerChatPage } from './chat-page';
 import { registerLoginPage } from './login-page';
 import { registerAdminPage } from './admin-page';
@@ -102,6 +103,7 @@ if (!app.requestSingleInstanceLock()) {
       isSettings: (e) => isSettingsContents(e.sender), push: pushSettings,
     });
     registerRecordingPage({ isRecording: (e) => isRecordingContents(e.sender), push: pushRecording, open: openRecordingTab });
+    registerVanbanPage();
     registerChatPage({ isChat: (e) => isChatContents(e.sender), push: pushChat });
     registerAdminPage({ isAdmin: (e) => isAdminContents(e.sender), send: sendToAdmin });
     registerLoginPage({ isLogin: (e) => isLoginContents(e.sender), push: pushLogin, win: browserWindow, pageBounds: contentBounds });

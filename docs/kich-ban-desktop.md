@@ -54,6 +54,7 @@ Các hàm của `vala`:
 | `form(selector)` | đọc các trường của form thành object |
 | `request(url, { method, form, json, headers })` | gọi HTTP kèm cookie của trang; trả `{ ok, status, url, text, json }` |
 | `webform(url, { form })` | mở ngầm một trang ASP.NET WebForms để gửi form trực tiếp: `postback`, `submit`, UpdatePanel, tệp đính kèm, báo lỗi có mã — xem `docs/tich-hop-aspnet.md` |
+| `dwr('NEORemoting.getRSet', dwr.expr('ten.ham', 1, 10, { … }))` | gọi DWR 1.x của trang (VNPT iOffice…): biểu thức dựng bằng `dwr.expr` — tên hàm hằng, giá trị đã thoát như `replace_sc`; trang chưa đăng nhập ⇒ lỗi `het_phien` — xem `docs/van-ban-ha-noi.md` |
 | `css(text)` | thêm CSS |
 | `log(...)` | ghi nhật ký |
 | `sleep(ms)` | chờ |

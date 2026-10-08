@@ -199,7 +199,7 @@ export function Tabs({ items, value, onChange, label }: { items: TabItem[]; valu
     document.getElementById(`tab-${t.id}`)?.focus();
   };
   return (
-    <div role="tablist" aria-label={label} className="mb-5 flex gap-1 overflow-x-auto border-b border-slate-200 dark:border-slate-800">
+    <div role="tablist" aria-label={label} className="mb-5 flex gap-1 overflow-x-auto overflow-y-hidden border-b border-slate-200 dark:border-slate-800">
       {items.map((t, i) => {
         const sel = t.id === value;
         return (

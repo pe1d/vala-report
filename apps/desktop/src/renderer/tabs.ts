@@ -33,6 +33,8 @@ interface TabsState {
   /** Số ứng dụng chưa ghim ⇒ nút "Thêm" cuối nhóm Ứng dụng (mở nhanh, như Lark). */
   more: number;
   nav: { back: boolean; forward: boolean; reload: boolean };
+  /** Tab đang xem là ứng dụng văn bản ⇒ đang ở giao diện Vala hay trang gốc. */
+  vanban: 'vala' | 'goc' | null;
   /** Cửa sổ đang phóng to (nút □ thành "Thu về"). */
   maximized: boolean;
   /** Chưa đăng nhập ⇒ chỉ màn hình đăng nhập: ẩn thanh ứng dụng, ô tìm kiếm, nút điều hướng. */
@@ -50,6 +52,7 @@ interface ValaTabsApi {
   close(key: string): Promise<void>;
   reorder(group: 'apps' | 'open', keys: string[]): Promise<void>;
   nav(cmd: 'back' | 'forward' | 'reload'): Promise<void>;
+  vanban(mode: 'vala' | 'goc'): Promise<void>;
   collapse(): Promise<void>;
   peek(on: boolean): Promise<void>;
   onPeekSlide(cb: (open: boolean) => void): void;
@@ -349,6 +352,16 @@ interface ValaTabsApi {
       setIf(b, 'title', tip);
       setIf(b, 'aria-label', tip);
     }
+    // Ứng dụng văn bản: nút chuyển Giao diện Vala / Trang gốc.
+    display($('vb-toggle'), s.signedIn && !!s.vanban);
+    setIf($('vb-toggle'), 'title', s.t.vbTitle);
+    for (const [id, mode, label] of [['vb-vala', 'vala', s.t.vbVala], ['vb-goc', 'goc', s.t.vbGoc]] as const) {
+      const b = $(id);
+      setText(b, label);
+      const on = s.vanban === mode;
+      setIf(b, 'aria-pressed', String(on));
+      setIf(b, 'class', `rounded-full px-2.5 py-0.5 ${on ? 'bg-white font-medium text-slate-900 shadow-sm dark:bg-slate-600 dark:text-white' : 'text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white'}`);
+    }
     // Chưa đăng nhập: chỉ còn logo + nút cửa sổ trên header, không có thanh ứng dụng.
     for (const id of ['bar', 'collapse', 'back', 'forward', 'reload', 'nav-sep']) display($(id), s.signedIn);
     // Ô tìm kiếm giữ chỗ (cột giữa của lưới header) để nút cửa sổ vẫn ở mép phải.
@@ -399,6 +412,8 @@ interface ValaTabsApi {
   $('back').addEventListener('click', () => void api.nav('back'));
   $('forward').addEventListener('click', () => void api.nav('forward'));
   $('reload').addEventListener('click', () => void api.nav('reload'));
+  $('vb-vala').addEventListener('click', () => void api.vanban('vala'));
+  $('vb-goc').addEventListener('click', () => void api.vanban('goc'));
   $('collapse').addEventListener('click', () => void api.collapse());
   const openSearch = () => void api.overlay('search', rect($('search')));
   $('search').addEventListener('click', openSearch);
@@ -420,6 +435,7 @@ interface ValaTabsApi {
   display($('sign-in'), false);
   display($('dev-badge'), false);
   display($('win-restore-icon'), false);
+  display($('vb-toggle'), false);
   api.onState(render);
   if (PEEK) {
     // Chỉ thanh dọc trên nền trong suốt; thanh có nền, viền, bóng đổ (đè lên trang web bên phải).

@@ -511,6 +511,78 @@
     return f;
   }
 
+  /*
+   * DWR 1.x (Direct Web Remoting — vd VNPT iOffice: quanlyvanban.hanoi.gov.vn, docs/van-ban-ha-noi.md). Tham số của mỗi
+   * lời gọi là một BIỂU THỨC gọi hàm phía máy chủ dạng chuỗi và máy chủ chạy nguyên biểu thức đó ⇒ chỉ dựng bằng
+   * dwr.expr (tên hàm phải là hằng, mọi giá trị qua dwrValue như `replace_sc` của trang gốc: không còn nháy / gạch chéo
+   * nên không đóng được chuỗi để chèn lời gọi khác). Gọi qua đối tượng DWR sẵn có của trang (NEORemoting, DataRemoting…)
+   * ⇒ CSRF-Token và cách gửi do engine.js của trang lo.
+   */
+  function dwrValue(s) {
+    return String(s)
+      .replace(/&/g, '&amp;').replace(/'/g, '&apos;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/\\/g, '&#92;')
+      .replace(/[\u0000-\u001f\u007f]/g, ' ');
+  }
+  function dwrDeep(v) {
+    if (typeof v === 'string') return dwrValue(v);
+    if (Array.isArray(v)) return v.map(dwrDeep);
+    if (v && typeof v === 'object') {
+      var o = {};
+      Object.keys(v).forEach(function (k) { o[dwrValue(k)] = dwrDeep(v[k]); });
+      return o;
+    }
+    return v;
+  }
+  /** dwr.expr('qlvb.van_ban_den.getVanBanDenPaging', -1, 10, { kho: '…' }) ⇒ `…("-1","10",'{"kho":"…"}')`. */
+  function dwrExpr(fn) {
+    if (!/^[a-z][A-Za-z0-9_]*(\.[A-Za-z][A-Za-z0-9_]*){1,5}$/.test(fn)) throw new Error('Tên hàm DWR không hợp lệ: ' + fn);
+    var parts = Array.prototype.slice.call(arguments, 1).map(function (a) {
+      if (typeof a === 'number') { if (!isFinite(a)) throw new Error('Số không hợp lệ'); return '"' + a + '"'; }
+      if (typeof a === 'string') return '"' + dwrValue(a) + '"';
+      if (a && typeof a === 'object') return "'" + JSON.stringify(dwrDeep(a)) + "'";
+      throw new Error('Đối số DWR không hợp lệ');
+    });
+    return fn + '(' + parts.join(',') + ')';
+  }
+  /**
+   * vala.dwr('NEORemoting.getRSet', dwr.expr(...), { timeout }) ⇒ giá trị trả về (chuỗi JSON thì giải luôn). Trang chưa có
+   * đối tượng DWR (chưa đăng nhập / đang ở trang đăng nhập) ⇒ lỗi mã `het_phien`.
+   */
+  function dwr(call, expression, opts) {
+    var m = /^([A-Za-z_$][\w$]*)\.([A-Za-z_$][\w$]*)$/.exec(call || '');
+    if (!m) return Promise.reject(new Error('Lời gọi DWR không hợp lệ: ' + call));
+    var obj = window[m[1]];
+    if (!obj || typeof obj[m[2]] !== 'function') {
+      var e = new Error('Chưa đăng nhập hệ thống (trang không có ' + call + ')');
+      e.code = 'het_phien';
+      return Promise.reject(e);
+    }
+    var timeout = (opts && opts.timeout) || 30000;
+    return new Promise(function (resolve, reject) {
+      var done = false;
+      var t = setTimeout(function () { if (!done) { done = true; reject(new Error('Hệ thống không trả lời sau ' + timeout / 1000 + ' giây')); } }, timeout);
+      obj[m[2]](expression, {
+        callback: function (v) {
+          if (done) return;
+          done = true; clearTimeout(t);
+          if (typeof v === 'string' && /^\s*[[{]/.test(v)) { try { v = JSON.parse(v); } catch (_) { /* giữ chuỗi */ } }
+          resolve(v);
+        },
+        errorHandler: function (msg) {
+          if (done) return;
+          done = true; clearTimeout(t);
+          var er = new Error('Hệ thống báo lỗi: ' + (msg || 'không rõ'));
+          er.code = 'loi_he_thong';
+          reject(er);
+        },
+        timeout: timeout,
+      });
+    });
+  }
+  dwr.expr = dwrExpr;
+  dwr.value = dwrValue;
+
   /** Khai báo thao tác có tên: vala.action(ten, fn) hoặc vala.action(ten, { mo_ta, params }, fn). */
   function action(name, meta, fn) {
     if (typeof meta === 'function') { fn = meta; meta = {}; }
@@ -520,7 +592,7 @@
 
   var vala = Object.freeze({
     sleep: sleep, $: $, $$: $$, waitFor: waitFor, click: click, fill: fill, read: read, table: table, form: form,
-    request: request, css: css, log: log, action: action, webform: webform,
+    request: request, css: css, log: log, action: action, webform: webform, dwr: dwr,
   });
 
   Object.defineProperty(window, '__vala', {

@@ -48,6 +48,12 @@ dòng. Tham số thứ 2 là số dòng mỗi trang. Bộ lọc là JSON (chuỗ
 Hộp khác trong menu (cùng trang, đổi tham số): `VAN_BAN_DA_XU_LY`, `VANBAN_THONGBAO` (xem để biết), `CHO_DUYET_KET_THUC`,
 `VAN_BAN_UY_QUYEN`, `VAN_BAN_THEO_DOI`, `vanban_di`.
 
+## Phiên dịch cho giao diện Văn bản chung
+
+`tools/vnpt-ioffice/kich-ban.js` (docs/van-ban-chung.md): gọi DWR bằng `vala.dwr` của bộ hàm kịch bản — qua đối tượng
+DWR sẵn có của trang nên tự kèm `CSRF-Token`. Đã chạy được trên hệ thống thật (người đăng nhập, đếm 4 hộp); tên trường
+của một dòng còn là dự đoán vì tài khoản khảo sát chưa có văn bản.
+
 ## Lưu ý an toàn
 
 - Máy chủ nhận **biểu thức tuỳ ý** từ trình duyệt ⇒ giao diện riêng chỉ gọi danh sách hàm cho phép, dựng biểu thức như

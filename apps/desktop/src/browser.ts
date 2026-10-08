@@ -19,7 +19,7 @@ import { app, BrowserWindow, ipcMain, nativeTheme, screen, shell, WebContentsVie
 import { APP_NAME, ICON, IS_DEV } from './channel';
 import { messages, normLang } from './i18n';
 import { attachAutofill } from './autofill';
-import { attachPackages, injectAll, listActions, packageEvents } from './scripts';
+import { attachPackages, injectAll, listActions, packageEvents, packages } from './scripts';
 import { recordActions, recordAppVisit } from './local-data';
 import { portalApi } from './account';
 import { appByKey, appKey, canAdmin, catalog, insideDomains, pinnedKeys as catalogPinnedKeys, setAppPinned, setPinnedOrder } from './apps';
@@ -28,6 +28,7 @@ import { currentPrefs, prefsEvents, setPrefs } from './prefs';
 import { getSettings, setSettings } from './settings';
 import { cachedSources, events, statusOf, type SourceFull } from './sync';
 import { applySubsetOrder, openTarget, reordered, sidebarSections, tabStatus, type TabStatus } from './tabs-model';
+import { vanBanKeys } from './vanban-model';
 import { pendingUpdate, promptInstall } from './updater';
 import { recordingKey } from './recorder';
 import { closeLoginSso, layoutSso } from './login-page';
@@ -40,6 +41,7 @@ const M = messages({
   close: 'Đóng tab (Ctrl+W)', menu: 'Hệ thống nguồn',
   signIn: 'Đăng nhập', signInTitle: 'Đăng nhập Vala Desktop', account: 'Tài khoản', admin: 'Quản trị',
   lightMode: 'Chế độ sáng', darkMode: 'Chế độ tối', recording: 'đang ghi thao tác',
+  vbVala: 'Giao diện Vala', vbGoc: 'Trang gốc', vbTitle: 'Chuyển giữa giao diện Văn bản của Vala và trang gốc của hệ thống',
   updateTitle: 'Cài bản mới: ứng dụng đóng lại, cài xong tự mở lại',
   updateLabel: (v: string) => `Đã có bản ${v} — Cập nhật`,
   status: { ok: 'Đã kết nối', warn: 'Cần đăng nhập lại', off: 'Chưa kết nối' } as Record<TabStatus, string>,
@@ -51,6 +53,7 @@ const M = messages({
   close: 'Close tab (Ctrl+W)', menu: 'Source systems',
   signIn: 'Sign in', signInTitle: 'Sign in to Vala Desktop', account: 'Account', admin: 'Administration',
   lightMode: 'Light mode', darkMode: 'Dark mode', recording: 'recording actions',
+  vbVala: 'Vala view', vbGoc: 'Original page', vbTitle: "Switch between Vala's documents view and the system's original page",
   updateTitle: 'Install the new version: the app closes, installs and reopens',
   updateLabel: (v: string) => `Version ${v} available — Update`,
   status: { ok: 'Connected', warn: 'Needs signing in again', off: 'Not connected' } as Record<TabStatus, string>,
@@ -99,6 +102,12 @@ interface Tab {
   since?: number;
   /** Sáng/tối của app đã đổi khi tab đang ẩn ⇒ tải lại lúc chuyển sang (themeChanged). */
   themeStale?: boolean;
+  /**
+   * Ứng dụng văn bản (có gói phiên dịch — vanban-model.ts): lớp giao diện Văn bản chung đặt trên trang gốc (`view`, vẫn
+   * nạp để chạy thao tác vb_*); `goc` ⇒ đang xem trang gốc (đăng nhập, thao tác phiên dịch chưa có).
+   */
+  ui?: WebContentsView;
+  goc?: boolean;
 }
 
 /** Lệnh từ menu hồ sơ (khung nổi) do main.ts xử lý. */
@@ -285,7 +294,7 @@ function layout(): void {
   if (!win || win.isDestroyed()) return;
   const [width, height] = win.getContentSize();
   const bounds = contentBounds()!;
-  for (const t of tabs.values()) t.view?.setBounds(bounds);
+  for (const t of tabs.values()) { t.view?.setBounds(bounds); t.ui?.setBounds(bounds); }
   const r = RADIUS;
   const right = bounds.x + bounds.width - r;
   const bottom = bounds.y + bounds.height - r;
@@ -473,6 +482,7 @@ function destroyTab(key: string): void {
     win.contentView.removeChildView(t.view);
     t.view.webContents.close();
   }
+  dropUi(t);
   tabs.delete(key);
   order = order.filter((k) => k !== key);
   if (active === key) active = null;
@@ -515,24 +525,86 @@ export function showTab(key: string, opts: { reloadTo?: string } = {}): boolean 
   const prev = active ? tabs.get(active) : undefined;
   if (!t.view) createView(t);
   else if (opts.reloadTo) void t.view.webContents.loadURL(opts.reloadTo);
+  if (vbKeys().has(key) && !t.ui) createUiView(t);
   // Hiện tab mới TRƯỚC rồi mới ẩn tab cũ: làm ngược lại sẽ lộ nền cửa sổ trong một khung hình (nháy khi chuyển tab).
   // Sáng/tối đã đổi lúc tab này ẩn ⇒ tải lại để trang của ứng dụng theo giao diện mới (themeChanged).
   if (t.themeStale && t.view) { t.themeStale = false; t.view.webContents.reload(); }
-  t.view!.setVisible(true);
+  const shown = face(t)!;
+  shown.setVisible(true);
+  if (shown !== t.view) t.view?.setVisible(false); else t.ui?.setVisible(false);
   if (prev && prev.key !== key) {
     prev.view?.setVisible(false);
+    prev.ui?.setVisible(false);
     if (prev.since) hooks.onLeave(prev.key, Date.now() - prev.since);
     prev.since = undefined;
   }
   t.since = t.since ?? Date.now();
-  if (prev && prev.key !== key && t.view && !LOCAL[key]) reclaimVala(t.view.webContents);
+  if (prev && prev.key !== key && shown === t.view && !LOCAL[key]) reclaimVala(shown.webContents);
   // Lịch sử cho ô tìm kiếm: chỉ ghi đã vào ỨNG DỤNG nào (không lưu địa chỉ / tiêu đề trang).
   if (isAppKey(key) && active !== key) recordAppVisit(key, appLabel(key));
   active = key;
   reveal(w);
-  t.view!.webContents.focus();
+  shown.webContents.focus();
   pushState();
   return true;
+}
+
+// ---- giao diện Văn bản chung (docs/van-ban-chung.md; trang vanban/ build ra dist/vanban, IPC ở vanban-page.ts) ----
+
+/** Ứng dụng dùng giao diện Văn bản: địa chỉ khớp một gói phiên dịch (khai báo vb_danh_sach). */
+const vbKeys = () => vanBanKeys(appDefs().map((a) => ({ key: a.key, url: sourceOf(a.key)?.login_url ?? a.url })), packages());
+
+/** View đang hiện của một tab: giao diện Văn bản (nếu có và không xem trang gốc) hoặc trang. */
+const face = (t: Tab): WebContentsView | null => (t.ui && !t.goc ? t.ui : t.view);
+
+function createUiView(t: Tab): void {
+  const view = new WebContentsView({ webPreferences: { preload: join(__dirname, 'vanban-preload.js') } });
+  t.ui = view;
+  t.goc = false;
+  win!.contentView.addChildView(view);
+  view.setVisible(false);
+  const wc = view.webContents;
+  wc.setWindowOpenHandler(() => ({ action: 'deny' }));
+  wc.on('will-navigate', (e) => e.preventDefault());
+  wc.on('before-input-event', (e, input) => { if (shortcut(input)) e.preventDefault(); });
+  void wc.loadFile(join(__dirname, '../dist/vanban/index.html'));
+  // Trang gốc tải xong (vd vừa đăng nhập) ⇒ giao diện thử lại nếu đang báo chưa đăng nhập.
+  t.view?.webContents.on('did-finish-load', () => { if (!wc.isDestroyed()) wc.send('vanban:goc-loaded'); });
+  raiseChrome();
+  layout();
+}
+
+function dropUi(t: Tab): void {
+  if (!t.ui) return;
+  if (win && !win.isDestroyed()) win.contentView.removeChildView(t.ui);
+  if (!t.ui.webContents.isDestroyed()) t.ui.webContents.close();
+  t.ui = undefined;
+  t.goc = false;
+}
+
+/** Gói / danh mục đổi ⇒ ứng dụng thôi là ứng dụng văn bản thì bỏ lớp giao diện (về trang gốc). */
+function syncUi(): void {
+  const keys = vbKeys();
+  for (const t of tabs.values()) if (t.ui && !keys.has(t.key)) { dropUi(t); if (t.key === active) showTab(t.key); }
+}
+
+/** Tab ứng dụng văn bản của trang giao diện gửi IPC (null nếu không phải). */
+export const vanbanTabOf = (wc: WebContents): { key: string; label: string; goc: WebContents | null } | null => {
+  for (const t of tabs.values()) {
+    if (t.ui?.webContents === wc) return { key: t.key, label: appLabel(t.key), goc: t.view && !t.view.webContents.isDestroyed() ? t.view.webContents : null };
+  }
+  return null;
+};
+
+/** Các trang giao diện Văn bản đang mở (báo đổi ngôn ngữ / sáng tối). */
+export const vanbanUis = (): WebContents[] => [...tabs.values()].map((t) => t.ui?.webContents).filter((w): w is WebContents => !!w && !w.isDestroyed());
+
+/** Chuyển giữa giao diện Văn bản và trang gốc của một ứng dụng văn bản. */
+export function setVanbanGoc(key: string, goc: boolean): void {
+  const t = tabs.get(key);
+  if (!t?.ui) return;
+  t.goc = goc;
+  if (active === key) showTab(key); else pushState();
 }
 
 /**
@@ -701,7 +773,8 @@ export function showDefaultApp(): void {
 }
 /** Thứ tự trên thanh dọc (phím Ctrl+Tab, Ctrl+1…9): Trợ lý AI, ứng dụng, đang mở. */
 const visibleKeys = () => { const sec = sections(); return [CHAT, ...sec.apps, ...sec.open.filter((k) => order.includes(k) || tabs.has(k))]; };
-const activeWc = () => (active && !LOCAL[active] ? tabs.get(active)?.view?.webContents : undefined);
+/** Trang web đang xem (nút ◀ ▶ ⟳) — trang cục bộ, giao diện Văn bản ⇒ không có. */
+const activeWc = () => { const t = active && !LOCAL[active] ? tabs.get(active) : undefined; return t && face(t) === t.view ? t.view?.webContents : undefined; };
 
 /** Bấm một mục: đã có tab ⇒ chọn; ứng dụng chưa mở ⇒ mở tab của nó. */
 export function activate(key: string): void {
@@ -737,6 +810,7 @@ function reorderGroup(group: unknown, keys: unknown): void {
 export function refreshBrowser(): void {
   if (!win || win.isDestroyed()) return;
   syncPinned();
+  syncUi();
   // Vừa đăng nhập ⇒ bỏ màn hình đăng nhập, vào Trợ lý AI; vừa đăng xuất ⇒ về màn hình đăng nhập.
   if (signedIn() && tabs.has(LOGIN)) {
     closeLoginSso();
@@ -794,6 +868,8 @@ function pushState(): void {
     // Nút "Thêm" cuối nhóm Ứng dụng (như Lark): mở nhanh ứng dụng chưa ghim.
     more: appDefs().filter((a) => !sec.apps.includes(a.key)).length,
     nav: { back: !!h?.canGoBack(), forward: !!h?.canGoForward(), reload: !!wc },
+    // Ứng dụng văn bản đang xem ⇒ nút chuyển Giao diện Vala / Trang gốc trên header.
+    vanban: active && tabs.get(active)?.ui ? (tabs.get(active)!.goc ? 'goc' : 'vala') : null,
     maximized: win.isMaximized(),
     // Hồ sơ cuối thanh: tên + chữ cái đầu (họ + tên) khi đã đăng nhập; chưa thì nút "Đăng nhập".
     profile: s.deviceToken && name ? { name, email: s.user?.email ?? '', initials: initialsOf(name) } : null,
@@ -841,6 +917,7 @@ function registerIpc(): void {
   ipcMain.handle('tabs:peek', (e, on: unknown) => { own(e); if (on === true) showPeek(); else hidePeek(); });
   ipcMain.handle('tabs:activate', (e, key: unknown) => { own(e); if (typeof key === 'string') activate(key); });
   ipcMain.handle('tabs:close', (e, key: unknown) => { own(e); if (typeof key === 'string') closeTab(key); });
+  ipcMain.handle('tabs:vanban', (e, mode: unknown) => { own(e); if (active && (mode === 'goc' || mode === 'vala')) setVanbanGoc(active, mode === 'goc'); });
   ipcMain.handle('tabs:reorder', (e, a: { group?: unknown; keys?: unknown }) => { own(e); reorderGroup(a?.group, a?.keys); });
   ipcMain.handle('tabs:nav', (e, cmd: unknown) => {
     own(e);
@@ -964,7 +1041,8 @@ export function closeOverlay(): void {
   if (!overlay || !overlayOpen || !win || win.isDestroyed()) return;
   overlayOpen = false;
   win.contentView.removeChildView(overlay);
-  tabs.get(active ?? '')?.view?.webContents.focus();
+  const at = tabs.get(active ?? '');
+  if (at) face(at)?.webContents.focus();
 }
 
 // ---- menu chuột phải trên mục của thanh dọc: vẽ trên khung nổi (cùng giao diện app, không phải menu hệ điều hành) ----
@@ -1125,7 +1203,12 @@ export function initBrowser(h: BrowserHooks): void {
   registerIpc();
   registerOverlayIpc();
   events.on('status', refreshBrowser);
-  packageEvents.on('changed', () => { for (const t of tabs.values()) if (t.view) injectAll(t.view.webContents); });
+  packageEvents.on('changed', () => {
+    for (const t of tabs.values()) if (t.view) injectAll(t.view.webContents);
+    // Gói phiên dịch văn bản vừa có / vừa gỡ ⇒ thêm / bỏ lớp giao diện Văn bản của tab đang xem.
+    syncUi();
+    if (active && vbKeys().has(active) && !tabs.get(active)?.ui) showTab(active); else pushState();
+  });
   // Vừa tải xong bản giao diện cổng mới: tab Báo cáo đang không xem thì chuyển ngay sang bản mới (giữ trang đang mở);
   // đang xem thì để lần mở sau — không nạp lại giữa lúc người dùng thao tác.
   uiEvents.on('updated', () => {

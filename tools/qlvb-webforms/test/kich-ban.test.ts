@@ -240,4 +240,38 @@ describe.skipIf(!up)('vala.webform trên WebForms thật', () => {
     });
   });
 
+
+  describe('phiên dịch vb_* cho giao diện Văn bản chung (docs/van-ban-chung.md)', () => {
+    it('vb_thong_tin + vb_danh_sach: hộp, phân trang, tìm, ngày ISO', async () => {
+      const page = await dangNhap();
+      expect((await thaoTac(page, 'vb_thong_tin')).result).toMatchObject({ he_thong: 'QLVB Thử nghiệm', hop: expect.arrayContaining([{ ma: 'du_thao', ten: 'Dự thảo', loai: 'di' }]) });
+      const r = (await thaoTac(page, 'vb_danh_sach', { hop: 'tat_ca', trang: 1 })).result;
+      expect(r).toMatchObject({ tong: 35, so_trang: 4 });
+      expect(r.dong).toHaveLength(10);
+      expect(r.dong[0]).toMatchObject({ id: expect.stringMatching(/^\d+$/), trich_yeu: expect.any(String), ngay: expect.stringMatching(/^\d{4}-\d{2}-\d{2}/) });
+      const tim = (await thaoTac(page, 'vb_danh_sach', { hop: 'tat_ca', tim: 'tuyển dụng' })).result;
+      expect(tim.tong).toBeGreaterThan(0);
+      expect(tim.dong.every((d: { trich_yeu: string }) => /tuyển dụng/i.test(d.trich_yeu))).toBe(true);
+    });
+    it('vb_chi_tiet: văn bản đang xử lý có Chuyển + Kết thúc (form theo truong), đã kết thúc thì không có thao tác', async () => {
+      const page = await dangNhap('vanthu');
+      const ct = (await thaoTac(page, 'vb_chi_tiet', { id: 5 })).result;
+      expect(ct).toMatchObject({ id: '5', trang_thai: 'Đang xử lý', qua_trinh: expect.any(Array) });
+      expect(ct.thao_tac.map((t: { ma: string }) => t.ma)).toEqual(expect.arrayContaining(['chuyen', 'ket_thuc']));
+      const ch = ct.thao_tac.find((t: { ma: string }) => t.ma === 'chuyen');
+      expect(ch.truong[0]).toMatchObject({ ma: 'nguoi_nhan', loai: 'chon', nhieu: true, lua_chon: expect.arrayContaining([expect.objectContaining({ ten: expect.stringContaining('Phạm Văn Tài Chính') })]) });
+      expect((await thaoTac(page, 'vb_chi_tiet', { id: 2 })).result.thao_tac).toEqual([]);
+    });
+    it('vb_thuc_hien: chuyển (người nhận dạng đơn vị|người, hạn yyyy-MM-dd) và kết thúc ⇒ kiểm lại độc lập', async () => {
+      const page = await dangNhap('vanthu');
+      const ch = (await thaoTac(page, 'vb_chi_tiet', { id: 4 })).result.thao_tac.find((t: { ma: string }) => t.ma === 'chuyen');
+      const nguoi = ch.truong[0].lua_chon.find((o: { ten: string }) => o.ten.includes('Phạm Văn Tài Chính')).ma;
+      const r = await thaoTac(page, 'vb_thuc_hien', { id: '4', thao_tac: 'chuyen', nguoi_nhan: [nguoi], han_xu_ly: '2026-10-20', y_kien: 'Đề nghị xử lý' });
+      expect(r).toEqual({ ok: true, result: { thong_bao: 'Đã chuyển văn bản' } });
+      expect((await xem(4)).tt).toBe('Đang xử lý');
+      const kt = await thaoTac(await dangNhap('chuyenvien'), 'vb_thuc_hien', { id: '5', thao_tac: 'ket_thuc', y_kien: 'Xong' });
+      expect(kt).toEqual({ ok: true, result: { thong_bao: 'Đã kết thúc văn bản' } });
+      expect((await xem(5)).tt).toBe('Đã kết thúc');
+    });
+  });
 });

@@ -44,7 +44,7 @@ function chiTiet(f) {
 
 const tepDinhKem = (tep) => (tep && tep.length ? { files: { fuDinhKem: { ten: tep[0].ten, loai: tep[0].loai, base64: tep[0].base64 } } } : {});
 
-vala.action('lay_danh_muc', { mo_ta: 'Danh mục để chọn khi tạo / chuyển / phát hành: loại văn bản, đơn vị và người nhận, sổ văn bản' }, async () => {
+async function layDanhMuc() {
   const dt = await vala.webform('/DuThao.aspx');
   const loai_van_ban = dt.options('ddlLoai').filter((o) => o.value).map((o) => ({ ma: o.value, ten: o.text }));
   // Đơn vị / người nhận lấy từ màn hình Chuyển của một văn bản còn chuyển được (người nhận chỉ hiện sau khi chọn đơn vị).
@@ -66,12 +66,10 @@ vala.action('lay_danh_muc', { mo_ta: 'Danh mục để chọn khi tạo / chuy�
     if (!ph.read(id$('lblLoi'))) so_van_ban = ph.options('ddlSo').filter((o) => o.value).map((o) => ({ ma: o.value, ten: o.text }));
   }
   return { loai_van_ban, don_vi, so_van_ban };
-});
+}
+vala.action('lay_danh_muc', { mo_ta: 'Danh mục để chọn khi tạo / chuyển / phát hành: loại văn bản, đơn vị và người nhận, sổ văn bản' }, layDanhMuc);
 
-vala.action('lay_danh_sach_van_ban', {
-  mo_ta: 'Danh sách văn bản (10 văn bản / trang, mới nhất trước)',
-  params: { trang: 'số trang (mặc định 1)', tu_khoa: 'tìm theo số ký hiệu / trích yếu', trang_thai: 'Dự thảo | Đang xử lý | Đã kết thúc | Đã phát hành' },
-}, async ({ trang = 1, tu_khoa = '', trang_thai = '' }) => {
+async function layDanhSach({ trang = 1, tu_khoa = '', trang_thai = '' }) {
   const f = await vala.webform('/VanBan.aspx');
   if (trang_thai) await f.postback('ddlTrangThai', { ddlTrangThai: chon(f.options('ddlTrangThai'), trang_thai, 'Trạng thái') });
   if (tu_khoa) await f.submit('btnTim', { txtTuKhoa: tu_khoa });
@@ -82,7 +80,11 @@ vala.action('lay_danh_sach_van_ban', {
     await f.postback('gvVanBan', { __EVENTARGUMENT: `Page$${trang}` });
   }
   return { trang, so_trang, tong, van_ban: f.table(id$('gvVanBan')).map(dong) };
-});
+}
+vala.action('lay_danh_sach_van_ban', {
+  mo_ta: 'Danh sách văn bản (10 văn bản / trang, mới nhất trước)',
+  params: { trang: 'số trang (mặc định 1)', tu_khoa: 'tìm theo số ký hiệu / trích yếu', trang_thai: 'Dự thảo | Đang xử lý | Đã kết thúc | Đã phát hành' },
+}, layDanhSach);
 
 vala.action('lay_chi_tiet_van_ban', { mo_ta: 'Thông tin và lịch sử xử lý của một văn bản', params: { id: 'mã văn bản' } }, async ({ id }) => {
   return chiTiet(await vala.webform(`/ChiTiet.aspx?id=${Number(id)}`));
@@ -100,10 +102,7 @@ vala.action('tao_du_thao', {
   return { id, ...ct };
 });
 
-vala.action('chuyen_van_ban', {
-  mo_ta: 'Chuyển văn bản cho người xử lý',
-  params: { id: 'mã văn bản', don_vi: 'mã hoặc tên đơn vị', nguoi_nhan: '[mã hoặc tên]', y_kien: '', han_xu_ly: 'dd/MM/yyyy', tep: '[{ ten, loai, base64 }]' },
-}, async ({ id, don_vi, nguoi_nhan = [], y_kien = '', han_xu_ly = '', tep }) => {
+async function chuyen({ id, don_vi, nguoi_nhan = [], y_kien = '', han_xu_ly = '', tep }) {
   const f = await vala.webform(`/Chuyen.aspx?id=${Number(id)}`);
   kiemLoi(f);
   // WebForms: phải gửi lại "chọn đơn vị" trước — danh sách người nhận (và EventValidation) mới có người của đơn vị đó.
@@ -116,9 +115,13 @@ vala.action('chuyen_van_ban', {
   const moi = ct.lich_su[ct.lich_su.length - 1];
   if (ct.lich_su.length !== truoc + 1 || !moi || moi.hanh_dong !== 'Chuyển xử lý') throw loi('Không xác nhận được văn bản đã chuyển');
   return { id: ct.id, trang_thai: ct.trang_thai, han_xu_ly: ct.han_xu_ly, lich_su_moi: moi };
-});
+}
+vala.action('chuyen_van_ban', {
+  mo_ta: 'Chuyển văn bản cho người xử lý',
+  params: { id: 'mã văn bản', don_vi: 'mã hoặc tên đơn vị', nguoi_nhan: '[mã hoặc tên]', y_kien: '', han_xu_ly: 'dd/MM/yyyy', tep: '[{ ten, loai, base64 }]' },
+}, chuyen);
 
-vala.action('ket_thuc_van_ban', { mo_ta: 'Kết thúc xử lý văn bản (văn bản đang xử lý)', params: { id: 'mã văn bản', y_kien: '' } }, async ({ id, y_kien = '' }) => {
+async function ketThuc({ id, y_kien = '' }) {
   const f = await vala.webform(`/ChiTiet.aspx?id=${Number(id)}`);
   kiemLoi(f);
   if (!f.$(id$('lnkKetThuc'))) throw loi(`Văn bản ${f.read(id$('lblTrangThai')).toLowerCase()}, không kết thúc được`);
@@ -126,12 +129,10 @@ vala.action('ket_thuc_van_ban', { mo_ta: 'Kết thúc xử lý văn bản (văn 
   const ct = chiTiet(f);
   if (ct.trang_thai !== 'Đã kết thúc') throw loi('Không xác nhận được văn bản đã kết thúc');
   return { id: ct.id, trang_thai: ct.trang_thai };
-});
+}
+vala.action('ket_thuc_van_ban', { mo_ta: 'Kết thúc xử lý văn bản (văn bản đang xử lý)', params: { id: 'mã văn bản', y_kien: '' } }, ketThuc);
 
-vala.action('phat_hanh_van_ban', {
-  mo_ta: 'Phát hành văn bản (chỉ văn thư): vào sổ, cấp số ký hiệu',
-  params: { id: 'mã văn bản', so_van_ban: 'mã hoặc tên sổ', don_vi_nhan: '[mã hoặc tên đơn vị]' },
-}, async ({ id, so_van_ban, don_vi_nhan = [] }) => {
+async function phatHanh({ id, so_van_ban, don_vi_nhan = [] }) {
   const f = await vala.webform(`/PhatHanh.aspx?id=${Number(id)}`);
   kiemLoi(f);
   // Sổ nằm trong UpdatePanel: chọn sổ ⇒ máy chủ điền số dự kiến (gửi một phần trang).
@@ -142,4 +143,92 @@ vala.action('phat_hanh_van_ban', {
   const ct = chiTiet(f);
   if (ct.trang_thai !== 'Đã phát hành' || !ct.so_ky_hieu) throw loi('Không xác nhận được văn bản đã phát hành');
   return { id: ct.id, so_ky_hieu: ct.so_ky_hieu, so_du_kien: du_kien };
+}
+vala.action('phat_hanh_van_ban', {
+  mo_ta: 'Phát hành văn bản (chỉ văn thư): vào sổ, cấp số ký hiệu',
+  params: { id: 'mã văn bản', so_van_ban: 'mã hoặc tên sổ', don_vi_nhan: '[mã hoặc tên đơn vị]' },
+}, phatHanh);
+
+// ---- Phiên dịch cho giao diện Văn bản chung của Vala Desktop (docs/van-ban-chung.md): các thao tác vb_* ----
+
+/** "dd/MM/yyyy[ HH:mm]" ⇒ "yyyy-MM-dd[ HH:mm]"; không khớp ⇒ giữ nguyên. */
+const ngayISO = (s) => {
+  const m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+(\d{1,2}:\d{2}))?/.exec(String(s || '').trim());
+  return m ? `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}${m[4] ? ` ${m[4].padStart(5, '0')}` : ''}` : String(s || '');
+};
+/** "yyyy-MM-dd" (ô ngày của giao diện) ⇒ "dd/MM/yyyy" (hệ thống nhận). */
+const ngayVN = (s) => { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(s || '')); return m ? `${m[3]}/${m[2]}/${m[1]}` : String(s || ''); };
+
+const HOP = [
+  { ma: 'tat_ca', ten: 'Tất cả', loai: 'khac', trang_thai: '' },
+  { ma: 'du_thao', ten: 'Dự thảo', loai: 'di', trang_thai: 'Dự thảo' },
+  { ma: 'dang_xu_ly', ten: 'Đang xử lý', loai: 'den', trang_thai: 'Đang xử lý' },
+  { ma: 'da_ket_thuc', ten: 'Đã kết thúc', loai: 'khac', trang_thai: 'Đã kết thúc' },
+  { ma: 'da_phat_hanh', ten: 'Đã phát hành', loai: 'di', trang_thai: 'Đã phát hành' },
+];
+
+vala.action('vb_thong_tin', { mo_ta: 'Giao diện Văn bản: tên hệ thống và các hộp văn bản' }, async () => ({
+  he_thong: 'QLVB Thử nghiệm',
+  hop: HOP.map(({ ma, ten, loai }) => ({ ma, ten, loai })),
+}));
+
+vala.action('vb_danh_sach', { mo_ta: 'Giao diện Văn bản: danh sách một hộp (10 dòng / trang)' }, async ({ hop = 'tat_ca', trang = 1, tim = '' }) => {
+  const h = HOP.find((x) => x.ma === hop) || HOP[0];
+  const r = await layDanhSach({ trang: Number(trang) || 1, tu_khoa: tim, trang_thai: h.trang_thai });
+  return {
+    tong: r.tong, so_trang: r.so_trang,
+    dong: r.van_ban.map((v) => ({ id: String(v.id), so_ky_hieu: v.so_ky_hieu, trich_yeu: v.trich_yeu, ngay: ngayISO(v.ngay_tao), trang_thai: v.trang_thai, nguoi_xu_ly: v.nguoi_xu_ly, loai: v.loai })),
+  };
 });
+
+vala.action('vb_chi_tiet', { mo_ta: 'Giao diện Văn bản: chi tiết, quá trình xử lý và thao tác làm được' }, async ({ id }) => {
+  const ct = chiTiet(await vala.webform(`/ChiTiet.aspx?id=${Number(id)}`));
+  const thao_tac = [];
+  if (ct.trang_thai === 'Dự thảo' || ct.trang_thai === 'Đang xử lý') {
+    const dm = await layDanhMuc();
+    thao_tac.push({
+      ma: 'chuyen', ten: 'Chuyển xử lý', truong: [
+        { ma: 'nguoi_nhan', ten: 'Người nhận', loai: 'chon', bat_buoc: true, nhieu: true,
+          lua_chon: dm.don_vi.flatMap((dv) => dv.nguoi_nhan.map((n) => ({ ma: `${dv.ma}|${n.ma}`, ten: `${n.ten} — ${dv.ten}` }))) },
+        { ma: 'han_xu_ly', ten: 'Hạn xử lý', loai: 'ngay' },
+        { ma: 'y_kien', ten: 'Ý kiến', loai: 'doan' },
+      ],
+    });
+    const ph = await vala.webform(`/PhatHanh.aspx?id=${Number(id)}`);
+    if (!ph.read(id$('lblLoi')) && dm.so_van_ban.length) {
+      thao_tac.push({
+        ma: 'phat_hanh', ten: 'Phát hành', xac_nhan: 'Phát hành văn bản này? Hệ thống sẽ cấp số và gửi đơn vị nhận.', truong: [
+          { ma: 'so_van_ban', ten: 'Sổ văn bản', loai: 'chon', bat_buoc: true, lua_chon: dm.so_van_ban },
+          { ma: 'don_vi_nhan', ten: 'Đơn vị nhận', loai: 'chon', nhieu: true, lua_chon: dm.don_vi.map((d) => ({ ma: d.ma, ten: d.ten })) },
+        ],
+      });
+    }
+  }
+  if (ct.trang_thai === 'Đang xử lý') {
+    thao_tac.push({ ma: 'ket_thuc', ten: 'Kết thúc', xac_nhan: 'Kết thúc xử lý văn bản này?', truong: [{ ma: 'y_kien', ten: 'Ý kiến', loai: 'doan' }] });
+  }
+  return {
+    id: String(ct.id), so_ky_hieu: ct.so_ky_hieu, trich_yeu: ct.trich_yeu, trang_thai: ct.trang_thai, han_xu_ly: ngayISO(ct.han_xu_ly),
+    loai: ct.loai, noi_dung: ct.noi_dung,
+    tep: ct.tep ? [{ id: '1', ten: ct.tep }] : [],
+    qua_trinh: ct.lich_su.map((l) => ({ luc: ngayISO(l.thoi_gian), nguoi: l.nguoi_xu_ly, viec: [l.hanh_dong, l.noi_dung].filter(Boolean).join(': ') })),
+    thao_tac,
+  };
+});
+
+vala.action('vb_thuc_hien', { mo_ta: 'Giao diện Văn bản: thực hiện một thao tác (chuyen | phat_hanh | ket_thuc)' }, async ({ id, thao_tac, ...v }) => {
+  if (thao_tac === 'chuyen') {
+    const chon = [].concat(v.nguoi_nhan || []).map((x) => String(x).split('|'));
+    const dv = [...new Set(chon.map((x) => x[0]))];
+    if (dv.length !== 1) throw loi('Chọn người nhận trong cùng một đơn vị');
+    await chuyen({ id, don_vi: dv[0], nguoi_nhan: chon.map((x) => x[1]), y_kien: v.y_kien || '', han_xu_ly: ngayVN(v.han_xu_ly) });
+    return { thong_bao: 'Đã chuyển văn bản' };
+  }
+  if (thao_tac === 'phat_hanh') {
+    const r = await phatHanh({ id, so_van_ban: v.so_van_ban, don_vi_nhan: [].concat(v.don_vi_nhan || []) });
+    return { thong_bao: `Đã phát hành, số ký hiệu ${r.so_ky_hieu}` };
+  }
+  if (thao_tac === 'ket_thuc') { await ketThuc({ id, y_kien: v.y_kien || '' }); return { thong_bao: 'Đã kết thúc văn bản' }; }
+  throw loi(`Không có thao tác ${thao_tac}`);
+});
+
