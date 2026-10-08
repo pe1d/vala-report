@@ -4,6 +4,7 @@
  * Thanh dọc: ✦ Trợ lý AI · ỨNG DỤNG (ghim) · ĐANG MỞ · hồ sơ + ⊞ ở cuối. Thu gọn ⇒ chỉ biểu tượng (tên ở tooltip); rê
  * chuột vào thanh thu gọn ⇒ "xem nhanh" (như Edge): cùng trang này ở chế độ #peek (chỉ thanh dọc, luôn mở rộng) hiện trên
  * một view riêng ĐÈ lên trang web; tiến trình chính ẩn khi chuột rời vùng thanh (browser.ts showPeek).
+ * Kéo thả một mục (giữ chuột trái, kéo quá 4px) ⇒ đổi thứ tự trong nhóm của nó (Ứng dụng / Đang mở) — sortable().
  * Dựng DOM bằng textContent, không dùng innerHTML (tiêu đề tab là chữ của trang web bất kỳ).
  */
 interface TabView {
@@ -18,6 +19,8 @@ interface TabView {
   opened: boolean;
   closable: boolean;
   glyph: 'chat' | 'settings' | 'recording' | null;
+  /** Không kéo đổi chỗ được (ứng dụng mặc định của đơn vị — luôn đứng đầu nhóm Ứng dụng). */
+  fixed?: boolean;
 }
 interface TabsState {
   lang: 'vi' | 'en';
@@ -45,6 +48,7 @@ interface ValaTabsApi {
   ready(): Promise<void>;
   activate(key: string): Promise<void>;
   close(key: string): Promise<void>;
+  reorder(group: 'apps' | 'open', keys: string[]): Promise<void>;
   nav(cmd: 'back' | 'forward' | 'reload'): Promise<void>;
   collapse(): Promise<void>;
   peek(on: boolean): Promise<void>;
@@ -103,6 +107,7 @@ interface ValaTabsApi {
     const el = document.createElement('div');
     el.setAttribute('role', 'tab');
     el.className = 'side-item group';
+    el.dataset.key = key;
     el.addEventListener('mousedown', (e) => { if (e.button === 0 && !(e.target as Element).closest('[data-close]')) void api.activate(key); });
     // Bấm chuột giữa ⇒ đóng (mục đóng được).
     el.addEventListener('auxclick', (e) => { if (e.button === 1 && nodes.get(key)?.close.dataset.closable === '1') void api.close(key); });
@@ -169,6 +174,7 @@ interface ValaTabsApi {
       setIf(n.dot, 'class', `h-2 w-2 shrink-0 rounded-full ${DOT[tab.status]}`);
       setIf(n.dot, 'aria-label', s.t.status[tab.status]);
     }
+    n.el.dataset.fixed = tab.fixed ? '1' : '0';
     n.close.dataset.closable = tab.closable ? '1' : '0';
     display(n.close, tab.closable && !s.collapsed);
     setIf(n.close, 'title', s.t.close);
@@ -197,7 +203,7 @@ interface ValaTabsApi {
     });
     if (extra) wanted.push(extra);
     const current = Array.from(box.children);
-    if (current.length !== wanted.length || current.some((c, i) => c !== wanted[i])) box.replaceChildren(...wanted);
+    if (!dragging && (current.length !== wanted.length || current.some((c, i) => c !== wanted[i]))) box.replaceChildren(...wanted);
   }
 
   /**
@@ -219,6 +225,83 @@ interface ValaTabsApi {
     } else setText(el, text);
     display(el, show);
   }
+
+  /** Đang kéo một mục ⇒ không bật xem nhanh, không vẽ lại thứ tự giữa chừng. */
+  let dragging = false;
+
+  /**
+   * Kéo thả đổi thứ tự trong một nhóm (như thanh tab dọc của Edge): mục đang kéo đi theo chuột (chỉ trong phạm vi nhóm),
+   * các mục khác trượt nhường chỗ; thả ⇒ sắp DOM ngay rồi báo tiến trình chính lưu. Mục `fixed` đứng yên ở đầu nhóm,
+   * không kéo được và không thả lên trên nó được. Esc / chuột rời trang (xem nhanh bị ẩn) ⇒ huỷ. KHÔNG huỷ khi trang mất
+   * focus: nhấn chuột là chọn tab, tiến trình chính chuyển focus sang trang web của tab (showTab) ⇒ thanh dọc bị blur
+   * ngay đầu lần kéo; sự kiện chuột vẫn tới thanh dọc theo vị trí con trỏ.
+   */
+  function sortable(box: HTMLElement, group: 'apps' | 'open') {
+    box.addEventListener('pointerdown', (e) => {
+      const target = e.target as Element;
+      const item = target.closest<HTMLElement>('[data-key]');
+      if (e.button !== 0 || !item || item.parentElement !== box || item.dataset.fixed === '1' || target.closest('[data-close]')) return;
+      const items = Array.from(box.children).filter((c): c is HTMLElement => c instanceof HTMLElement && !!c.dataset.key);
+      const from = items.indexOf(item);
+      const min = items.filter((it) => it.dataset.fixed === '1').length;
+      if (items.length - min < 2) return;
+      const step = items[1]!.getBoundingClientRect().top - items[0]!.getBoundingClientRect().top;
+      const startY = e.clientY;
+      let started = false;
+      let to = from;
+
+      /** Mục đang kéo "nhấc lên": nền đặc (đè cả nền hover), viền, bóng đổ. */
+      const LIFTED = ['relative', 'z-10', 'shadow-lg', 'ring-1', 'ring-slate-300', '!bg-white', 'dark:ring-slate-600', 'dark:!bg-slate-800'];
+      const shift = (it: HTMLElement, y: number) => { it.style.transform = y ? `translateY(${y}px)` : ''; };
+      const finish = (commit: boolean) => {
+        window.removeEventListener('pointermove', move);
+        window.removeEventListener('pointerup', up);
+        window.removeEventListener('pointercancel', cancel);
+        window.removeEventListener('keydown', esc, true);
+        if (!started) return;
+        dragging = false;
+        document.body.classList.remove('cursor-grabbing');
+        // Bỏ hiệu ứng trước khi trả vị trí ⇒ các mục không trượt ngược lại rồi mới nhảy sang chỗ mới.
+        for (const it of items) { it.style.transition = ''; shift(it, 0); }
+        item.classList.remove(...LIFTED);
+        item.style.cursor = '';
+        if (!commit || to === from) return;
+        const order = [...items];
+        order.splice(to, 0, order.splice(from, 1)[0]!);
+        const extra = Array.from(box.children).filter((c) => !items.includes(c as HTMLElement));
+        box.replaceChildren(...order, ...extra);
+        void api.reorder(group, order.map((it) => it.dataset.key!));
+      };
+      const move = (ev: PointerEvent) => {
+        // Nhả chuột mà không nhận được pointerup (vd bản xem nhanh bị gỡ giữa chừng) ⇒ huỷ.
+        if (!(ev.buttons & 1)) { finish(false); return; }
+        const dy = ev.clientY - startY;
+        if (!started) {
+          if (Math.abs(dy) < 5) return;
+          started = dragging = true;
+          document.body.classList.add('cursor-grabbing');
+          item.classList.add(...LIFTED);
+          item.style.cursor = 'grabbing';
+          for (const it of items) if (it !== item) it.style.transition = 'transform 150ms cubic-bezier(0.215, 0.61, 0.355, 1)';
+        }
+        const y = Math.min(Math.max(dy, (min - from) * step), (items.length - 1 - from) * step);
+        shift(item, y);
+        to = Math.min(Math.max(from + Math.round(y / step), min), items.length - 1);
+        items.forEach((it, i) => {
+          if (it !== item) shift(it, from < to && i > from && i <= to ? -step : to < from && i >= to && i < from ? step : 0);
+        });
+      };
+      const up = () => finish(true);
+      const cancel = () => finish(false);
+      const esc = (ev: KeyboardEvent) => { if (ev.key === 'Escape') { ev.preventDefault(); finish(false); } };
+      window.addEventListener('pointermove', move);
+      window.addEventListener('pointerup', up);
+      window.addEventListener('pointercancel', cancel);
+      window.addEventListener('keydown', esc, true);
+    });
+  }
+  sortable($('apps'), 'apps');
+  sortable($('open'), 'open');
 
   let lastActive: string | null = null;
 
@@ -369,7 +452,7 @@ interface ValaTabsApi {
     let hover: number | undefined;
     $('bar').addEventListener('mouseenter', () => {
       if (!collapsedNow) return;
-      hover = window.setTimeout(() => void api.peek(true), 250);
+      hover = window.setTimeout(() => { if (!dragging) void api.peek(true); }, 250);
     });
     $('bar').addEventListener('mouseleave', () => window.clearTimeout(hover));
   }

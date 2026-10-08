@@ -22,12 +22,12 @@ import { attachAutofill } from './autofill';
 import { attachPackages, injectAll, listActions, packageEvents } from './scripts';
 import { recordActions, recordAppVisit } from './local-data';
 import { portalApi } from './account';
-import { appByKey, appKey, canAdmin, catalog, insideDomains, pinnedKeys as catalogPinnedKeys, setAppPinned } from './apps';
+import { appByKey, appKey, canAdmin, catalog, insideDomains, pinnedKeys as catalogPinnedKeys, setAppPinned, setPinnedOrder } from './apps';
 import { isPortalUrl, mapToUi, UI_ORIGIN, uiEvents, uiPortalUrl } from './ui-cache';
 import { currentPrefs, prefsEvents, setPrefs } from './prefs';
 import { getSettings, setSettings } from './settings';
 import { cachedSources, events, statusOf, type SourceFull } from './sync';
-import { openTarget, sidebarSections, tabStatus, type TabStatus } from './tabs-model';
+import { applySubsetOrder, openTarget, reordered, sidebarSections, tabStatus, type TabStatus } from './tabs-model';
 import { pendingUpdate, promptInstall } from './updater';
 import { recordingKey } from './recorder';
 import { closeLoginSso, layoutSso } from './login-page';
@@ -695,6 +695,23 @@ export function setPinned(key: string, on: boolean): void {
   pushState();
 }
 
+/**
+ * Kéo thả trên thanh dọc: xếp lại nhóm Ứng dụng (bố cục người dùng, lưu trên máy chủ; ứng dụng mặc định của đơn vị luôn
+ * đứng đầu) hoặc nhóm Đang mở (chỉ trong phiên). Sai nhóm / sai mục ⇒ bỏ qua, vẽ lại theo thứ tự cũ.
+ */
+function reorderGroup(group: unknown, keys: unknown): void {
+  const next = Array.isArray(keys) ? keys : [];
+  if (group === 'apps') {
+    const ok = reordered(pinnedKeys(), next);
+    const def = appDefs().find((a) => a.isDefault)?.key;
+    if (ok && (!def || !ok.includes(def) || ok[0] === def)) void setPinnedOrder(ok).then(pushState);
+  } else if (group === 'open') {
+    const ok = reordered(sections().open.filter((k) => tabs.has(k)), next);
+    if (ok) order = applySubsetOrder(order, ok);
+  }
+  pushState();
+}
+
 /** Cấu hình đổi (đăng nhập/đăng xuất, trang chính, ngôn ngữ) hoặc trạng thái nguồn đổi ⇒ cập nhật tab ghim và thanh dọc. */
 export function refreshBrowser(): void {
   if (!win || win.isDestroyed()) return;
@@ -737,6 +754,7 @@ function pushState(): void {
   const s = getSettings();
   const t = M[s.lang];
   const labels = new Map(appDefs().map((a) => [a.key, a.label]));
+  const defKey = appDefs().find((a) => a.isDefault)?.key;
   const sec = sections();
   const wc = activeWc();
   const h = wc && !wc.isDestroyed() ? wc.navigationHistory : null;
@@ -749,7 +767,8 @@ function pushState(): void {
   const state = {
     lang: s.lang, t: plain, active, dev: IS_DEV, collapsed: !!s.sidebarCollapsed, signedIn: signedIn(),
     chat: itemOf(CHAT, t.assistant, t, false),
-    apps: sec.apps.map((k) => itemOf(k, labels.get(k), t, false)),
+    // Ứng dụng mặc định của đơn vị luôn đứng đầu nhóm ⇒ không kéo được.
+    apps: sec.apps.map((k) => ({ ...itemOf(k, labels.get(k), t, false), fixed: k === defKey })),
     open: sec.open.filter((k) => tabs.has(k)).map((k) => itemOf(k, labels.get(k), t, !tabs.get(k)!.pinned)),
     // Nút "Thêm" cuối nhóm Ứng dụng (như Lark): mở nhanh ứng dụng chưa ghim.
     more: appDefs().filter((a) => !sec.apps.includes(a.key)).length,
@@ -801,6 +820,7 @@ function registerIpc(): void {
   ipcMain.handle('tabs:peek', (e, on: unknown) => { own(e); if (on === true) showPeek(); else hidePeek(); });
   ipcMain.handle('tabs:activate', (e, key: unknown) => { own(e); if (typeof key === 'string') activate(key); });
   ipcMain.handle('tabs:close', (e, key: unknown) => { own(e); if (typeof key === 'string') closeTab(key); });
+  ipcMain.handle('tabs:reorder', (e, a: { group?: unknown; keys?: unknown }) => { own(e); reorderGroup(a?.group, a?.keys); });
   ipcMain.handle('tabs:nav', (e, cmd: unknown) => {
     own(e);
     const wc = activeWc();

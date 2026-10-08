@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { catalogPinned, openTarget, siteOf, sidebarSections, tabStatus } from '../src/tabs-model';
+import { applySubsetOrder, catalogPinned, openTarget, reordered, siteOf, sidebarSections, tabStatus } from '../src/tabs-model';
 
 describe('openTarget (link mở cửa sổ mới)', () => {
   it('tên miền đơn vị khai "mở trong Vala Desktop" (gồm tên miền con) ⇒ tab trong app dù khác tên miền gốc', () => {
@@ -80,5 +80,19 @@ describe('sidebarSections (nhóm trên thanh dọc)', () => {
   it('Ứng dụng = mục ghim; Đang mở = mục đang mở không ghim (bỏ Trợ lý AI), giữ thứ tự mở', () => {
     expect(sidebarSections({ pinned: ['home', 'portal', 'src:egov'], open: ['chat', 'src:egov', 't:3', 'settings', 'src:etask'] }))
       .toEqual({ apps: ['home', 'portal', 'src:egov'], open: ['t:3', 'settings', 'src:etask'] });
+  });
+});
+
+describe('kéo thả đổi thứ tự trên thanh dọc', () => {
+  it('reordered: chỉ nhận đúng các mục cũ đổi chỗ', () => {
+    expect(reordered(['a', 'b', 'c'], ['c', 'a', 'b'])).toEqual(['c', 'a', 'b']);
+    expect(reordered(['a', 'b', 'c'], ['a', 'b'])).toBeNull();
+    expect(reordered(['a', 'b', 'c'], ['a', 'b', 'b'])).toBeNull();
+    expect(reordered(['a', 'b', 'c'], ['a', 'b', 'x'])).toBeNull();
+    expect(reordered(['a', 'b'], ['a', 2])).toBeNull();
+  });
+  it('applySubsetOrder: giữ chỗ của mục ngoài nhóm (ứng dụng ghim đang mở vẫn nằm trong danh sách mở)', () => {
+    expect(applySubsetOrder(['web:vala', 'x', 'portal', 'y', 'z'], ['z', 'x', 'y'])).toEqual(['web:vala', 'z', 'portal', 'x', 'y']);
+    expect(applySubsetOrder(['a', 'b'], [])).toEqual(['a', 'b']);
   });
 });

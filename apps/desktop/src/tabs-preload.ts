@@ -5,6 +5,7 @@ contextBridge.exposeInMainWorld('valaTabs', {
   ready: () => ipcRenderer.invoke('tabs:ready'),
   activate: (key: string) => ipcRenderer.invoke('tabs:activate', key),
   close: (key: string) => ipcRenderer.invoke('tabs:close', key),
+  reorder: (group: 'apps' | 'open', keys: string[]) => ipcRenderer.invoke('tabs:reorder', { group, keys }),
   nav: (cmd: 'back' | 'forward' | 'reload') => ipcRenderer.invoke('tabs:nav', cmd),
   collapse: () => ipcRenderer.invoke('tabs:collapse'),
   peek: (on: boolean) => ipcRenderer.invoke('tabs:peek', on),

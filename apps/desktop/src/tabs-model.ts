@@ -62,3 +62,17 @@ export function tabStatus(r: SyncResult | undefined, state: SourceFull['state'])
 export function sidebarSections(a: { pinned: readonly string[]; open: readonly string[] }): { apps: string[]; open: string[] } {
   return { apps: [...a.pinned], open: a.open.filter((k) => k !== 'chat' && !a.pinned.includes(k)) };
 }
+
+/** Kéo thả đổi thứ tự một nhóm: `next` phải đúng các mục của `cur`, chỉ đổi chỗ (thiếu / thừa / trùng ⇒ null). */
+export function reordered(cur: readonly string[], next: readonly unknown[]): string[] | null {
+  if (next.length !== cur.length || !next.every((k): k is string => typeof k === 'string')) return null;
+  const set = new Set(next);
+  return set.size === cur.length && cur.every((k) => set.has(k)) ? [...next] : null;
+}
+
+/** Xếp lại các mục của một nhóm con trong danh sách chung: các vị trí nhóm đang chiếm giữ nguyên, lần lượt điền theo `sub`. */
+export function applySubsetOrder(all: readonly string[], sub: readonly string[]): string[] {
+  const inSub = new Set(sub);
+  let i = 0;
+  return all.map((k) => (inSub.has(k) ? sub[i++]! : k));
+}

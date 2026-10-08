@@ -92,6 +92,13 @@ export async function setAppPinned(key: string, on: boolean): Promise<void> {
   try { await api('PUT', '/ext/layout', { pinned }); } catch { /* lần làm mới sau sẽ lấy lại bố cục trên máy chủ */ }
 }
 
+/** Kéo thả đổi thứ tự ứng dụng ghim (khoá tab, đã kiểm đúng các mục đang ghim): lưu bố cục như ghim / bỏ ghim. */
+export async function setPinnedOrder(keys: readonly string[]): Promise<void> {
+  const pinned = keys.map((k) => appByKey(k)?.ma).filter((m): m is string => !!m);
+  save({ ...catalog(), layout: { pinned } });
+  try { await api('PUT', '/ext/layout', { pinned }); } catch { /* lần làm mới sau sẽ lấy lại bố cục trên máy chủ */ }
+}
+
 /** Đăng xuất ⇒ quên danh mục của đơn vị. */
 export function clearApps(): void {
   cache = { apps: [], layout: { pinned: null } };
