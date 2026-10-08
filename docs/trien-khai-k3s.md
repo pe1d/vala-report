@@ -134,14 +134,16 @@ nhất được giữ lại để quay lại khi cần. Đổi `.env.prod` hoặ
 ## 4b. Phát hành bản Vala Desktop mới (tự cập nhật)
 
 Vala Desktop hỏi `{PUBLIC_WEB_URL}/desktop/latest.yml` (Windows) / `latest-linux.yml` (Ubuntu) lúc mở và 4 giờ một lần.
-Có bản mới thì tự tải, kiểm mã băm sha512, rồi hiện nút **"Đã có bản … — Cập nhật"** ở cuối thanh bên. Windows: không bấm thì
-tự cài khi thoát. Ubuntu: chỉ cài khi bấm, và Ubuntu hỏi mật khẩu quản trị. Chỉ bản **cài đặt** tự cập nhật được (Windows
-NSIS, Ubuntu .deb), bản zip thì không.
+Có bản mới thì tự tải, kiểm mã băm sha512. **Tự động cập nhật** (mặc định bật, tắt ở Cài đặt → Khởi động & cập nhật):
+Windows tự cài im lặng khi cửa sổ ẩn xuống khay hoặc máy để không 10 phút rồi mở lại; tắt thì hiện nút **"Đã có bản … —
+Cập nhật"** ở cuối thanh bên (không bấm thì cài khi thoát). Ubuntu: luôn chỉ cài khi bấm, và Ubuntu hỏi mật khẩu quản trị.
+Chỉ bản **cài đặt** tự cập nhật được (Windows NSIS / mini installer, Ubuntu .deb), bản zip thì không. Chi tiết, báo lỗi:
+docs/desktop-cai-dat-cap-nhat-bao-loi.md.
 
 | | Windows | Ubuntu |
 |---|---|---|
 | Build (trên máy dev Linux) | `apps/desktop/scripts/package-win.sh` (Docker có wine) | `pnpm --filter @vala/desktop package:linux` |
-| File trong `apps/desktop/release/` | `vala-desktop-<v>-win-x64.exe`, `.exe.blockmap`, `latest.yml` | `vala-desktop-<v>-linux-amd64.deb`, `latest-linux.yml` |
+| File | `apps/desktop/release/nsis-web/`: `vala-desktop-<v>-win-x64-setup.exe` (mini installer), `vala-desktop-<v>-x64.nsis.7z` (gói app), `latest.yml` — bộ cài đầy đủ (`VALA_OFFLINE=1`): `release/vala-desktop-<v>-win-x64.exe` | `apps/desktop/release/`: `vala-desktop-<v>-linux-amd64.deb`, `latest-linux.yml` |
 | Liên kết tải lần đầu | `{PUBLIC_WEB_URL}/desktop/vala-desktop-setup.exe` | `{PUBLIC_WEB_URL}/desktop/vala-desktop.deb` |
 
 Gửi người dùng **trang tải `{PUBLIC_WEB_URL}/desktop`** (không cần đăng nhập; có cả liên kết ở trang đăng nhập cổng): trang tự
@@ -157,8 +159,8 @@ phát hành AppImage** (không mang theo được hồ sơ này; chạy được
    dừng. Nội dung được ghi vào `latest.yml` (trường `releaseNotes`): người dùng thấy hộp "Bản … có gì mới" trước khi cài,
    một thông báo "Đã cập nhật lên bản …" sau khi cài, và danh sách ở Cài đặt → Giới thiệu. Rồi build theo bảng trên
    (Windows trên máy Windows thì `pnpm --filter @vala/desktop package`).
-2. Chép các file trong `apps/desktop/release/` lên máy chủ (vd `scp apps/desktop/release/{latest*.yml,*.exe,*.blockmap,*.deb}
-   <user>@10.2.65.146:/tmp/vala-desktop/`) rồi trên máy chủ:
+2. Chép các file lên máy chủ (vd `scp apps/desktop/release/nsis-web/{latest.yml,*.exe,*.nsis.7z} apps/desktop/release/{latest-linux.yml,*.deb}
+   <user>@10.2.65.146:/tmp/vala-desktop/`) rồi trên máy chủ (script chép gói `.nsis.7z` và file cài trước, `.yml` sau cùng):
 
 ```bash
 cd /opt/vala-report && deploy/publish-desktop.sh /tmp/vala-desktop      # file cài trước, .yml sau cùng

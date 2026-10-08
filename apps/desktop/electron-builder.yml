@@ -28,14 +28,28 @@ releaseInfo:
 publish:
   - provider: generic
     url: https://qtttboard-demo.demozone.vn:5443/vala-report/desktop/
+# Windows: MINI INSTALLER (nsis-web, người dùng chốt 08/10/2026) — file cài ~1–2 MB, chạy lên mới tải gói app (.nsis.7z)
+# từ máy chủ Vala (/desktop/), cài một chạm rồi mở app. Tự cập nhật cũng qua gói này (latest.yml trỏ tới file cài mini +
+# gói). Máy không ra được máy chủ: build bộ cài đầy đủ VALA_OFFLINE=1 apps/desktop/scripts/package-win.sh (target nsis).
 win:
   target:
-    - target: nsis
+    - target: nsis-web
       arch: [x64]
   icon: resources/icon-256.png
   # Build từ Linux không có wine: bỏ bước gắn icon/thông tin phiên bản vào .exe.
   # Build trên Windows: pnpm build && npx electron-builder --win -c.win.signAndEditExecutable=true
   signAndEditExecutable: false
+nsisWeb:
+  oneClick: true
+  perMachine: false
+  # Kế thừa mục nsis bên dưới ⇒ phải tắt rõ (một chạm thì không chọn thư mục cài).
+  allowToChangeInstallationDirectory: false
+  runAfterFinish: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Vala Desktop
+  artifactName: vala-desktop-${version}-win-x64-setup.${ext}
+# Bộ cài đầy đủ (VALA_OFFLINE=1): chọn thư mục cài như trước.
 nsis:
   oneClick: false
   perMachine: false

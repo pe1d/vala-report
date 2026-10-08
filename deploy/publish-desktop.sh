@@ -3,7 +3,9 @@
 #   deploy/publish-desktop.sh <thư mục chứa latest.yml / latest-linux.yml và file cài> [thư mục đích]
 # Đích mặc định /var/lib/vala-report/desktop (k3s). Docker Compose: deploy/publish-desktop.sh <thư mục> deploy/desktop
 #
-# Windows: latest.yml + vala-desktop-<v>-win-x64.exe (+ .blockmap)   → liên kết cố định vala-desktop-setup.exe
+# Windows: latest.yml + file cài (mini installer vala-desktop-<v>-win-x64-setup.exe + gói vala-desktop-<v>-x64.nsis.7z,
+#          hoặc bộ cài đầy đủ vala-desktop-<v>-win-x64.exe + .blockmap) → liên kết cố định vala-desktop-setup.exe
+#          (thư mục nsis-web/ của electron-builder: chỉ đường dẫn tới đó, vd apps/desktop/release/nsis-web)
 # Ubuntu:  latest-linux.yml + vala-desktop-<v>-linux-amd64.deb       → liên kết cố định vala-desktop.deb
 # Có bản nào phát hành bản đó (một hoặc cả hai). Thứ tự quan trọng: file cài trước, file .yml SAU CÙNG — ứng dụng chỉ thấy
 # bản mới khi file cài đã chép đủ.
@@ -26,6 +28,11 @@ for spec in "latest.yml:vala-desktop-setup.exe" "latest-linux.yml:vala-desktop.d
   file="$(sed -n 's/^path: *//p' "$SRC/$yml" | head -1)"
   [ -n "$ver" ] && [ -n "$file" ] || { echo "$SRC/$yml không có version/path"; exit 1; }
   [ -f "$SRC/$file" ] || { echo "Không có $SRC/$file ($yml trỏ tới)"; exit 1; }
+  # Mini installer: gói app (.nsis.7z) mà file cài mini tải về — chép TRƯỚC file cài / .yml.
+  for pkg in $(sed -n "s/^ *path: *'\{0,1\}\([^']*\.nsis\.7z\)'\{0,1\} *\$/\1/p" "$SRC/$yml"); do
+    [ -f "$SRC/$pkg" ] || { echo "Không có gói $SRC/$pkg ($yml trỏ tới)"; exit 1; }
+    put "$SRC/$pkg" "$pkg"
+  done
   put "$SRC/$file" "$file"
   [ -f "$SRC/$file.blockmap" ] && put "$SRC/$file.blockmap" "$file.blockmap"
   put "$SRC/$file" "$alias"
