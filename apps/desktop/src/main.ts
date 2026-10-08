@@ -9,20 +9,21 @@ import { cleanUserAgent } from './ua';
 import { accountEvents, logoutDevice } from './account';
 import { registerSettingsPage } from './settings-page';
 import { registerRecordingPage } from './recording-page';
+import { registerChatPage } from './chat-page';
 import { getSettings } from './settings';
 import { syncAll } from './sync';
 import { forgetPackages, refreshPackages } from './scripts';
 import { applyTheme, prefsEvents } from './prefs';
-import { setPortalUser } from './portal-state';
+import { portalHasPassword, setPortalUser } from './portal-state';
 import { registerAutofill } from './autofill';
 import { lockCredentials } from './credentials';
 import { installUiProtocol, refreshUi, registerUiScheme } from './ui-cache';
-import { forgetPortalLogin, initBrowser, isRecordingContents, isSettingsContents, openRecordingTab, openSettingsTab, pushRecording, pushSettings, refreshBrowser, revealWindow } from './browser';
+import { forgetPortalLogin, initBrowser, showDefault, isChatContents, isRecordingContents, pushChat, isSettingsContents, openRecordingTab, openSettingsTab, pushRecording, pushSettings, refreshBrowser, revealWindow } from './browser';
 import { setNotifyReveal } from './notify';
-import { createMenus, moreMenu, profileMenu, refreshMenus, tabContextMenu } from './menu';
+import { createMenus, refreshMenus, tabContextMenu } from './menu';
 import { refreshHomeFromServer } from './homepage';
 import { applyAutostart } from './autostart';
-import { announceUpdate, initUpdater } from './updater';
+import { announceUpdate, checkNow, initUpdater } from './updater';
 import { changePortalPassword, onTabLeave, portalUserEvents, registerBridge, showMain, showPortal, watchCookies } from './windows';
 
 const SYNC_INTERVAL_MS = 15 * 60_000;
@@ -56,7 +57,7 @@ async function signOut() {
 // Đăng nhập cổng ở tab Báo cáo ⇒ cổng cấp token thiết bị qua cầu nối (account.ts) ⇒ bắt đầu giữ/gửi phiên.
 accountEvents.on('login', () => { refreshAll(); startSync(); });
 accountEvents.on('logout', () => { forgetPackages(); setPortalUser(null); lockCredentials(); refreshAll(); });
-// Đổi ngôn ngữ / sáng-tối ở bất kỳ đâu ⇒ menu, khay, thanh tab theo (browser.ts tự báo cổng).
+// Đổi ngôn ngữ / sáng-tối ở bất kỳ đâu ⇒ menu, khay, thanh dọc theo (browser.ts tự báo cổng).
 prefsEvents.on('changed', refreshAll);
 portalUserEvents.on('changed', refreshAll);
 
@@ -73,7 +74,7 @@ if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
   // Mở lần hai (bấm biểu tượng khi đã chạy nền) ⇒ hiện cửa sổ chính của bản đang chạy.
-  app.on('second-instance', () => showMain());
+  app.on('second-instance', () => showDefault());
   app.setAppUserModelId('com.bkav.vala.desktop');
 
   app.whenReady().then(() => {
@@ -91,19 +92,32 @@ if (!app.requestSingleInstanceLock()) {
       isSettings: (e) => isSettingsContents(e.sender), push: pushSettings,
     });
     registerRecordingPage({ isRecording: (e) => isRecordingContents(e.sender), push: pushRecording, open: openRecordingTab });
+    registerChatPage({ isChat: (e) => isChatContents(e.sender), push: pushChat });
     watchCookies();
-    createMenus({ showMain, showPortal, openSettings, signOut: () => void signOut(), changePassword: changePortalPassword });
-    initBrowser({ onLeave: onTabLeave, menu: moreMenu, profileMenu, signIn: showPortal, tabMenu: tabContextMenu });
-    // Bản mới tải xong ⇒ hiện nút "Cập nhật" trên thanh tab và trong menu.
+    createMenus({ showMain, showDefault, showPortal, openSettings, signOut: () => void signOut(), changePassword: changePortalPassword });
+    initBrowser({
+      onLeave: onTabLeave, signIn: showPortal, tabMenu: tabContextMenu, portalHasPassword,
+      // Menu hồ sơ ở cuối thanh dọc (khung nổi).
+      profileCommand: (cmd) => {
+        if (cmd === 'settings') openSettings();
+        else if (cmd === 'passwords') openSettings('mat-khau');
+        else if (cmd === 'change-password') changePortalPassword();
+        else if (cmd === 'sync') void syncAll(true);
+        else if (cmd === 'check-update') checkNow();
+        else if (cmd === 'sign-out') void signOut();
+        else if (cmd === 'quit') app.quit();
+      },
+    });
+    // Bản mới tải xong ⇒ hiện nút "Cập nhật" trên thanh dọc và trong menu.
     initUpdater(refreshAll);
     // Vừa cập nhật lên bản mới ⇒ báo một lần "có gì mới" (bấm ⇒ Cài đặt → Giới thiệu).
     announceUpdate(() => openSettings('gioi-thieu'));
 
     void refreshHome();
     void refreshUi();
-    // Không bật cửa sổ Cài đặt: chưa đăng nhập thì thanh tab có nút "Đăng nhập" (sang tab Báo cáo đăng nhập cổng).
+    // Không bật cửa sổ Cài đặt: chưa đăng nhập thì thanh dọc có nút "Đăng nhập" (sang tab Báo cáo đăng nhập cổng).
     if (getSettings().deviceToken) startSync();
-    if (!HIDDEN) showMain();
+    if (!HIDDEN) showDefault();
   });
 
   // Chạy nền ở khay hệ thống: đóng hết cửa sổ không thoát ứng dụng.

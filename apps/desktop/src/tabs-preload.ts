@@ -1,16 +1,15 @@
-/** Preload của thanh tab: chỉ mở đúng các lệnh thanh tab cần. */
+/** Preload của thanh ứng dụng dọc: chỉ mở đúng các lệnh thanh dọc cần (tiến trình chính kiểm đúng trang). */
 import { contextBridge, ipcRenderer } from 'electron';
 
 contextBridge.exposeInMainWorld('valaTabs', {
   ready: () => ipcRenderer.invoke('tabs:ready'),
   activate: (key: string) => ipcRenderer.invoke('tabs:activate', key),
   close: (key: string) => ipcRenderer.invoke('tabs:close', key),
-  menu: (x: number, y: number) => ipcRenderer.invoke('tabs:menu', { x, y }),
-  setLang: (lang: string) => ipcRenderer.invoke('tabs:lang', lang),
-  setTheme: (theme: string) => ipcRenderer.invoke('tabs:theme', theme),
+  nav: (cmd: 'back' | 'forward' | 'reload') => ipcRenderer.invoke('tabs:nav', cmd),
+  collapse: () => ipcRenderer.invoke('tabs:collapse'),
+  overlay: (kind: 'profile' | 'apps', r: { x: number; y: number; w: number; h: number }) => ipcRenderer.invoke('tabs:overlay', { kind, ...r }),
   resized: () => ipcRenderer.send('tabs:resized'),
   installUpdate: () => ipcRenderer.invoke('tabs:install-update'),
-  profile: (x: number, y: number) => ipcRenderer.invoke('tabs:profile', { x, y }),
   signIn: () => ipcRenderer.invoke('tabs:sign-in'),
   tabMenu: (key: string, x: number, y: number) => ipcRenderer.invoke('tabs:context', { key, x, y }),
   onState: (cb: (state: unknown) => void) => { ipcRenderer.on('tabs:state', (_e, s) => cb(s)); },

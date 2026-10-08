@@ -136,7 +136,10 @@ export async function runAction(wc: WebContents, name: string, args: Record<stri
     let has = false;
     try { has = (await f.executeJavaScript(`!!(window.__vala && window.__vala.has(${JSON.stringify(name)}))`)) as boolean; } catch { continue; }
     if (!has) continue;
-    const run = f.executeJavaScript(`window.__vala.run(${JSON.stringify(name)}, ${JSON.stringify(args)})`) as Promise<ActionResult>;
+    // Trả CHUỖI JSON rồi giải ở đây: giá trị executeJavaScript trả thẳng đi qua kiểu từ điển của Electron ⇒ khoá object bị
+    // xếp lại theo bảng chữ cái (mất thứ tự cột của bảng kết quả).
+    const run = (f.executeJavaScript(`window.__vala.run(${JSON.stringify(name)}, ${JSON.stringify(args)}).then((r) => JSON.stringify(r))`) as Promise<string>)
+      .then((txt) => JSON.parse(txt) as ActionResult);
     const timeout = new Promise<ActionResult>((r) => setTimeout(() => r({ ok: false, error: `Quá ${timeoutMs / 1000} giây chưa xong` }), timeoutMs));
     try { return await Promise.race([run, timeout]); } catch (e) { return { ok: false, error: (e as Error).message }; }
   }

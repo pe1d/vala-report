@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { openTarget, tabStatus } from '../src/tabs-model';
+import { openTarget, pinnedApps, sidebarSections, tabStatus } from '../src/tabs-model';
 
 describe('openTarget (link mở cửa sổ mới)', () => {
   it('target=_blank / window.open không kèm kích thước ⇒ tab mới', () => {
@@ -33,4 +33,25 @@ describe('tabStatus (chấm trạng thái tab hệ thống nguồn)', () => {
     expect(tabStatus('need_consent', 'revoked')).toBe('off');
   });
   it('chưa đồng bộ lần nào ⇒ off', () => expect(tabStatus(undefined, 'active')).toBe('off'));
+});
+
+describe('pinnedApps (ứng dụng ghim trên thanh dọc)', () => {
+  const avail = ['home', 'portal', 'src:egov', 'src:etask'];
+  it('chưa tuỳ chỉnh ⇒ ghim tất cả theo thứ tự', () => {
+    expect(pinnedApps(null, avail)).toEqual(avail);
+    expect(pinnedApps(undefined, avail)).toEqual(avail);
+  });
+  it('đã tuỳ chỉnh ⇒ giữ đúng thứ tự đã lưu, bỏ mục không còn (nguồn bị gỡ khỏi cổng)', () => {
+    expect(pinnedApps(['src:etask', 'src:da_go', 'home'], avail)).toEqual(['src:etask', 'home']);
+  });
+  it('ứng dụng mới trên cổng không tự ghim khi người dùng đã tuỳ chỉnh (chỉ hiện trong ⊞)', () => {
+    expect(pinnedApps(['home'], [...avail, 'src:moi'])).toEqual(['home']);
+  });
+});
+
+describe('sidebarSections (nhóm trên thanh dọc)', () => {
+  it('Ứng dụng = mục ghim; Đang mở = mục đang mở không ghim (bỏ Trợ lý AI), giữ thứ tự mở', () => {
+    expect(sidebarSections({ pinned: ['home', 'portal', 'src:egov'], open: ['chat', 'src:egov', 't:3', 'settings', 'src:etask'] }))
+      .toEqual({ apps: ['home', 'portal', 'src:egov'], open: ['t:3', 'settings', 'src:etask'] });
+  });
 });

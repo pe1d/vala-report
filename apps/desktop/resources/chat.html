@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:" />
+  <title>Trợ lý AI</title>
+  <link rel="stylesheet" href="../dist/renderer/ui.css" />
+</head>
+<!-- Trang Trợ lý AI (chat-page.ts): chat kiểu Claude; "/" chạy thao tác của hệ thống. Chữ do tiến trình chính gửi (data-t). -->
+<body class="h-screen overflow-hidden bg-white text-slate-900 antialiased dark:bg-slate-950 dark:text-slate-100">
+  <div class="flex h-full flex-col">
+    <header class="flex h-12 shrink-0 items-center gap-3 px-5">
+      <span class="text-sm font-medium text-slate-500 dark:text-slate-400" data-t="title"></span>
+      <span class="flex-1"></span>
+      <button type="button" id="new-chat" class="btn" data-t="newChat"></button>
+    </header>
+
+    <main id="scroll" class="min-h-0 flex-1 overflow-y-auto">
+      <!-- Chưa có tin nhắn: lời chào giữa trang + ô nhập + gợi ý -->
+      <section id="empty" class="mx-auto flex min-h-full max-w-3xl flex-col justify-center px-6 pb-24">
+        <div class="mb-6 flex items-center justify-center gap-3">
+          <svg viewBox="0 0 24 24" class="h-8 w-8 text-orange-500" fill="currentColor" aria-hidden="true"><path d="M12 2l2.4 6.1L20.5 10l-6.1 2.4L12 18.5l-2.4-6.1L3.5 10l6.1-1.9z" /><path d="M19 15l1 2.5 2.5 1-2.5 1L19 22l-1-2.5-2.5-1 2.5-1z" /></svg>
+          <h1 id="greeting" class="font-serif text-3xl text-slate-800 dark:text-slate-100"></h1>
+        </div>
+        <div id="empty-slot"></div>
+        <div id="chips" class="mt-4 flex flex-wrap justify-center gap-2"></div>
+      </section>
+      <!-- Hội thoại -->
+      <section id="thread" class="mx-auto max-w-3xl space-y-6 px-6 py-6"></section>
+    </main>
+
+    <div id="dock" class="shrink-0 px-6 pb-4">
+      <div id="dock-slot" class="mx-auto max-w-3xl"></div>
+    </div>
+  </div>
+
+  <!-- Ô nhập (dời giữa giữa trang và đáy trang) -->
+  <div id="composer" class="relative">
+    <div id="picker" class="absolute bottom-full left-0 right-0 z-10 mb-2 max-h-[55vh] overflow-y-auto rounded-xl border border-slate-200 bg-white p-1.5 text-sm shadow-xl dark:border-slate-700 dark:bg-slate-900"></div>
+    <div class="rounded-2xl border border-slate-300 bg-white shadow-sm focus-within:border-slate-400 dark:border-slate-700 dark:bg-slate-900 dark:focus-within:border-slate-500">
+      <textarea id="input" rows="1" class="block max-h-52 w-full resize-none bg-transparent px-4 pt-3.5 text-[15px] outline-none placeholder:text-slate-400"></textarea>
+      <div class="flex items-center gap-2 px-3 pb-2.5 pt-1">
+        <button type="button" id="slash" class="rounded-md border border-slate-200 px-2 py-0.5 text-xs text-slate-500 hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">/</button>
+        <span class="flex-1 truncate text-xs text-slate-400" data-t="hint"></span>
+        <button type="button" id="send" class="flex h-8 w-8 items-center justify-center rounded-lg bg-orange-600 text-white hover:bg-orange-700 disabled:opacity-40"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5" /><path d="M5 12l7-7 7 7" /></svg></button>
+      </div>
+    </div>
+  </div>
+  <script src="../dist/renderer/chat.js"></script>
+</body>
+</html>

@@ -19,7 +19,7 @@ export interface Settings {
   deviceToken: string | null;
   user: { ho_ten: string; email: string } | null;
   lang: Lang;
-  /** Sáng / tối / theo hệ điều hành — chung cho thanh tab, Cài đặt và cổng (prefs.ts). */
+  /** Sáng / tối / theo hệ điều hành — chung cho thanh dọc, Cài đặt và cổng (prefs.ts). */
   theme: ThemeMode;
   /** Chạy cùng hệ điều hành (ẩn ở khay). Không đặt ⇒ bật. Chỉ có tác dụng ở bản cài. */
   autostart?: boolean;
@@ -27,6 +27,10 @@ export interface Settings {
   devHomeUrl?: string | null;
   /** Phiên bản lần chạy trước — khác bản đang chạy ⇒ vừa cập nhật, báo "có gì mới" một lần (updater.ts). */
   lastVersion?: string;
+  /** Thanh ứng dụng dọc đang thu gọn (chỉ biểu tượng). */
+  sidebarCollapsed?: boolean;
+  /** Ứng dụng ghim trên thanh dọc (khoá tab: home, portal, src:<mã>); null/không có ⇒ ghim tất cả (tabs-model pinnedApps). */
+  pinnedApps?: string[] | null;
 }
 
 /**

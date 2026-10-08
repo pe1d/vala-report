@@ -134,7 +134,7 @@ nhất được giữ lại để quay lại khi cần. Đổi `.env.prod` hoặ
 ## 4b. Phát hành bản Vala Desktop mới (tự cập nhật)
 
 Vala Desktop hỏi `{PUBLIC_WEB_URL}/desktop/latest.yml` (Windows) / `latest-linux.yml` (Ubuntu) lúc mở và 4 giờ một lần.
-Có bản mới thì tự tải, kiểm mã băm sha512, rồi hiện nút **"Đã có bản … — Cập nhật"** trên thanh tab. Windows: không bấm thì
+Có bản mới thì tự tải, kiểm mã băm sha512, rồi hiện nút **"Đã có bản … — Cập nhật"** ở cuối thanh bên. Windows: không bấm thì
 tự cài khi thoát. Ubuntu: chỉ cài khi bấm, và Ubuntu hỏi mật khẩu quản trị. Chỉ bản **cài đặt** tự cập nhật được (Windows
 NSIS, Ubuntu .deb), bản zip thì không.
 

@@ -1,6 +1,6 @@
 /**
- * Ngôn ngữ + sáng/tối của Vala Desktop — MỘT lựa chọn chung cho thanh tab, cửa sổ Cài đặt và cổng Vala Reporting ở tab
- * Báo cáo: đổi ở đâu (thanh tab hay ngay trong cổng) thì mọi nơi đổi theo.
+ * Ngôn ngữ + sáng/tối của Vala Desktop — MỘT lựa chọn chung cho thanh dọc, cửa sổ Cài đặt và cổng Vala Reporting ở tab
+ * Báo cáo: đổi ở đâu (thanh dọc hay ngay trong cổng) thì mọi nơi đổi theo.
  *
  * Sáng/tối áp bằng nativeTheme.themeSource: mọi trang trong ứng dụng thấy `prefers-color-scheme` theo lựa chọn này (trang
  * theo hệ thống như cổng, vala.bkav.com… tự đổi theo); 'system' ⇒ theo hệ điều hành.

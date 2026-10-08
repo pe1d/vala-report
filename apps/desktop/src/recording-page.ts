@@ -16,7 +16,7 @@ const M = messages(strings.vi, strings.en);
 
 export interface RecordingPageHooks {
   isRecording: (e: IpcMainInvokeEvent) => boolean;
-  /** Báo tab Bản ghi + thanh tab vẽ lại. */
+  /** Báo tab Bản ghi + thanh dọc vẽ lại. */
   push: () => void;
   /** Mở tab Bản ghi. */
   open: () => void;

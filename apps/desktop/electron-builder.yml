@@ -11,6 +11,8 @@ files:
   - dist/**/*
   - resources/settings.html
   - resources/recording.html
+  - resources/chat.html
+  - resources/overlay.html
   - resources/credential.html
   - resources/tabs.html
   - resources/icon.png

@@ -1,7 +1,6 @@
 /**
- * Menu của Vala Desktop:
- *   - menu hồ sơ (bấm tên / ảnh đại diện trên thanh tab): tài khoản, Cài đặt, cập nhật, phiên bản, Đăng xuất, Thoát;
- *   - menu "⋯" trên thanh tab: hệ thống nguồn, đồng bộ phiên;
+ * Menu của Vala Desktop (menu hồ sơ / khung ⊞ của thanh dọc là khung nổi tự vẽ — browser.ts, renderer/overlay.ts):
+ *   - menu chuột phải trên từng mục của thanh dọc: mật khẩu đã lưu, ghi thao tác;
  *   - menu biểu tượng khay hệ thống (đủ mục — khi cửa sổ đang ẩn);
  *   - thanh menu ứng dụng (ẩn, nhấn Alt).
  * Vẽ lại mỗi khi trạng thái nguồn, ngôn ngữ hoặc đăng nhập đổi.
@@ -61,7 +60,9 @@ const M = messages({
 });
 
 export interface MenuActions {
-  showMain: () => void; showPortal: () => void; openSettings: (section?: string) => void; signOut: () => void;
+  showMain: () => void; showPortal: () => void;
+  /** Mở cửa sổ ở mục đang xem (mặc định Trợ lý AI) — bấm biểu tượng khay. */
+  showDefault: () => void; openSettings: (section?: string) => void; signOut: () => void;
   /** Mở hộp đổi mật khẩu của cổng (cổng ẩn header trong app — mục này thay cho menu người dùng của cổng). */
   changePassword: () => void;
 }
@@ -70,7 +71,7 @@ let tray: Tray | null = null;
 let actions: MenuActions;
 
 /**
- * Mục của một hệ thống nguồn: mở tab + mật khẩu lưu trong máy (T08). Dùng cho menu ⋯ (mỗi hệ thống một menu con) và menu
+ * Mục của một hệ thống nguồn: mở tab + mật khẩu lưu trong máy (T08). Dùng cho menu khay (mỗi hệ thống một menu con) và menu
  * chuột phải trên tab của hệ thống đó.
  */
 export function sourceMenuItems(src: SourceFull): MenuItemConstructorOptions[] {
@@ -192,31 +193,6 @@ export function trayMenu(): Menu {
   ]);
 }
 
-/** Menu hồ sơ trên thanh tab: tài khoản, Cài đặt, cập nhật, phiên bản, Đăng xuất, Thoát. */
-export function profileMenu(): Menu {
-  const s = getSettings();
-  const t = M[s.lang];
-  return Menu.buildFromTemplate([
-    ...(s.deviceToken && s.user ? [
-      { label: s.user.ho_ten || s.user.email, enabled: false },
-      ...(s.user.ho_ten ? [{ label: s.user.email, enabled: false }] : []),
-      { type: 'separator' as const },
-    ] : []),
-    ...(s.deviceToken && portalHasPassword() ? [{ label: t.changePassword, click: actions.changePassword }] : []),
-    { label: t.settings, click: () => actions.openSettings() },
-    updateItem(t),
-    { label: t.version(app.getVersion()), enabled: false },
-    { type: 'separator' },
-    ...(s.deviceToken ? [{ label: t.signOut, click: actions.signOut }] : [{ label: t.signIn, click: actions.showPortal }]),
-    { label: t.quit, click: () => app.quit() },
-  ]);
-}
-
-/** Menu "⋯" trên thanh tab: các hệ thống nguồn (mở tab) và đồng bộ phiên. */
-export function moreMenu(): Menu {
-  return Menu.buildFromTemplate(sourceItems());
-}
-
 function updateItem(t: (typeof M)['vi']): MenuItemConstructorOptions {
   const up = pendingUpdate();
   return up ? { label: t.installUpdate(up.version), click: () => void promptInstall() } : { label: t.checkUpdate, click: checkNow };
@@ -236,7 +212,7 @@ export function refreshMenus(): void {
 export function createMenus(a: MenuActions): void {
   actions = a;
   tray = new Tray(nativeImage.createFromPath(ICON).resize({ width: 16, height: 16 }));
-  tray.on('click', actions.showMain);
+  tray.on('click', actions.showDefault);
   refreshMenus();
   events.on('status', refreshMenus);
   // Lưu / xoá mật khẩu ở bất kỳ đâu (hỏi lưu trên trang, tab Cài đặt…) ⇒ menu khay theo.

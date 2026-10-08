@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="vi" class="bg-transparent">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: https:" />
+  <title>Vala Desktop</title>
+  <link rel="stylesheet" href="../dist/renderer/ui.css" />
+</head>
+<!--
+  Lớp khung nổi trong suốt phủ cả cửa sổ, chỉ hiện khi mở (browser.ts openOverlay): menu hồ sơ / khung ⊞ Tất cả ứng dụng
+  neo vào nút trên thanh dọc. Bấm ra ngoài / Esc ⇒ đóng. Dựng DOM bằng JS (renderer/overlay.ts).
+-->
+<body class="h-screen select-none overflow-hidden bg-transparent text-slate-800 antialiased dark:text-slate-100">
+  <div id="backdrop" class="fixed inset-0"></div>
+  <div id="panel" class="fixed max-h-[80vh] overflow-y-auto rounded-xl border border-slate-200 bg-white p-1.5 text-[13px] shadow-xl dark:border-slate-700 dark:bg-slate-800"></div>
+  <script src="../dist/renderer/overlay.js"></script>
+</body>
+</html>

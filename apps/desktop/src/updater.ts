@@ -1,6 +1,6 @@
 /**
  * Tự cập nhật Vala Desktop (electron-updater, kênh "generic"): hỏi <máy chủ Vala Reporting>/desktop/latest.yml lúc mở và
- * 4 giờ một lần; có bản mới thì tải ngầm (kiểm sha512 trong latest.yml), xong thì thanh tab hiện "Đã có bản … — Cập nhật".
+ * 4 giờ một lần; có bản mới thì tải ngầm (kiểm sha512 trong latest.yml), xong thì thanh dọc hiện "Đã có bản … — Cập nhật".
  * Bấm ⇒ hộp "Bản … có gì mới" (Cài ngay / Để sau); không bấm ⇒ cài khi thoát. Lần đầu mở bản mới ⇒ thông báo "Đã cập nhật
  * lên bản …" (bấm ⇒ Cài đặt → Giới thiệu). Điểm mới lấy từ CHANGELOG.md (release-notes.ts).
  *
@@ -20,8 +20,8 @@ import { getSettings, setSettings, updateFeedUrl } from './settings';
 
 const M = messages({
   readyTitle: (v: string) => `Đã có Vala Desktop bản ${v}`,
-  readyBody: 'Bấm "Cập nhật" trên thanh tab để cài ngay, hoặc bản mới tự cài khi bạn thoát ứng dụng.',
-  readyBodyLinux: 'Bấm "Cập nhật" trên thanh tab để cài — Ubuntu sẽ hỏi mật khẩu quản trị.',
+  readyBody: 'Bấm "Cập nhật" ở cuối thanh bên để cài ngay, hoặc bản mới tự cài khi bạn thoát ứng dụng.',
+  readyBodyLinux: 'Bấm "Cập nhật" ở cuối thanh bên để cài — Ubuntu sẽ hỏi mật khẩu quản trị.',
   latest: (v: string) => `Bạn đang dùng bản mới nhất (${v}).`,
   checkFailed: 'Không kiểm tra được bản cập nhật',
   notInstalled: 'Bản này không tự cập nhật được — cài Vala Desktop bằng bộ cài để nhận cập nhật tự động.',
@@ -34,8 +34,8 @@ const M = messages({
   updatedBody: 'Bấm để xem có gì mới.',
 }, {
   readyTitle: (v: string) => `Vala Desktop ${v} is available`,
-  readyBody: 'Click "Update" on the tab bar to install now, or it installs automatically when you quit.',
-  readyBodyLinux: 'Click "Update" on the tab bar to install — Ubuntu will ask for an administrator password.',
+  readyBody: 'Click "Update" at the bottom of the sidebar to install now, or it installs automatically when you quit.',
+  readyBodyLinux: 'Click "Update" at the bottom of the sidebar to install — Ubuntu will ask for an administrator password.',
   latest: (v: string) => `You are on the latest version (${v}).`,
   checkFailed: 'Could not check for updates',
   notInstalled: 'This copy cannot update itself — install Vala Desktop with the installer to get automatic updates.',
@@ -127,7 +127,7 @@ export function installNow(): void {
   if (ready) autoUpdater.quitAndInstall(true, true);
 }
 
-/** Nút "Cập nhật" trên thanh tab / menu / thông báo: hộp "Bản … có gì mới" ⇒ Cài ngay hoặc Để sau. */
+/** Nút "Cập nhật" trên thanh dọc / menu / thông báo: hộp "Bản … có gì mới" ⇒ Cài ngay hoặc Để sau. */
 export async function promptInstall(): Promise<void> {
   if (!ready) return;
   const lang = getSettings().lang;

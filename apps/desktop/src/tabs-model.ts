@@ -27,3 +27,16 @@ export function tabStatus(r: SyncResult | undefined, state: SourceFull['state'])
   if (r === 'sent' || r === 'unchanged' || r === 'managed') return 'ok';
   return state === 'chua_cau_hinh' || state === 'revoked' ? 'off' : 'warn';
 }
+
+/**
+ * Ứng dụng ghim trên thanh dọc. Chưa tuỳ chỉnh (null) ⇒ ghim tất cả theo thứ tự `available`. Đã tuỳ chỉnh ⇒ đúng thứ tự đã
+ * lưu, bỏ ứng dụng không còn (vd nguồn bị gỡ khỏi cổng); ứng dụng mới không tự ghim (chỉ hiện trong khung ⊞).
+ */
+export function pinnedApps(saved: readonly string[] | null | undefined, available: readonly string[]): string[] {
+  return saved ? saved.filter((k) => available.includes(k)) : [...available];
+}
+
+/** Nhóm trên thanh dọc: Ứng dụng = mục ghim; Đang mở = mục đang mở mà không ghim (Trợ lý AI có chỗ riêng). */
+export function sidebarSections(a: { pinned: readonly string[]; open: readonly string[] }): { apps: string[]; open: string[] } {
+  return { apps: [...a.pinned], open: a.open.filter((k) => k !== 'chat' && !a.pinned.includes(k)) };
+}
