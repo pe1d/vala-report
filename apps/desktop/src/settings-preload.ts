@@ -6,7 +6,6 @@ contextBridge.exposeInMainWorld('vala', {
   setLang: (lang: string) => ipcRenderer.invoke('vala:set-lang', lang),
   setTheme: (theme: string) => ipcRenderer.invoke('vala:set-theme', theme),
   setAutostart: (on: boolean) => ipcRenderer.invoke('vala:set-autostart', on),
-  saveHome: (url: string | null) => ipcRenderer.invoke('vala:save-home', url),
   signIn: () => ipcRenderer.invoke('vala:sign-in'),
   logout: () => ipcRenderer.invoke('vala:logout'),
   openPortal: () => ipcRenderer.invoke('vala:open-portal'),

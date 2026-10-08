@@ -11,8 +11,6 @@ interface SettingsState {
   version: string;
   serverUrl: string;
   user: { ho_ten: string; email: string } | null;
-  homeUrl: string;
-  devHomeUrl: string | null;
   autostart: { enabled: boolean; supported: boolean };
   update: { pending: string | null; canUpdate: boolean };
   whatsNew: { current: string[] | null; pending: string[] | null };
@@ -24,7 +22,6 @@ interface ValaSettingsApi {
   setLang(lang: string): Promise<SettingsState>;
   setTheme(theme: string): Promise<SettingsState>;
   setAutostart(on: boolean): Promise<SettingsState>;
-  saveHome(url: string | null): Promise<{ ok: boolean; message?: string; state?: SettingsState }>;
   signIn(): Promise<void>;
   logout(): Promise<SettingsState>;
   openPortal(): Promise<void>;
@@ -128,7 +125,6 @@ interface ValaSettingsApi {
     document.documentElement.lang = next.lang;
     document.title = t.title;
     for (const e of all('[data-t]')) e.textContent = t[e.dataset.t!] ?? '';
-    $('nav-home').hidden = !next.dev;
 
     $('signed-in').hidden = !next.user;
     $('signed-out').hidden = !!next.user;
@@ -161,7 +157,6 @@ interface ValaSettingsApi {
 
     renderPasswords(next);
 
-    $<HTMLInputElement>('home').value = next.devHomeUrl ?? next.homeUrl;
     applyTheme();
   }
 
@@ -175,18 +170,6 @@ interface ValaSettingsApi {
   $('check-update').addEventListener('click', () => void vala.checkUpdate());
   $('install-update').addEventListener('click', () => void vala.installUpdate());
 
-  const homeNote = (text: string, ok: boolean) => {
-    const n = $('home-note');
-    n.textContent = text;
-    n.className = `mt-2 text-sm ${ok ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-700 dark:text-red-400'}`;
-  };
-  const saveHome = async (url: string | null) => {
-    const r = await vala.saveHome(url);
-    if (r.state) render(r.state);
-    homeNote(r.message ?? '', r.ok);
-  };
-  $('home-form').addEventListener('submit', (e) => { e.preventDefault(); void saveHome($<HTMLInputElement>('home').value); });
-  $('home-reset').addEventListener('click', () => void saveHome(null));
 
   vala.onChanged(() => void vala.state().then(render));
   void vala.state().then((s) => { render(s); go(location.hash.slice(1)); });

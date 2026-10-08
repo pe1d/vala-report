@@ -1,13 +1,12 @@
 /**
- * Dữ liệu chỉ nằm trên máy cho ô tìm kiếm của header (search.ts): lịch sử trang đã xem, hội thoại Trợ lý AI, danh mục thao
+ * Dữ liệu chỉ nằm trên máy cho ô tìm kiếm của header (search.ts): ứng dụng đã vào, hội thoại Trợ lý AI, danh mục thao
  * tác của các hệ thống. Mỗi loại một tệp JSON trong userData (quyền 0600), giữ trong bộ nhớ, ghi trễ 1 giây để không ghi
  * đĩa mỗi lần chuyển trang. Đăng xuất ⇒ xoá cả ba (main.ts) — trong đó có dữ liệu của các hệ thống nguồn.
  */
 import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { app } from 'electron';
-import { addHistory, type HistoryEntry } from './search-model';
-import { UI_ORIGIN } from './ui-cache';
+import { addVisit, type AppVisit } from './search-model';
 
 function store<T>(name: string, empty: () => T) {
   const file = () => join(app.getPath('userData'), name);
@@ -34,27 +33,25 @@ function store<T>(name: string, empty: () => T) {
   };
 }
 
-// ---- lịch sử trang ----
-const HISTORY_MAX = 1000;
-const history = store<HistoryEntry[]>('history.json', () => []);
-export const historyList = (): HistoryEntry[] => (Array.isArray(history.get()) ? history.get() : []);
-
-/** Một lượt mở trang (điều hướng chính xong). Chỉ trang http(s) / bản giao diện cổng — không ghi trang cục bộ, about:… */
-export function recordVisit(e: Omit<HistoryEntry, 'count' | 'at'>): void {
-  if (!/^https?:\/\//.test(e.url) && !e.url.startsWith(UI_ORIGIN)) return;
-  history.set(addHistory(historyList(), { ...e, title: e.title.slice(0, 300), at: Date.now(), count: 1 }, HISTORY_MAX));
+// ---- lịch sử: đã vào ứng dụng nào (KHÔNG lưu địa chỉ / tiêu đề trang) ----
+const VISITS_MAX = 200;
+const visits = store<AppVisit[]>('app-history.json', () => []);
+let legacyDropped = false;
+export function appVisits(): AppVisit[] {
+  // Bản cũ lưu địa chỉ trang đã xem ở history.json ⇒ xoá hẳn (lần đầu dùng — lúc đó thư mục dữ liệu đã đúng, channel.ts).
+  if (!legacyDropped) {
+    legacyDropped = true;
+    try { rmSync(join(app.getPath('userData'), 'history.json'), { force: true }); } catch { /* chưa có / không xoá được */ }
+  }
+  return Array.isArray(visits.get()) ? visits.get() : [];
 }
 
-/** Trang đổi tiêu đề sau khi tải: sửa tiêu đề của mục vừa ghi (không tính thêm một lượt). */
-export function retitleVisit(url: string, title: string): void {
-  const list = historyList();
-  const h = list.find((x) => x.url === url);
-  if (!h || !title || h.title === title) return;
-  h.title = title.slice(0, 300);
-  history.set(list);
+/** Người dùng chuyển sang một ứng dụng (trang web / hệ thống nguồn / Báo cáo của danh mục). */
+export function recordAppVisit(app: string, label: string): void {
+  visits.set(addVisit(appVisits(), { app, label: label.slice(0, 100), at: Date.now(), count: 1 }, VISITS_MAX));
 }
 
-export const clearHistory = () => history.clear();
+export const clearHistory = () => visits.clear();
 
 // ---- hội thoại Trợ lý AI ----
 const CHATS_MAX = 50;

@@ -50,6 +50,23 @@ xong 08/10/2026; trang Quản trị hệ thống → Đơn vị (đợt 3) làm 
   (`portal_token`, app xin `POST /ext/portal-token` — chỉ token `extension_devices.kind = 'desktop'`).
 - **Tiện ích 0.4.5**: ô tài khoản nhận `tên@đơn vị`.
 
+## Danh mục ứng dụng Vala Desktop (theo đơn vị)
+
+- Bảng `desktop_apps` + `desktop_app_layouts` (migration đơn vị `002_desktop_apps.sql`); thiết kế:
+  `docs/superpowers/specs/2026-10-08-desktop-app-catalog-design.md`. Quản trị đơn vị sửa ở cổng: Quản trị → Ứng dụng
+  Desktop (`/ung-dung-desktop`). Desktop đọc `GET /ext/apps`, lưu bố cục `PUT /ext/layout`.
+- Báo cáo (`kind = reports`) luôn đi kèm Desktop: không tắt / xoá được; danh mục thiếu thì Desktop tự thêm.
+- `app_settings.desktop_home_url` chỉ còn cho Desktop ≤ 0.2.4.
+
+## SSO của Vala Desktop
+
+- Máy chủ trả `sso_hosts` (host SSO của đơn vị: Bkav từ `.env` khi bật SSO, đơn vị khác từ `core.tenants.sso`) ở
+  `/auth/lookup` và `/ext/apps`.
+- Desktop (`apps/desktop/src/sso-session.ts`): màn hình đăng nhập SSO dùng chung phiên trình duyệt với các tab ⇒ ứng dụng
+  dùng cùng SSO vào thẳng; cookie phiên của host SSO được chuyển thành cookie có hạn 14 ngày ⇒ mở lại app vẫn còn; đăng
+  xuất ⇒ xoá cookie của host SSO. Mật khẩu SSO lưu một lần với khoá `sso` (autofill.ts) ⇒ trang đăng nhập SSO trong
+  bất kỳ ứng dụng nào tự điền / tự đăng nhập (giới hạn chống khoá tài khoản của T08).
+
 ## Migration
 
 - `db/migrations/NNN_*.sql` — phần chung, chạy một lần (như cũ).

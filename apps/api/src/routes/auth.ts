@@ -6,7 +6,7 @@ import type { FastifyPluginAsync } from 'fastify';
 import { L, Problem, hashPassword, passwordPolicyError, runInTenant, verifyPassword, withTenant } from '@vala/core';
 import { authenticate, issuePortalToken } from '../auth.js';
 import type { ApiDeps } from '../deps.js';
-import { accountExists, fillFor, inLoginTenant, loginMethodsOf, parseLogin, ssoAutoCreate, takeN, tenantByDomain } from '../login-target.js';
+import { accountExists, fillFor, inLoginTenant, loginMethodsOf, parseLogin, ssoAutoCreate, ssoHostsOf, takeN, tenantByDomain } from '../login-target.js';
 
 const MAX_FAILS = 5;
 const LOCK_MINUTES = 15;
@@ -96,6 +96,7 @@ export const authRoutes = (deps: ApiDeps): FastifyPluginAsync => async (app) => 
       fill: fillFor(t.login_fill, account, domain),
       // Bộ chọn ô tài khoản / mật khẩu trên trang SSO của đơn vị (Vala Desktop tự điền + khoá ô tài khoản).
       selectors: t.login_selectors ?? null,
+      sso_hosts: ssoHostsOf(deps, t),
     };
   });
 

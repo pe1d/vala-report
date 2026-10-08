@@ -12,6 +12,7 @@ import { audit } from '../audit.js';
 import { configureConnection, connectionBodySchema, deleteConnection, listConnections, testConnection, type ConnectionBody } from '../connections.js';
 import type { ApiDeps } from '../deps.js';
 import { adminDesktopRoutes } from './adminDesktop.js';
+import { adminDesktopAppRoutes } from './desktopApps.js';
 import { adminReportRoutes } from './adminReports.js';
 import { adminSourceRoutes } from './adminSources.js';
 import { adminUserRoutes } from './adminUsers.js';
@@ -52,6 +53,7 @@ export const adminRoutes = (deps: ApiDeps): FastifyPluginAsync => async (app) =>
   await app.register(adminUserRoutes(deps));                   // người dùng cổng
   await app.register(adminSettingsRoutes(deps));               // cấu hình chung: tên, logo, màu, tên SSO
   await app.register(adminDesktopRoutes(deps));                // gói kịch bản Vala Desktop
+  await app.register(adminDesktopAppRoutes(deps));             // danh mục ứng dụng Vala Desktop của đơn vị
 
   // ---- kết nối dữ liệu ----
   app.get('/admin/connections', async (req) => listConnections(deps, undefined, langOf(req.headers['accept-language'])));

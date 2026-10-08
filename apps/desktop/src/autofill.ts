@@ -20,6 +20,7 @@ import { runAction } from './scripts';
 import { getSettings } from './settings';
 import { cachedSources, type SourceFull } from './sync';
 import { isPortalUrl } from './ui-cache';
+import { isSsoHost, ssoHosts } from './sso-session';
 
 const M = messages({
   saveTitle: (ten: string) => `Lưu mật khẩu ${ten}?`,
@@ -28,6 +29,7 @@ const M = messages({
   save: 'Lưu', later: 'Lúc khác', never: 'Không bao giờ cho hệ thống này',
   failedTitle: (ten: string) => `Không tự đăng nhập được ${ten}`,
   failedBody: 'Mật khẩu đã lưu có thể đã đổi. Đăng nhập tay một lần — Vala Desktop sẽ hỏi lưu mật khẩu mới.',
+  ssoName: (host: string) => `SSO của đơn vị (${host})`,
 }, {
   saveTitle: (ten: string) => `Save ${ten} password?`,
   saveMessage: (ten: string, user: string) => `Save the ${ten} password for ${user} so Vala Desktop can sign in again when the session expires?`,
@@ -35,6 +37,7 @@ const M = messages({
   save: 'Save', later: 'Not now', never: 'Never for this system',
   failedTitle: (ten: string) => `Could not sign in to ${ten} automatically`,
   failedBody: 'The saved password may have changed. Sign in manually once — Vala Desktop will offer to save the new password.',
+  ssoName: (host: string) => `Organization SSO (${host})`,
 });
 const T = () => M[getSettings().lang];
 
@@ -65,10 +68,14 @@ export function sourceForUrl(url: string): SourceFull | null {
  * trình duyệt. Trang cổng Vala Reporting thì không (mật khẩu cổng không lưu ở đây).
  */
 export interface LoginTarget { key: string; ten: string; src: SourceFull | null }
+/** Khoá mật khẩu SSO của đơn vị — một mật khẩu cho mọi ứng dụng dùng cùng SSO (sso-session.ts). */
+export const SSO_KEY = 'sso';
 export function targetForUrl(url: string): LoginTarget | null {
   let u: URL;
   try { u = new URL(url); } catch { return null; }
   if (!/^https?:$/.test(u.protocol) || isPortalUrl(url)) return null;
+  // Trang đăng nhập SSO của đơn vị (dù mở từ ứng dụng nào) ⇒ mật khẩu SSO dùng chung.
+  if (isSsoHost(u.host)) return { key: SSO_KEY, ten: T().ssoName(u.host), src: null };
   const src = sourceForUrl(url);
   return src ? { key: src.code, ten: src.ten, src } : { key: `site:${u.host}`, ten: u.host, src: null };
 }

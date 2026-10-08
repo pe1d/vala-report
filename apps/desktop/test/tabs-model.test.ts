@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { openTarget, pinnedApps, sidebarSections, tabStatus } from '../src/tabs-model';
+import { catalogPinned, openTarget, siteOf, sidebarSections, tabStatus } from '../src/tabs-model';
 
 describe('openTarget (link mở cửa sổ mới)', () => {
   it('target=_blank / window.open không kèm kích thước ⇒ tab mới', () => {
@@ -11,6 +11,13 @@ describe('openTarget (link mở cửa sổ mới)', () => {
   });
   it('form POST target=_blank ⇒ cửa sổ thật (tab mới không gửi lại được dữ liệu POST)', () => {
     expect(openTarget({ url: 'https://egov.bkav.com/in', disposition: 'foreground-tab', hasPostBody: true })).toEqual({ kind: 'window' });
+  });
+  it('sang tên miền gốc KHÁC trang đang mở ⇒ trình duyệt mặc định; cùng tên miền gốc ⇒ tab trong app (giữ phiên)', () => {
+    const from = 'https://egov.bkav.com/vb';
+    expect(openTarget({ url: 'https://vnexpress.net/bai-viet', disposition: 'foreground-tab', openerUrl: from })).toEqual({ kind: 'external' });
+    expect(openTarget({ url: 'https://tailieu.bkav.com/x', disposition: 'foreground-tab', openerUrl: from })).toEqual({ kind: 'tab', foreground: true });
+    // Popup có kích thước / POST giữ cửa sổ trong app kể cả khác tên miền (đăng nhập SSO của đơn vị…).
+    expect(openTarget({ url: 'https://sso.tinh.gov.vn/login', disposition: 'new-window', openerUrl: from })).toEqual({ kind: 'window' });
   });
   it('mailto/tel ⇒ giao cho hệ điều hành; giao thức lạ ⇒ chặn', () => {
     expect(openTarget({ url: 'mailto:a@bkav.com', disposition: 'foreground-tab' })).toEqual({ kind: 'external' });
@@ -35,17 +42,28 @@ describe('tabStatus (chấm trạng thái tab hệ thống nguồn)', () => {
   it('chưa đồng bộ lần nào ⇒ off', () => expect(tabStatus(undefined, 'active')).toBe('off'));
 });
 
-describe('pinnedApps (ứng dụng ghim trên thanh dọc)', () => {
-  const avail = ['home', 'portal', 'src:egov', 'src:etask'];
-  it('chưa tuỳ chỉnh ⇒ ghim tất cả theo thứ tự', () => {
-    expect(pinnedApps(null, avail)).toEqual(avail);
-    expect(pinnedApps(undefined, avail)).toEqual(avail);
+describe('siteOf (tên miền gốc)', () => {
+  it('2 nhãn cuối; đuôi cấp 2 Việt Nam ⇒ 3 nhãn; IP / localhost giữ nguyên', () => {
+    expect(siteOf('egov.bkav.com')).toBe('bkav.com');
+    expect(siteOf('dichvucong.nuithanh.quangnam.gov.vn')).toBe('quangnam.gov.vn');
+    expect(siteOf('vnexpress.net')).toBe('vnexpress.net');
+    expect(siteOf('Mail.Bkav.COM.vn')).toBe('bkav.com.vn');
+    expect(siteOf('10.2.65.146')).toBe('10.2.65.146');
+    expect(siteOf('localhost')).toBe('localhost');
   });
-  it('đã tuỳ chỉnh ⇒ giữ đúng thứ tự đã lưu, bỏ mục không còn (nguồn bị gỡ khỏi cổng)', () => {
-    expect(pinnedApps(['src:etask', 'src:da_go', 'home'], avail)).toEqual(['src:etask', 'home']);
+});
+
+describe('catalogPinned (danh mục đơn vị + bố cục người dùng)', () => {
+  const app = (ma: string, o: Partial<{ pinned_default: boolean; is_default: boolean }> = {}) => ({ ma, pinned_default: true, is_default: false, ...o });
+  const apps = [app('vala', { is_default: true }), app('egov'), app('etask', { pinned_default: false }), app('bao_cao')];
+  it('chưa có bố cục ⇒ các mục ghim sẵn theo thứ tự danh mục', () => {
+    expect(catalogPinned(apps, null)).toEqual(['vala', 'egov', 'bao_cao']);
   });
-  it('ứng dụng mới trên cổng không tự ghim khi người dùng đã tuỳ chỉnh (chỉ hiện trong ⊞)', () => {
-    expect(pinnedApps(['home'], [...avail, 'src:moi'])).toEqual(['home']);
+  it('có bố cục ⇒ đúng thứ tự người dùng, bỏ mục đã gỡ khỏi danh mục, mặc định luôn đứng đầu', () => {
+    expect(catalogPinned(apps, ['etask', 'da_go', 'vala', 'egov'])).toEqual(['vala', 'etask', 'egov']);
+  });
+  it('mặc định bị người dùng bỏ ghim ⇒ không tự ghim lại', () => {
+    expect(catalogPinned(apps, ['egov'])).toEqual(['egov']);
   });
 });
 

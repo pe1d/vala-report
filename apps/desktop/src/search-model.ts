@@ -1,15 +1,13 @@
 /**
- * Tìm kiếm của header (Ctrl+K) — phần thuần, không phụ thuộc Electron: bỏ dấu, so khớp + xếp hạng, gộp lịch sử trang,
- * chia kết quả thành nhóm (Ứng dụng · Thao tác · Hội thoại · Lịch sử; ô trống ⇒ Gần đây + Hội thoại gần đây).
+ * Tìm kiếm của header (Ctrl+K) — phần thuần, không phụ thuộc Electron: bỏ dấu, so khớp + xếp hạng, lịch sử theo ỨNG DỤNG
+ * (không lưu địa chỉ trang), chia kết quả thành nhóm (Ứng dụng · Thao tác · Hội thoại; ô trống ⇒ Gần đây + Hội thoại gần đây).
  */
 
-/** Một trang web đã xem (lưu ở `userData/history.json`). */
-export interface HistoryEntry {
-  url: string;
-  title: string;
-  /** Khoá ứng dụng trên thanh dọc (`home`, `portal`, `src:<mã>`, hoặc `''` nếu là tab mở từ liên kết). */
+/** Một lần vào ứng dụng (lưu ở `userData/app-history.json`) — chỉ ứng dụng nào, không lưu địa chỉ / tiêu đề trang. */
+export interface AppVisit {
+  /** Khoá ứng dụng trên thanh dọc (`web:<mã>`, `src:<mã nguồn>`, `portal`). */
   app: string;
-  appLabel: string;
+  label: string;
   at: number;
   count: number;
 }
@@ -18,16 +16,15 @@ export interface SearchData {
   apps: { key: string; label: string }[];
   actions: { code: string; system: string; name: string; mo_ta: string }[];
   chats: { id: string; title: string; text: string; at: number }[];
-  history: HistoryEntry[];
+  visits: AppVisit[];
 }
 
 export type SearchItem =
   | { kind: 'app'; title: string; sub: string; ref: { key: string } }
   | { kind: 'action'; title: string; sub: string; ref: { code: string; name: string } }
-  | { kind: 'chat'; title: string; sub: string; ref: { id: string } }
-  | { kind: 'page'; title: string; sub: string; ref: { url: string; app: string } };
+  | { kind: 'chat'; title: string; sub: string; ref: { id: string } };
 
-export interface SearchSection { kind: 'recent' | 'chats' | 'apps' | 'actions' | 'history'; items: SearchItem[] }
+export interface SearchSection { kind: 'recent' | 'chats' | 'apps' | 'actions'; items: SearchItem[] }
 
 const PER_SECTION = 5;
 const RECENT = 8;
@@ -58,20 +55,15 @@ export function matchScore(query: string, text: string): number {
   return score;
 }
 
-/** Thêm một lượt xem: trùng địa chỉ ⇒ gộp vào mục cũ và đưa lên đầu; giữ tối đa `max` mục mới nhất. */
-export function addHistory(list: HistoryEntry[], entry: HistoryEntry, max: number): HistoryEntry[] {
-  const old = list.find((x) => x.url === entry.url);
-  const merged: HistoryEntry = old
-    ? { ...old, ...entry, title: entry.title || old.title, count: old.count + 1 }
-    : entry;
-  return [merged, ...list.filter((x) => x.url !== entry.url)].slice(0, max);
+/** Thêm một lần vào ứng dụng: cùng ứng dụng ⇒ gộp và đưa lên đầu; giữ tối đa `max` mục mới nhất. */
+export function addVisit(list: AppVisit[], v: AppVisit, max: number): AppVisit[] {
+  const old = list.find((x) => x.app === v.app);
+  const merged: AppVisit = { app: v.app, label: v.label || old?.label || '', at: v.at, count: (old?.count ?? 0) + v.count };
+  return [merged, ...list.filter((x) => x.app !== v.app)].slice(0, max);
 }
 
-const host = (url: string) => { try { return new URL(url).host; } catch { return url; } };
-const page = (h: HistoryEntry): SearchItem => ({
-  kind: 'page', title: h.title || h.url, sub: [h.appLabel, host(h.url)].filter(Boolean).join(' · '), ref: { url: h.url, app: h.app },
-});
 const chat = (c: SearchData['chats'][number]): SearchItem => ({ kind: 'chat', title: c.title, sub: '', ref: { id: c.id } });
+const appItem = (key: string, label: string): SearchItem => ({ kind: 'app', title: label, sub: '', ref: { key } });
 
 /** Lấy tối đa N mục có điểm > 0, điểm cao trước; bằng điểm thì giữ thứ tự gốc (đã là mới nhất trước). */
 function top<T>(list: T[], score: (x: T) => number): T[] {
@@ -83,16 +75,20 @@ export function searchAll(query: string, data: SearchData): SearchSection[] {
   const out: SearchSection[] = [];
   const push = (kind: SearchSection['kind'], items: SearchItem[]) => { if (items.length) out.push({ kind, items }); };
   const chats = [...data.chats].sort((a, b) => b.at - a.at);
+  const apps = new Map(data.apps.map((a) => [a.key, a.label]));
   if (!fold(query)) {
-    push('recent', [...data.history].sort((a, b) => b.at - a.at).slice(0, RECENT).map(page));
+    // Gần đây: ứng dụng vừa dùng (bỏ ứng dụng không còn trong danh mục), tên theo danh mục hiện tại.
+    push('recent', [...data.visits].sort((a, b) => b.at - a.at).filter((v) => apps.has(v.app)).slice(0, RECENT)
+      .map((v) => appItem(v.app, apps.get(v.app)!)));
     push('chats', chats.slice(0, RECENT_CHATS).map(chat));
     return out;
   }
-  push('apps', top(data.apps, (a) => matchScore(query, `${a.label} ${a.key.replace(/^src:/, '')}`))
-    .map((a) => ({ kind: 'app', title: a.label, sub: '', ref: { key: a.key } })));
+  // Ứng dụng: bằng điểm ⇒ ứng dụng hay dùng trước.
+  const used = new Map(data.visits.map((v) => [v.app, v.count]));
+  const appsRanked = [...data.apps].sort((a, b) => (used.get(b.key) ?? 0) - (used.get(a.key) ?? 0));
+  push('apps', top(appsRanked, (a) => matchScore(query, `${a.label} ${a.key.replace(/^(src|web):/, '')}`)).map((a) => appItem(a.key, a.label)));
   push('actions', top(data.actions, (a) => Math.max(matchScore(query, a.mo_ta), matchScore(query, a.name), matchScore(query, `${a.system} ${a.mo_ta}`)))
     .map((a) => ({ kind: 'action', title: a.mo_ta || a.name, sub: `${a.system} · ${a.name}`, ref: { code: a.code, name: a.name } })));
   push('chats', top(chats, (c) => Math.max(matchScore(query, c.title), matchScore(query, c.text))).map(chat));
-  push('history', top([...data.history].sort((a, b) => b.at - a.at), (h) => Math.max(matchScore(query, h.title), matchScore(query, h.url) && 1)).map(page));
   return out;
 }

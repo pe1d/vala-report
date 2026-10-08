@@ -17,8 +17,8 @@ interface OverlayState {
   portalPassword: boolean;
   apps: OverlayApp[];
 }
-type OverlayItem = { kind: 'app' | 'action' | 'chat' | 'page'; title: string; sub: string; ref: Record<string, string> };
-interface OverlaySection { kind: 'recent' | 'chats' | 'apps' | 'actions' | 'history'; items: OverlayItem[] }
+type OverlayItem = { kind: 'app' | 'action' | 'chat'; title: string; sub: string; ref: Record<string, string> };
+interface OverlaySection { kind: 'recent' | 'chats' | 'apps' | 'actions'; items: OverlayItem[] }
 interface ValaOverlayApi {
   state(): Promise<OverlayState>;
   close(): Promise<void>;
@@ -59,7 +59,6 @@ interface ValaOverlayApi {
     quit: ['M18 6L6 18', 'M6 6l12 12'],
     pin: ['M12 17v5', 'M9 3h6l-1 6 3 3v2H7v-2l3-3z'],
     search: ['M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14z', 'M20 20l-3.5-3.5'],
-    page: ['M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z', 'M12 7v5l3 2'],
     action: ['M13 2L4 14h7l-1 8 9-12h-7z'],
     chat: ['M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z'],
     app: ['M4 4h6v6H4z', 'M14 4h6v6h-6z', 'M4 14h6v6H4z', 'M14 14h6v6h-6z'],
@@ -152,7 +151,7 @@ interface ValaOverlayApi {
   }
 
   // ---- ô tìm kiếm (Ctrl+K) ----
-  const SECTION: Record<OverlaySection['kind'], string> = { recent: 'secRecent', chats: 'secChats', apps: 'secApps', actions: 'secActions', history: 'secHistory' };
+  const SECTION: Record<OverlaySection['kind'], string> = { recent: 'secRecent', chats: 'secChats', apps: 'secApps', actions: 'secActions' };
   let searchSeq = 0;
   let hi = 0;
   let picks: OverlayItem[] = [];

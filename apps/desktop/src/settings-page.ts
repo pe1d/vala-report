@@ -13,15 +13,16 @@ import {
 } from './credentials';
 import { messages, normLang } from './i18n';
 import { prefsEvents, setPrefs } from './prefs';
-import { DEFAULT_SERVER, getSettings, normalizeHome, setSettings } from './settings';
+import { DEFAULT_SERVER, getSettings, setSettings } from './settings';
 import { strings } from './settings-strings';
+import { SSO_KEY } from './autofill';
+import { ssoHosts } from './sso-session';
 import { cachedSources, events as syncEvents } from './sync';
 import { canUpdate, checkNow, currentNotes, installNow, pendingUpdate } from './updater';
 
 export interface SettingsHooks {
   signIn: () => void;
   signOut: () => Promise<void>;
-  onHomeChanged: () => void;
   openPortal: () => void;
   /** Lời gọi IPC có đến từ tab Cài đặt không. */
   isSettings: (e: IpcMainInvokeEvent) => boolean;
@@ -38,7 +39,8 @@ const M = messages(strings.vi, strings.en);
 function passwords() {
   const saved = listCredentials();
   const srcs = getSettings().deviceToken ? cachedSources() : [];
-  const nameOf = (code: string) => (code.startsWith('site:') ? code.slice(5) : srcs.find((x) => x.code === code)?.ten ?? code);
+  const nameOf = (code: string) => (code === SSO_KEY ? `${M[getSettings().lang].ssoPassword}${ssoHosts()[0] ? ` (${ssoHosts()[0]})` : ''}`
+    : code.startsWith('site:') ? code.slice(5) : srcs.find((x) => x.code === code)?.ten ?? code);
   const row = (code: string) => {
     const c = saved[code];
     return { code, ten: nameOf(code), username: c?.username ?? null, auto: c?.auto ?? false, savedAt: c?.savedAt ?? null };
@@ -60,7 +62,6 @@ function state() {
     t: { ...t, title: IS_DEV ? `${t.title} (dev)` : t.title },
     lang: s.lang, theme: s.theme, dev: IS_DEV, version: app.getVersion(),
     serverUrl: s.serverUrl || DEFAULT_SERVER, user: s.deviceToken ? s.user : null,
-    homeUrl: s.homeUrl, devHomeUrl: s.devHomeUrl ?? null,
     autostart: { enabled: autostartEnabled(), supported: autostartSupported() },
     update: { pending: pendingUpdate()?.version ?? null, canUpdate: canUpdate() },
     // Điểm mới của bản đang chạy và của bản đã tải chờ cài (null ⇒ không có ghi chú).
@@ -98,15 +99,5 @@ export function registerSettingsPage(hooks: SettingsHooks): void {
     own(e);
     const tg = target(code);
     if (tg) openCredentialDialog(tg, hooks.push);
-  });
-  ipcMain.handle('vala:save-home', (e, raw: unknown) => {
-    own(e);
-    if (!IS_DEV) return { ok: false };
-    const t = M[getSettings().lang];
-    const url = raw === null ? null : typeof raw === 'string' ? normalizeHome(raw) : null;
-    if (raw !== null && !url) return { ok: false, message: t.badHome };
-    setSettings({ devHomeUrl: url });
-    hooks.onHomeChanged();
-    return { ok: true, message: url ? t.homeSaved : t.homeServer, state: state() };
   });
 }

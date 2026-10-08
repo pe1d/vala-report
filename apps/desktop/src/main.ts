@@ -21,13 +21,14 @@ import { portalHasPassword, setPortalUser } from './portal-state';
 import { registerAutofill } from './autofill';
 import { lockCredentials } from './credentials';
 import { installUiProtocol, refreshUi, registerUiScheme } from './ui-cache';
-import { contentBounds, browserWindow, forgetPortalLogin, initBrowser, isLoginContents, pushLogin, showLogin, showDefault, isChatContents, isRecordingContents, pushChat, isSettingsContents, openRecordingTab, openSettingsTab, pushRecording, pushSettings, refreshBrowser, revealWindow } from './browser';
+import { contentBounds, browserWindow, preloadDefaultApp, showDefaultApp, forgetPortalLogin, initBrowser, isLoginContents, pushLogin, showLogin, showDefault, isChatContents, isRecordingContents, pushChat, isSettingsContents, openRecordingTab, openSettingsTab, pushRecording, pushSettings, refreshBrowser, revealWindow } from './browser';
 import { setNotifyReveal } from './notify';
 import { createMenus, refreshMenus, tabContextMenu } from './menu';
-import { refreshHomeFromServer } from './homepage';
+import { appsEvents, clearApps, refreshApps } from './apps';
+import { clearSsoSession, initSsoSession } from './sso-session';
 import { applyAutostart } from './autostart';
 import { announceUpdate, checkNow, initUpdater } from './updater';
-import { changePortalPassword, onTabLeave, portalUserEvents, registerBridge, showMain, showPortal, watchCookies } from './windows';
+import { changePortalPassword, onTabLeave, portalUserEvents, registerBridge, showPortal, watchCookies } from './windows';
 
 const SYNC_INTERVAL_MS = 15 * 60_000;
 /** Mở lúc Windows khởi động ⇒ chỉ chạy nền, không bật cửa sổ. */
@@ -41,17 +42,20 @@ function refreshAll() {
   refreshBrowser();
 }
 
-/** Trang chính do quản trị đặt trên cổng: đổi ⇒ tab Vala nạp trang mới. */
-const refreshHome = () => refreshHomeFromServer().then((changed) => { if (changed) refreshAll(); });
+/** Danh mục ứng dụng của đơn vị (quản trị đơn vị khai trên cổng) ⇒ thanh ứng dụng; ứng dụng mặc định nạp sẵn ở nền. */
+const refreshCatalog = () => refreshApps().then(() => { refreshAll(); preloadDefaultApp(); });
 
 function startSync() {
   void syncAll().then(refreshAll, refreshAll);
   void refreshPackages();
-  if (!syncTimer) syncTimer = setInterval(() => { void syncAll(); void refreshHome(); void refreshPackages(); void refreshUi(); }, SYNC_INTERVAL_MS);
+  void refreshCatalog();
+  if (!syncTimer) syncTimer = setInterval(() => { void syncAll(); void refreshCatalog(); void refreshPackages(); void refreshUi(); }, SYNC_INTERVAL_MS);
 }
 
 /** Đăng xuất cả ứng dụng (thu hồi token thiết bị) lẫn cổng (xoá phiên cổng — không thì cổng lại tự cấp token mới). */
 async function signOut() {
+  // Bỏ phiên SSO của đơn vị trong app TRƯỚC khi quên danh mục (host SSO lấy từ danh mục / lần đăng nhập).
+  await clearSsoSession();
   await logoutDevice();
   await forgetPortalLogin();
   refreshAll();
@@ -60,7 +64,8 @@ async function signOut() {
 // Đăng nhập cổng ở tab Báo cáo ⇒ cổng cấp token thiết bị qua cầu nối (account.ts) ⇒ bắt đầu giữ/gửi phiên.
 accountEvents.on('login', () => { refreshAll(); startSync(); });
 // Đăng xuất ⇒ xoá cả lịch sử trang, hội thoại Trợ lý, danh mục thao tác trên máy (có dữ liệu của các hệ thống nguồn).
-accountEvents.on('logout', () => { forgetPackages(); setPortalUser(null); lockCredentials(); clearLocalData(); refreshAll(); });
+accountEvents.on('logout', () => { forgetPackages(); setPortalUser(null); lockCredentials(); clearLocalData(); clearApps(); refreshAll(); });
+appsEvents.on('changed', refreshAll);
 // Đổi ngôn ngữ / sáng-tối ở bất kỳ đâu ⇒ menu, khay, thanh dọc theo (browser.ts tự báo cổng).
 prefsEvents.on('changed', refreshAll);
 portalUserEvents.on('changed', refreshAll);
@@ -88,11 +93,11 @@ if (!app.requestSingleInstanceLock()) {
     applyTheme();
     setNotifyReveal(revealWindow);
     installUiProtocol();
+    initSsoSession();
     registerBridge();
     registerAutofill();
     registerSettingsPage({
       signIn: showLogin, signOut, openPortal: showPortal,
-      onHomeChanged: () => { void refreshHome().then(() => showMain()); },
       isSettings: (e) => isSettingsContents(e.sender), push: pushSettings,
     });
     registerRecordingPage({ isRecording: (e) => isRecordingContents(e.sender), push: pushRecording, open: openRecordingTab });
@@ -100,7 +105,7 @@ if (!app.requestSingleInstanceLock()) {
     registerLoginPage({ isLogin: (e) => isLoginContents(e.sender), push: pushLogin, win: browserWindow, pageBounds: contentBounds });
     registerSearch();
     watchCookies();
-    createMenus({ showMain, showDefault, showPortal, signIn: showLogin, openSettings, signOut: () => void signOut(), changePassword: changePortalPassword });
+    createMenus({ showMain: showDefaultApp, showDefault, showPortal, signIn: showLogin, openSettings, signOut: () => void signOut(), changePassword: changePortalPassword });
     initBrowser({
       onLeave: onTabLeave, signIn: showLogin, tabMenu: tabContextMenu, portalHasPassword,
       // Menu hồ sơ ở cuối thanh dọc (khung nổi).
@@ -119,7 +124,6 @@ if (!app.requestSingleInstanceLock()) {
     // Vừa cập nhật lên bản mới ⇒ báo một lần "có gì mới" (bấm ⇒ Cài đặt → Giới thiệu).
     announceUpdate(() => openSettings('gioi-thieu'));
 
-    void refreshHome();
     void refreshUi();
     // Chưa đăng nhập ⇒ cửa sổ mở màn hình đăng nhập (2 bước, nhiều đơn vị — login-page.ts).
     if (getSettings().deviceToken) startSync();

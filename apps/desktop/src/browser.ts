@@ -20,12 +20,13 @@ import { APP_NAME, ICON, IS_DEV } from './channel';
 import { messages, normLang } from './i18n';
 import { attachAutofill } from './autofill';
 import { attachPackages, injectAll, listActions, packageEvents } from './scripts';
-import { recordActions, recordVisit, retitleVisit } from './local-data';
+import { recordActions, recordAppVisit } from './local-data';
+import { appByKey, appKey, catalog, pinnedKeys as catalogPinnedKeys, setAppPinned } from './apps';
 import { isPortalUrl, mapToUi, UI_ORIGIN, uiEvents, uiPortalUrl } from './ui-cache';
 import { currentPrefs, prefsEvents, setPrefs } from './prefs';
 import { getSettings, setSettings } from './settings';
 import { cachedSources, events, statusOf, type SourceFull } from './sync';
-import { openTarget, pinnedApps, sidebarSections, tabStatus, type TabStatus } from './tabs-model';
+import { openTarget, sidebarSections, tabStatus, type TabStatus } from './tabs-model';
 import { pendingUpdate, promptInstall } from './updater';
 import { recordingKey } from './recorder';
 import { closeLoginSso, layoutSso } from './login-page';
@@ -36,7 +37,7 @@ const M = messages({
   back: 'Quay lại (Alt+←)', forward: 'Tiến tới (Alt+→)', reload: 'Tải lại (F5)', collapse: 'Thu gọn thanh bên', expand: 'Mở rộng thanh bên',
   search: 'Tìm kiếm', minimize: 'Thu nhỏ', maximize: 'Phóng to', restore: 'Thu về', closeWindow: 'Đóng (ẩn xuống khay)',
   close: 'Đóng tab (Ctrl+W)', menu: 'Hệ thống nguồn',
-  signIn: 'Đăng nhập', signInTitle: 'Đăng nhập Vala Reporting ở tab Báo cáo', account: 'Tài khoản',
+  signIn: 'Đăng nhập', signInTitle: 'Đăng nhập Vala Desktop', account: 'Tài khoản',
   lightMode: 'Chế độ sáng', darkMode: 'Chế độ tối', recording: 'đang ghi thao tác',
   updateTitle: 'Cài bản mới: ứng dụng đóng lại, cài xong tự mở lại',
   updateLabel: (v: string) => `Đã có bản ${v} — Cập nhật`,
@@ -47,7 +48,7 @@ const M = messages({
   back: 'Back (Alt+←)', forward: 'Forward (Alt+→)', reload: 'Reload (F5)', collapse: 'Collapse sidebar', expand: 'Expand sidebar',
   search: 'Search', minimize: 'Minimize', maximize: 'Maximize', restore: 'Restore', closeWindow: 'Close (hide to tray)',
   close: 'Close tab (Ctrl+W)', menu: 'Source systems',
-  signIn: 'Sign in', signInTitle: 'Sign in to Vala Reporting on the Reports tab', account: 'Account',
+  signIn: 'Sign in', signInTitle: 'Sign in to Vala Desktop', account: 'Account',
   lightMode: 'Light mode', darkMode: 'Dark mode', recording: 'recording actions',
   updateTitle: 'Install the new version: the app closes, installs and reopens',
   updateLabel: (v: string) => `Version ${v} available — Update`,
@@ -106,47 +107,41 @@ app.on('before-quit', () => { quitting = true; });
 
 export const sourceTabKey = (code: string) => `src:${code}`;
 
+/** Mục cố định: chỉ Trợ lý AI. Mọi ứng dụng khác lấy từ danh mục của đơn vị (apps.ts). */
 function pinnedDefs(): PinnedDef[] {
-  const s = getSettings();
-  const t = M[s.lang];
-  const defs: PinnedDef[] = [{ key: CHAT, label: t.assistant, url: '' }, { key: 'home', label: t.home, url: s.homeUrl }];
-  // Tab Báo cáo luôn có — kể cả khi chưa đăng nhập: đó là nơi đăng nhập (cổng cấp quyền cho ứng dụng qua cầu nối).
-  // Giao diện cổng chạy từ bản trong máy khi đã tải được (ui-cache.ts), không thì nạp thẳng từ máy chủ.
-  if (s.serverUrl) defs.push({ key: 'portal', label: t.reports, url: uiPortalUrl() ?? s.serverUrl });
-  return defs;
+  return [{ key: CHAT, label: M[getSettings().lang].assistant, url: '' }];
 }
+
+/** Báo cáo (ứng dụng `reports` của danh mục): giao diện cổng chạy từ bản trong máy khi đã tải được (ui-cache.ts). */
+const portalUrl = (): string => uiPortalUrl() ?? getSettings().serverUrl;
+
+/** Tab của một ứng dụng trong danh mục (trang web, hệ thống nguồn, Báo cáo) — khác Trợ lý AI, Cài đặt, trang mở từ link. */
+const isAppKey = (key: string) => key === 'portal' || key.startsWith('web:') || key.startsWith('src:');
 
 /** Nguồn của một tab hệ thống nguồn (null nếu không phải tab nguồn hoặc nguồn không còn). */
 const sourceOf = (key: string): SourceFull | null =>
   (key.startsWith('src:') && getSettings().deviceToken ? cachedSources().find((s) => sourceTabKey(s.code) === key) : undefined) ?? null;
 
 /**
- * Khớp tab với cấu hình hiện tại: thêm tab ghim mới có, bỏ tab không còn (đăng xuất ⇒ đóng cả Báo cáo lẫn các tab nguồn),
- * đổi trang chính ⇒ nạp lại.
+ * Khớp tab với cấu hình hiện tại: đăng xuất ⇒ đóng mọi tab ứng dụng; ứng dụng trang web / Báo cáo bị gỡ khỏi danh mục ⇒
+ * đóng (tab hệ thống nguồn giữ: Trợ lý AI có thể đang chạy thao tác ngầm trong đó).
  */
 function syncPinned(): void {
   const defs = pinnedDefs();
   const keep = new Set(defs.map((d) => d.key));
+  const loaded = catalog().apps.length > 0;
   for (const t of [...tabs.values()]) {
     if (t.pinned && !keep.has(t.key)) destroyTab(t.key);
-    // Danh sách nguồn chưa tải xong lúc khởi động thì chưa kết luận — chỉ đóng khi đã đăng xuất.
-    else if (t.key.startsWith('src:') && !getSettings().deviceToken) destroyTab(t.key);
+    else if (isAppKey(t.key) && !signedIn()) destroyTab(t.key);
+    else if (loaded && (t.key === 'portal' || t.key.startsWith('web:')) && !appByKey(t.key)) destroyTab(t.key);
   }
-  for (const d of defs) {
-    const t = tabs.get(d.key);
-    if (!t) { tabs.set(d.key, { key: d.key, pinned: true, url: d.url, view: null }); continue; }
-    if (d.key === 'home' && t.url !== d.url) {
-      t.url = d.url;
-      if (t.view) void t.view.webContents.loadURL(d.url);
-    }
-  }
+  for (const d of defs) if (!tabs.get(d.key)) tabs.set(d.key, { key: d.key, pinned: true, url: d.url, view: null });
 }
 
 /** Tab Báo cáo chưa nạp trang: cập nhật địa chỉ sẽ nạp (bản trong máy vừa có / vừa đổi). */
 function syncPinnedPortalUrl(): void {
   const t = tabs.get('portal');
-  const def = pinnedDefs().find((d) => d.key === 'portal');
-  if (t && def && !t.view) t.url = def.url;
+  if (t && !t.view) t.url = portalUrl();
 }
 
 function ensureWindow(): BrowserWindow {
@@ -320,7 +315,8 @@ function createView(t: Tab): WebContentsView {
   view.setVisible(false);
   const wc = view.webContents;
   wc.setWindowOpenHandler((d: HandlerDetails) => {
-    const target = openTarget({ url: d.url, disposition: d.disposition, hasPostBody: !!d.postBody });
+    // Trang đang mở trong tab này: link sang tên miền gốc khác ⇒ trình duyệt mặc định (tabs-model.ts openTarget).
+    const target = openTarget({ url: d.url, disposition: d.disposition, hasPostBody: !!d.postBody, openerUrl: wc.getURL() });
     if (target.kind === 'window') return { action: 'allow', overrideBrowserWindowOptions: { icon: ICON, autoHideMenuBar: true } };
     if (target.kind === 'external') void shell.openExternal(d.url);
     if (target.kind === 'tab') openTab(d.url, target.foreground, t.key);
@@ -353,11 +349,6 @@ function createView(t: Tab): WebContentsView {
     wc.on('will-redirect', (e, url) => toUi(e, url));
     wc.on('will-navigate', (e, url) => toUi(e, url));
   }
-  // Lịch sử trang cho ô tìm kiếm (local-data.ts): chỉ trang người dùng đang xem — tab chạy thao tác ngầm không ghi.
-  const visit = (url: string) => { if (active === t.key) recordVisit({ url, title: '', app: t.key.startsWith('t:') ? '' : t.key, appLabel: appLabel(t.key) }); };
-  wc.on('did-navigate', (_e, url) => visit(url));
-  wc.on('did-navigate-in-page', (_e, url, isMainFrame) => { if (isMainFrame) visit(url); });
-  wc.on('page-title-updated', (_e, title) => retitleVisit(wc.getURL(), title));
   // Tab hệ thống nguồn nạp xong (gói kịch bản đã chèn) ⇒ ghi danh mục thao tác để ô tìm kiếm tìm được.
   if (t.key.startsWith('src:')) {
     const code = t.key.slice(4);
@@ -429,6 +420,8 @@ export function showTab(key: string, opts: { reloadTo?: string } = {}): boolean 
     prev.since = undefined;
   }
   t.since = t.since ?? Date.now();
+  // Lịch sử cho ô tìm kiếm: chỉ ghi đã vào ỨNG DỤNG nào (không lưu địa chỉ / tiêu đề trang).
+  if (isAppKey(key) && active !== key) recordAppVisit(key, appLabel(key));
   active = key;
   reveal(w);
   t.view!.webContents.focus();
@@ -506,60 +499,77 @@ export function showWebContents(wc: WebContents): boolean {
 /** Tên ứng dụng của một tab (lịch sử trang); tab mở từ liên kết ⇒ ''. */
 const appLabel = (key: string): string => appDefs().find((a) => a.key === key)?.label ?? '';
 
-/**
- * Mở lại một trang từ lịch sử: trang thuộc một ứng dụng còn dùng được ⇒ mở trong tab của ứng dụng đó (đưa tab về trang);
- * còn lại ⇒ tab mới.
- */
-export function openPage(url: string, appKey: string): void {
-  if (appKey && appDefs().some((a) => a.key === appKey)) {
-    const t = tabs.get(appKey);
-    if (t) {
-      if (!t.view) { t.url = url; showTab(appKey); } else showTab(appKey, { reloadTo: url });
-      return;
-    }
-    const src = sourceOf(appKey);
-    if (src) { showSourceTab(src, { reloadTo: url }); return; }
-  }
-  openTab(url);
-}
-
 /** Mọi ứng dụng mở được (ô tìm kiếm). */
-export const listApps = (): { key: string; label: string }[] => appDefs();
+export const listApps = (): { key: string; label: string }[] => appDefs().map(({ key, label }) => ({ key, label }));
 
-// ---- ứng dụng trên thanh dọc ----
-interface AppDef { key: string; label: string }
-/** Mọi ứng dụng mở được: Vala, Báo cáo, mọi hệ thống nguồn khai trên cổng (đã đăng nhập). */
+// ---- ứng dụng trên thanh dọc: danh mục của đơn vị (apps.ts) ----
+interface AppDef { key: string; label: string; icon: string | null; url: string; isDefault: boolean }
 function appDefs(): AppDef[] {
-  const s = getSettings();
-  const t = M[s.lang];
-  const list: AppDef[] = [{ key: 'home', label: t.home }];
-  if (s.serverUrl) list.push({ key: 'portal', label: t.reports });
-  if (s.deviceToken) for (const src of cachedSources()) list.push({ key: sourceTabKey(src.code), label: src.ten });
+  if (!signedIn()) return [];
+  const list: AppDef[] = catalog().apps.map((a) => ({
+    key: appKey(a), label: a.ten, icon: a.icon, isDefault: a.is_default,
+    url: a.kind === 'reports' ? portalUrl() : a.url ?? '',
+  }));
+  // Báo cáo luôn đi kèm Vala Desktop (phiên các hệ thống nguồn, kết nối, lịch dữ liệu đều ở đó) — danh mục thiếu thì tự thêm.
+  if (!list.some((a) => a.key === 'portal')) list.push({ key: 'portal', label: M[getSettings().lang].reports, icon: null, url: portalUrl(), isDefault: false });
   return list;
 }
-const pinnedKeys = () => pinnedApps(getSettings().pinnedApps, appDefs().map((a) => a.key));
-/** Ứng dụng ghim + mục đang mở (Vala / Báo cáo đã nạp mà không ghim, rồi các tab đóng được theo thứ tự mở). */
+const pinnedKeys = () => {
+  if (!signedIn()) return [];
+  const keys = catalogPinnedKeys();
+  if (!appByKey('portal') && !keys.includes('portal')) keys.push('portal');
+  return keys;
+};
+/** Ứng dụng ghim + mục đang mở (ứng dụng không ghim đã mở, trang mở từ link, Cài đặt…) theo thứ tự mở. */
 function sections() {
-  const opened = ['home', 'portal'].filter((k) => tabs.get(k)?.view);
-  return sidebarSections({ pinned: pinnedKeys(), open: [...opened, ...order] });
+  return sidebarSections({ pinned: pinnedKeys(), open: order });
+}
+
+/**
+ * Tab của một ứng dụng trong danh mục (chưa có thì tạo, chưa nạp trang). Hệ thống nguồn có kết nối qua Desktop ⇒ mở trang
+ * đăng nhập của hệ thống (như trước); còn lại ⇒ địa chỉ của ứng dụng.
+ */
+function ensureAppTab(key: string): Tab | null {
+  const existing = tabs.get(key);
+  if (existing) return existing;
+  const src = sourceOf(key);
+  const def = appDefs().find((a) => a.key === key);
+  const url = src?.login_url ?? def?.url;
+  if (!url) return null;
+  const t: Tab = { key, pinned: false, url, view: null };
+  tabs.set(key, t);
+  order.push(key);
+  return t;
+}
+
+/** Ứng dụng mặc định của đơn vị: nạp sẵn ở nền (đăng nhập / mở app / danh mục đổi). */
+export function preloadDefaultApp(): void {
+  if (!win || win.isDestroyed() || !signedIn()) return;
+  const def = appDefs().find((a) => a.isDefault);
+  if (!def) return;
+  const t = ensureAppTab(def.key);
+  if (t && !t.view) { createView(t); pushState(); }
+}
+
+/** Mở ứng dụng mặc định (menu khay "Mở Vala Desktop" cũ ⇒ tab Vala). */
+export function showDefaultApp(): void {
+  const def = appDefs().find((a) => a.isDefault) ?? appDefs()[0];
+  if (def) activate(def.key); else showDefault();
 }
 /** Thứ tự trên thanh dọc (phím Ctrl+Tab, Ctrl+1…9): Trợ lý AI, ứng dụng, đang mở. */
 const visibleKeys = () => { const sec = sections(); return [CHAT, ...sec.apps, ...sec.open.filter((k) => order.includes(k) || tabs.has(k))]; };
 const activeWc = () => (active && !LOCAL[active] ? tabs.get(active)?.view?.webContents : undefined);
 
-/** Bấm một mục: đã có tab ⇒ chọn; hệ thống nguồn chưa mở ⇒ mở tab của nó. */
+/** Bấm một mục: đã có tab ⇒ chọn; ứng dụng chưa mở ⇒ mở tab của nó. */
 export function activate(key: string): void {
   if (tabs.has(key)) { showTab(key); return; }
-  const src = sourceOf(key);
-  if (src) showSourceTab(src);
+  if (ensureAppTab(key)) showTab(key);
 }
 
-/** Ghim / bỏ ghim một ứng dụng trên thanh dọc (lưu trên máy; sau này lưu trên backend — danh mục ứng dụng). */
+/** Ghim / bỏ ghim một ứng dụng trên thanh dọc — bố cục riêng của người dùng, lưu trên máy chủ. */
 export function setPinned(key: string, on: boolean): void {
-  const avail = appDefs().map((a) => a.key);
-  if (!avail.includes(key)) return;
-  const cur = pinnedKeys().filter((k) => k !== key);
-  setSettings({ pinnedApps: on ? [...cur, key] : cur });
+  if (!appDefs().some((a) => a.key === key)) return;
+  void setAppPinned(key, on).then(pushState);
   pushState();
 }
 
@@ -589,7 +599,8 @@ function itemOf(key: string, label: string | undefined, t: (typeof M)['vi'], clo
     key,
     label: label ?? src?.ten ?? (title || t.newTab),
     title: title || label || src?.ten || '',
-    favicon: tab?.favicon ?? null,
+    // Favicon của trang; chưa có ⇒ biểu tượng quản trị khai trong danh mục.
+    favicon: tab?.favicon ?? appByKey(key)?.icon ?? null,
     status: src ? tabStatus(statusOf(src.code)?.result, src.state) : null,
     recording: key === recordingKey(),
     opened: !!tab?.view,
@@ -774,7 +785,7 @@ function overlayState() {
     portalPassword: !!s.deviceToken && hooks.portalHasPassword(),
     apps: appDefs().map((a) => {
       const src = sourceOf(a.key);
-      return { key: a.key, label: a.label, favicon: tabs.get(a.key)?.favicon ?? null, pinned: pinned.has(a.key),
+      return { key: a.key, label: a.label, favicon: tabs.get(a.key)?.favicon ?? a.icon, pinned: pinned.has(a.key),
         status: src ? tabStatus(statusOf(src.code)?.result, src.state) : null };
     }),
   };
@@ -802,21 +813,21 @@ const O = messages({
   settings: 'Cài đặt', language: 'Ngôn ngữ', appearance: 'Giao diện', light: 'Sáng', dark: 'Tối', system: 'Theo hệ thống',
   passwords: 'Quản lý mật khẩu', sync: 'Đồng bộ phiên ngay', checkUpdate: 'Kiểm tra cập nhật', signOut: 'Đăng xuất', quit: 'Thoát',
   signIn: 'Đăng nhập', changePassword: 'Đổi mật khẩu Vala', allApps: 'Tất cả ứng dụng', allAppsHint: 'Bấm để mở. Ghim để luôn hiện trên thanh bên.',
-  searchPlaceholder: 'Tìm ứng dụng, thao tác, hội thoại, trang đã xem…', secRecent: 'Gần đây', secChats: 'Hội thoại gần đây',
-  secApps: 'Ứng dụng', secActions: 'Thao tác', secChatsFound: 'Hội thoại', secHistory: 'Lịch sử', noResults: 'Không tìm thấy kết quả',
-  searchEmpty: 'Chưa có lịch sử. Các trang bạn xem và hội thoại với Trợ lý AI sẽ hiện ở đây.',
+  searchPlaceholder: 'Tìm ứng dụng, thao tác, hội thoại…', secRecent: 'Ứng dụng gần đây', secChats: 'Hội thoại gần đây',
+  secApps: 'Ứng dụng', secActions: 'Thao tác', secChatsFound: 'Hội thoại', noResults: 'Không tìm thấy kết quả',
+  searchEmpty: 'Chưa có lịch sử. Các ứng dụng bạn mở và hội thoại với Trợ lý AI sẽ hiện ở đây.',
   clearHistory: 'Xoá lịch sử', searchHint: '↑ ↓ chọn · Enter mở · Esc đóng',
-  pin: 'Ghim lên thanh bên', unpin: 'Bỏ ghim', noApps: 'Đăng nhập ở tab Báo cáo để thấy các hệ thống của bạn.',
+  pin: 'Ghim lên thanh bên', unpin: 'Bỏ ghim', noApps: 'Đơn vị chưa khai ứng dụng nào. Liên hệ quản trị của đơn vị.',
   version: (v: string) => `Phiên bản ${v}`, installUpdate: (v: string) => `Cập nhật lên bản ${v}`,
 }, {
   settings: 'Settings', language: 'Language', appearance: 'Appearance', light: 'Light', dark: 'Dark', system: 'System',
   passwords: 'Manage passwords', sync: 'Sync sessions now', checkUpdate: 'Check for updates', signOut: 'Sign out', quit: 'Quit',
   signIn: 'Sign in', changePassword: 'Change Vala password', allApps: 'All apps', allAppsHint: 'Click to open. Pin to keep it on the sidebar.',
-  searchPlaceholder: 'Search apps, actions, conversations, visited pages…', secRecent: 'Recent', secChats: 'Recent conversations',
-  secApps: 'Apps', secActions: 'Actions', secChatsFound: 'Conversations', secHistory: 'History', noResults: 'No results',
-  searchEmpty: 'No history yet. Pages you visit and conversations with the AI assistant will show up here.',
+  searchPlaceholder: 'Search apps, actions, conversations…', secRecent: 'Recent apps', secChats: 'Recent conversations',
+  secApps: 'Apps', secActions: 'Actions', secChatsFound: 'Conversations', noResults: 'No results',
+  searchEmpty: 'No history yet. Apps you open and conversations with the AI assistant will show up here.',
   clearHistory: 'Clear history', searchHint: '↑ ↓ select · Enter open · Esc close',
-  pin: 'Pin to sidebar', unpin: 'Unpin', noApps: 'Sign in on the Reports tab to see your systems.',
+  pin: 'Pin to sidebar', unpin: 'Unpin', noApps: "Your organization hasn't set up any apps yet. Contact your administrator.",
   version: (v: string) => `Version ${v}`, installUpdate: (v: string) => `Update to version ${v}`,
 });
 

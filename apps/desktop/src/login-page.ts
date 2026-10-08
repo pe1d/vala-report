@@ -7,6 +7,7 @@
  * Token cổng ⇒ POST /me/extension-devices ⇒ token thiết bị (account.ts adoptDeviceToken); token cổng giữ lại cho tab
  * Báo cáo (cầu nối, portalToken). IPC chỉ nhận từ đúng trang.
  */
+import { join } from 'node:path';
 import { ipcMain, WebContentsView, type BrowserWindow, type IpcMainInvokeEvent, type Rectangle } from 'electron';
 import { adoptDeviceToken, deviceName, rememberPortalToken } from './account';
 import { api, ApiError } from './api';
@@ -121,9 +122,10 @@ function openSso(t: LoginTarget, slot: { x: number; y: number; w: number; h: num
   closeSso();
   ssoTarget = t;
   ssoSlot = slot;
-  // Trang của bên ngoài (IdP của đơn vị) ⇒ không preload, không cầu nối; cùng phiên mặc định để cookie PKCE của máy chủ
-  // (đặt ở /auth/sso/start) còn khi quay về /sso/callback.
-  const view = new WebContentsView({ webPreferences: { sandbox: true, contextIsolation: true } });
+  // Cùng phiên mặc định với các tab: cookie PKCE của máy chủ (đặt ở /auth/sso/start) còn khi quay về /sso/callback, và
+  // phiên SSO của IdP dùng luôn cho các ứng dụng bên trong (sso-session.ts). Preload chung của tab: chỉ để bắt form đăng
+  // nhập ⇒ hỏi lưu mật khẩu SSO (autofill.ts); cầu nối cổng của preload chỉ trả lời đúng origin cổng nên trang IdP không gọi được.
+  const view = new WebContentsView({ webPreferences: { sandbox: true, contextIsolation: true, preload: join(__dirname, 'portal-preload.js') } });
   sso = view;
   w.contentView.addChildView(view);
   layoutSso();

@@ -1,0 +1,60 @@
+/**
+ * SSO của Vala Desktop (người dùng 08/10/2026: "SSO bê lên cho desktop"): đăng nhập Desktop bằng SSO của đơn vị một lần
+ * ⇒ mọi ứng dụng bên trong dùng cùng SSO (Vala, eGov, eTask… qua iam.bkav.com) tự vào, kể cả sau khi tắt / mở lại app.
+ *
+ *   - Màn hình đăng nhập SSO (login-page.ts) và các tab dùng CHUNG một phiên trình duyệt ⇒ cookie phiên của IdP đặt lúc
+ *     đăng nhập Desktop dùng được ngay cho các ứng dụng.
+ *   - Cookie phiên (không hạn) của IdP mất khi tắt app ⇒ chuyển thành cookie có hạn (SSO_KEEP_DAYS) để mở lại app vẫn
+ *     còn đăng nhập SSO. Chỉ cookie của đúng host SSO đơn vị khai (máy chủ trả `sso_hosts`), không đụng cookie khác.
+ *   - Phiên SSO hết hạn phía IdP ⇒ trang đăng nhập SSO hiện trong một ứng dụng ⇒ tự điền mật khẩu SSO đã lưu (một mật
+ *     khẩu cho mọi ứng dụng — autofill.ts, khoá `sso`).
+ *   - Đăng xuất Desktop ⇒ xoá cookie của IdP (người khác đăng nhập máy này không dùng lại được phiên SSO).
+ */
+import { session, type Cookie } from 'electron';
+import { catalog } from './apps';
+import { getSettings } from './settings';
+
+/** Giữ phiên SSO bao lâu sau lần đăng nhập / làm mới gần nhất (IdP vẫn tự hết hạn phiên theo chính sách của nó). */
+const SSO_KEEP_DAYS = 14;
+
+/** Host SSO của đơn vị: theo danh mục ứng dụng (đã đăng nhập) hoặc bước 1 của lần đăng nhập gần nhất. */
+export function ssoHosts(): string[] {
+  const s = new Set<string>([...(catalog().sso_hosts ?? []), ...(getSettings().lastLogin?.sso_hosts ?? [])]);
+  return [...s];
+}
+
+/** So theo tên máy (bỏ số cổng): cookie không mang cổng, còn host trang có thể có (vd localhost:4021). */
+const hostname = (h: string) => h.toLowerCase().replace(/:\d+$/, '');
+export const isSsoHost = (host: string): boolean => ssoHosts().some((h) => hostname(h) === hostname(host));
+
+const cookieHost = (c: Cookie) => (c.domain ?? '').replace(/^\./, '').toLowerCase();
+const cookieUrl = (c: Cookie) => `${c.secure ? 'https' : 'http'}://${cookieHost(c)}${c.path || '/'}`;
+
+/** Cookie phiên của IdP ⇒ cookie có hạn (giữ khi tắt app). Không đụng cookie đã có hạn. */
+async function keep(c: Cookie): Promise<void> {
+  if (!c.session || !isSsoHost(cookieHost(c))) return;
+  try {
+    await session.defaultSession.cookies.set({
+      url: cookieUrl(c), name: c.name, value: c.value, path: c.path,
+      // Cookie chỉ của host (không có dấu chấm đầu) ⇒ không đặt domain, giữ đúng phạm vi cũ.
+      ...(c.domain?.startsWith('.') ? { domain: c.domain } : {}),
+      secure: c.secure, httpOnly: c.httpOnly, sameSite: c.sameSite,
+      expirationDate: Date.now() / 1000 + SSO_KEEP_DAYS * 86400,
+    });
+  } catch { /* cookie đặc biệt (__Host- …) không đặt lại được: giữ như cũ */ }
+}
+
+export function initSsoSession(): void {
+  session.defaultSession.cookies.on('changed', (_e, c, _cause, removed) => { if (!removed) void keep(c); });
+}
+
+/** Đăng xuất Desktop ⇒ bỏ phiên SSO trong app (xoá cookie của các host SSO). */
+export async function clearSsoSession(hosts = ssoHosts()): Promise<void> {
+  const jar = session.defaultSession.cookies;
+  for (const host of new Set(hosts.map(hostname))) {
+    for (const c of await jar.get({ domain: host }).catch(() => [] as Cookie[])) {
+      if (cookieHost(c) === host) await jar.remove(cookieUrl(c), c.name).catch(() => {});
+    }
+  }
+  await jar.flushStore().catch(() => {});
+}

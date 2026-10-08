@@ -51,6 +51,24 @@ export function loginMethodsOf(deps: ApiDeps, t: Pick<TenantRow, 'ma' | 'login_m
   return t.login_methods.filter((m): m is 'password' | 'sso' => m === 'password' || (m === 'sso' && !!t.sso));
 }
 
+/**
+ * Host của SSO đơn vị (trang đăng nhập IdP): Vala Desktop giữ phiên SSO trên các host này (đăng nhập Desktop bằng SSO
+ * ⇒ các ứng dụng dùng cùng SSO tự vào) và lưu / tự điền mật khẩu SSO một lần cho mọi ứng dụng. Đơn vị không có SSO ⇒ [].
+ */
+export function ssoHostsOf(deps: ApiDeps, t: Pick<TenantRow, 'ma' | 'sso' | 'login_methods'>): string[] {
+  const hosts = new Set<string>();
+  const add = (u: unknown) => { if (typeof u === 'string' && u) { try { hosts.add(new URL(u).host); } catch { /* bỏ qua */ } } };
+  if (t.ma === DEFAULT_TENANT) {
+    if (!deps.config.loginMethods.includes('sso')) return [];
+    const c = deps.sso.cfg;
+    for (const u of [c.origin, c.issuer, c.authorizeUrl]) add(u);
+  } else {
+    const j = (t.sso ?? {}) as Record<string, unknown>;
+    for (const u of [j.origin, j.issuer, j.authorize_url]) add(u);
+  }
+  return [...hosts];
+}
+
 /** Đơn vị bật tự tạo tài khoản khi đăng nhập SSO lần đầu ⇒ bước 1 không kiểm tài khoản. */
 export function ssoAutoCreate(deps: ApiDeps, t: Pick<TenantRow, 'ma' | 'sso'>): boolean {
   if (t.ma === DEFAULT_TENANT) return deps.sso.cfg.autoCreate && deps.config.loginMethods.includes('sso');

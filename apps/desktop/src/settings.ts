@@ -43,6 +43,8 @@ export interface LoginTarget {
   methods: Array<'password' | 'sso'>;
   fill: string;
   selectors: { username?: string; password?: string } | null;
+  /** Host SSO của đơn vị (sso-session.ts — giữ phiên SSO, mật khẩu SSO dùng chung). */
+  sso_hosts?: string[];
 }
 
 /**
