@@ -14,6 +14,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { app, net, type WebContents, type WebFrameMain } from 'electron';
 import { getSettings } from './settings';
+import { reportError } from './error-report';
 import { matchesUrl, verifyPackage, type SignedFields } from './scripts-verify';
 
 export interface DesktopPackage extends SignedFields {
@@ -97,7 +98,11 @@ async function injectFrame(frame: WebFrameMain | null | undefined) {
   if (!code) return;
   try {
     const r = (await frame.executeJavaScript(code)) as Record<string, { ok: boolean; error?: string }>;
-    for (const [k, v] of Object.entries(r ?? {})) if (!v.ok) console.warn(`[kich-ban] ${k} lỗi trên ${new URL(frame.url).host}: ${v.error}`);
+    for (const [k, v] of Object.entries(r ?? {})) {
+      if (v.ok) continue;
+      console.warn(`[kich-ban] ${k} lỗi trên ${new URL(frame.url).host}: ${v.error}`);
+      reportError('kich_ban', `Gói ${k} lỗi khi nạp: ${v.error ?? ''}`, undefined, { goi: k, trang: new URL(frame.url).origin });
+    }
   } catch (e) {
     console.warn(`[kich-ban] không chèn được vào ${frame.url}: ${(e as Error).message}`);
   }

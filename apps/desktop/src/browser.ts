@@ -337,6 +337,22 @@ const LOCAL: Record<string, { preload: string; html: string }> = {
   [ADMIN]: { preload: 'admin-preload.js', html: '../dist/admin/index.html' },
 };
 
+/**
+ * Trang của tab bị đóng đột ngột (crash, hết bộ nhớ…) ⇒ tự tải lại để người dùng không gặp trang trắng; tối đa 3 lần mỗi
+ * phút (trang lỗi lặp lại thì thôi). Báo lỗi gửi riêng (error-report.ts).
+ */
+function autoRecover(wc: WebContents): void {
+  const times: number[] = [];
+  wc.on('render-process-gone', (_e, d) => {
+    if (d.reason === 'clean-exit' || wc.isDestroyed()) return;
+    const now = Date.now();
+    while (times.length && now - times[0]! > 60_000) times.shift();
+    if (times.length >= 3) return;
+    times.push(now);
+    setTimeout(() => { if (!wc.isDestroyed()) wc.reload(); }, 500);
+  });
+}
+
 function createLocalView(t: Tab): WebContentsView {
   const def = LOCAL[t.key]!;
   const view = new WebContentsView({ webPreferences: { preload: join(__dirname, def.preload) } });
@@ -344,6 +360,7 @@ function createLocalView(t: Tab): WebContentsView {
   win!.contentView.addChildView(view);
   view.setVisible(false);
   const wc = view.webContents;
+  autoRecover(wc);
   wc.setWindowOpenHandler(() => ({ action: 'deny' }));
   wc.on('will-navigate', (e) => e.preventDefault());
   wc.on('page-title-updated', () => pushState());
@@ -426,6 +443,7 @@ function createView(t: Tab): WebContentsView {
   win!.contentView.addChildView(view);
   view.setVisible(false);
   const wc = view.webContents;
+  autoRecover(wc);
   wc.setWindowOpenHandler((d: HandlerDetails) => {
     // Trang đang mở trong tab này: link sang tên miền gốc khác ⇒ trình duyệt mặc định (tabs-model.ts openTarget).
     const target = openTarget({ url: d.url, disposition: d.disposition, hasPostBody: !!d.postBody, openerUrl: wc.getURL() }, insideDomains());
@@ -564,6 +582,7 @@ function createUiView(t: Tab): void {
   win!.contentView.addChildView(view);
   view.setVisible(false);
   const wc = view.webContents;
+  autoRecover(wc);
   wc.setWindowOpenHandler(() => ({ action: 'deny' }));
   wc.on('will-navigate', (e) => e.preventDefault());
   wc.on('before-input-event', (e, input) => { if (shortcut(input)) e.preventDefault(); });

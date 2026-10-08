@@ -17,6 +17,7 @@ import { AdminDesktopAppsPage } from '@vala/admin/AdminDesktopApps';
 import { AdminDesktopScriptsPage } from '@vala/admin/AdminDesktopScripts';
 import { AdminSourcesPage } from '@vala/admin/AdminSources';
 import { AdminTenantsPage } from '@vala/admin/AdminTenants';
+import { AdminDesktopErrorsPage } from '@vala/admin/AdminDesktopErrors';
 import './index.css';
 
 interface ValaAdminApi {
@@ -37,16 +38,16 @@ bridge.onPrefs(applyPrefs);
 const M = messages({
   title: 'Quản trị', subtitle: 'Người dùng, ứng dụng, kịch bản và hệ thống nguồn của đơn vị',
   users: 'Người dùng', apps: 'Ứng dụng Desktop', scripts: 'Kịch bản Desktop', sources: 'Hệ thống nguồn',
-  system: 'Quản trị hệ thống', tenants: 'Đơn vị',
+  system: 'Quản trị hệ thống', tenants: 'Đơn vị', errors: 'Lỗi Desktop',
   notAdmin: 'Chỉ quản trị của đơn vị mới dùng được trang này.',
 }, {
   title: 'Administration', subtitle: "Your organization's users, apps, scripts and source systems",
   users: 'Users', apps: 'Desktop apps', scripts: 'Desktop scripts', sources: 'Source systems',
-  system: 'System administration', tenants: 'Organizations',
+  system: 'System administration', tenants: 'Organizations', errors: 'Desktop errors',
   notAdmin: 'Only your organization’s administrators can use this page.',
 });
 
-type NavKey = 'users' | 'apps' | 'scripts' | 'sources' | 'tenants';
+type NavKey = 'users' | 'apps' | 'scripts' | 'sources' | 'tenants' | 'errors';
 /** Quản trị đơn vị (is_ops_admin). */
 const NAV: Array<{ to: string; key: NavKey; icon: string }> = [
   { to: '/nguoi-dung', key: 'users', icon: 'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM19 8v6M22 11h-6' },
@@ -57,6 +58,7 @@ const NAV: Array<{ to: string; key: NavKey; icon: string }> = [
 /** Quản trị hệ thống (core.system_admins): các đơn vị dùng chung máy chủ. */
 const SYSTEM_NAV: Array<{ to: string; key: NavKey; icon: string }> = [
   { to: '/don-vi', key: 'tenants', icon: 'M3 21h18M5 21V7l7-4 7 4v14M9 9h.01M15 9h.01M9 13h.01M15 13h.01M10 21v-4h4v4' },
+  { to: '/loi-desktop', key: 'errors', icon: 'M12 9v4M12 17h.01M10.3 3.9L1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z' },
 ];
 
 function AdminApp() {
@@ -109,6 +111,7 @@ function AdminApp() {
               <Route path="/he-thong-nguon" element={<AdminSourcesPage />} />
             </>}
             {me.is_system_admin && <Route path="/don-vi" element={<AdminTenantsPage />} />}
+            {me.is_system_admin && <Route path="/loi-desktop" element={<AdminDesktopErrorsPage />} />}
             <Route path="*" element={<Navigate to={(nav[0] ?? system[0])!.to} replace />} />
           </Routes>
         </main>

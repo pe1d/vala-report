@@ -18,6 +18,7 @@ import { strings } from './settings-strings';
 import { SSO_KEY } from './autofill';
 import { ssoHosts } from './sso-session';
 import { cachedSources, events as syncEvents } from './sync';
+import { setErrorReport } from './error-report';
 import { autoUpdateEnabled, canUpdate, checkNow, currentNotes, installNow, pendingUpdate, setAutoUpdate } from './updater';
 
 export interface SettingsHooks {
@@ -85,7 +86,7 @@ export function registerSettingsPage(hooks: SettingsHooks): void {
   ipcMain.handle('vala:set-option', (e, a: { key?: unknown; on?: unknown }) => {
     own(e);
     if (a?.key === 'autoUpdate') setAutoUpdate(a.on === true);
-    else if (a?.key === 'errorReport') setSettings({ errorReport: a.on === true });
+    else if (a?.key === 'errorReport') setErrorReport(a.on === true);
     return state();
   });
   ipcMain.handle('vala:sign-in', (e) => { own(e); hooks.signIn(); });

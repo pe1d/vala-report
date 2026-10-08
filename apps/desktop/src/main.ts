@@ -11,6 +11,7 @@ import { registerSettingsPage } from './settings-page';
 import { registerRecordingPage } from './recording-page';
 import { registerVanbanPage } from './vanban-page';
 import { offerPin } from './pin';
+import { initErrorReport, refreshCrashIdentity, startCrashReporter } from './error-report';
 import { registerChatPage } from './chat-page';
 import { registerLoginPage } from './login-page';
 import { registerAdminPage } from './admin-page';
@@ -68,7 +69,8 @@ async function signOut() {
 // Đăng nhập cổng ở tab Báo cáo ⇒ cổng cấp token thiết bị qua cầu nối (account.ts) ⇒ bắt đầu giữ/gửi phiên.
 accountEvents.on('login', () => { refreshAll(); startSync(); });
 // Đăng xuất ⇒ xoá cả lịch sử trang, hội thoại Trợ lý, danh mục thao tác trên máy (có dữ liệu của các hệ thống nguồn).
-accountEvents.on('logout', () => { forgetPackages(); lockCredentials(); clearLocalData(); clearApps(); refreshAll(); });
+accountEvents.on('logout', () => { forgetPackages(); lockCredentials(); clearLocalData(); clearApps(); refreshAll(); refreshCrashIdentity(); });
+accountEvents.on('login', refreshCrashIdentity);
 appsEvents.on('changed', refreshAll);
 // Đổi ngôn ngữ / sáng-tối ở bất kỳ đâu ⇒ menu, khay, thanh dọc theo (browser.ts tự báo cổng).
 prefsEvents.on('changed', refreshAll);
@@ -78,6 +80,8 @@ const openSettings = (section?: string) => openSettingsTab(section);
 
 // Bản dev ⇒ tên, thư mục dữ liệu riêng (channel.ts). Phải chạy trước khi đọc cấu hình / xin khoá "chỉ một bản".
 setupChannel();
+// Báo crash: bật sớm nhất (sau khi biết thư mục dữ liệu) để bắt cả crash lúc khởi động (error-report.ts).
+startCrashReporter();
 app.userAgentFallback = cleanUserAgent(app.userAgentFallback);
 // vala-ui:// — giao diện cổng chạy từ bản trong máy (ui-cache.ts); phải đăng ký trước app ready.
 registerUiScheme();
@@ -92,6 +96,7 @@ if (!app.requestSingleInstanceLock()) {
   app.whenReady().then(() => {
     // Tự khởi động cùng máy — chỉ ở bản đã cài (bản dev chạy bằng binary electron chung). Linux không có
     // setLoginItemSettings ⇒ tự ghi mục autostart (linux.ts).
+    initErrorReport();
     applyAutostart();
     applyTheme();
     setNotifyReveal(revealWindow);

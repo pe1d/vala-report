@@ -21,6 +21,7 @@ import { messages, type Lang } from './i18n';
 import { parseNotes, type ReleaseNotes } from './release-notes';
 import { getSettings, setSettings, updateFeedUrl } from './settings';
 import { shouldAutoInstall } from './updater-model';
+import { reportError } from './error-report';
 
 const M = messages({
   readyTitle: (v: string) => `Đã có Vala Desktop bản ${v}`,
@@ -132,6 +133,7 @@ export function initUpdater(onReady: () => void): void {
   });
   autoUpdater.on('error', (e) => {
     console.warn('[vala] update', e.message);
+    reportError('cap_nhat', e.message, e.stack);
     if (manual) notify(M[getSettings().lang].checkFailed, e.message);
     manual = false;
   });

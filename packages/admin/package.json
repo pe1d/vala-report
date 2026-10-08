@@ -12,6 +12,7 @@
     "./AdminDesktopScripts": "./src/AdminDesktopScripts.tsx",
     "./AdminSources": "./src/AdminSources.tsx",
     "./AdminTenants": "./src/AdminTenants.tsx",
+    "./AdminDesktopErrors": "./src/AdminDesktopErrors.tsx",
     "./AdminSettings": "./src/AdminSettings.tsx"
   },
   "scripts": { "typecheck": "tsc -p .", "test": "echo 'admin: chưa có test'" },
