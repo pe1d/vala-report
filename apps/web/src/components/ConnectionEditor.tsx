@@ -21,7 +21,7 @@ const M = messages({
   optPassword: 'Tài khoản/mật khẩu — hệ thống tự đăng nhập',
   optCookie: 'Dán cookie từ trình duyệt',
   optSso: (sso: string) => `Người dùng tự uỷ quyền qua ${sso}`,
-  extensionOnly: (src: string) => `${src} chỉ kết nối qua tiện ích trình duyệt Vala.`,
+  extensionOnly: (src: string) => `${src} chỉ kết nối qua Vala Desktop.`,
   account: (src: string) => `Tài khoản trên ${src}`,
   usernamePh: 'Tên đăng nhập hệ thống nguồn',
   password: 'Mật khẩu',
@@ -48,7 +48,7 @@ const M = messages({
   optPassword: 'Username/password — the system signs in automatically',
   optCookie: 'Paste a cookie from the browser',
   optSso: (sso: string) => `User authorizes via ${sso}`,
-  extensionOnly: (src: string) => `${src} can only be connected through the Vala browser extension.`,
+  extensionOnly: (src: string) => `${src} can only be connected through Vala Desktop.`,
   account: (src: string) => `Account on ${src}`,
   usernamePh: 'Source system username',
   password: 'Password',
@@ -72,7 +72,7 @@ export function ConnectionEditor({ conn, self = false, onClose, onSaved }: {
   const ssoName = useBranding().ten_sso;
   const base = self ? `/me/connections/${conn.source_system}` : `/admin/connections/${conn.app_user_id}/${conn.source_system}`;
   const who = self ? t.you : conn.ho_ten;
-  // 'extension' không cấu hình qua form (do tiện ích tạo) ⇒ đổi sang cách khác thì mặc định mật khẩu.
+  // 'extension' không cấu hình qua form (do Vala Desktop tạo) ⇒ đổi sang cách khác thì mặc định mật khẩu.
   // Chỉ các cách hệ thống này cho phép (quản trị đặt ở "Hệ thống nguồn"); 'sso' chỉ quản trị đặt hộ.
   const allowed = (conn.connection_methods ?? ['password', 'cookie', 'sso'])
     .filter((m): m is AuthMethod => m === 'password' || m === 'cookie' || (m === 'sso' && !self));

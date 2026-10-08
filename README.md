@@ -47,7 +47,9 @@ pnpm test           # bộ test cũ (phụ thuộc eGov/eTask giả lập) đã 
 | `apps/worker` | Bảo trì: làm mới phiên sắp hết hạn, phân vùng lớp thô, lớp tổng hợp. (Hàng đợi crawl nội bộ giữ lại làm dự phòng khi không có Crawlab) |
 | `crawlers/` | Chỉ còn thư viện chung `_sdk/vala_sdk.py`. **Mã spider (`main.py`) lưu trong CSDL**, quản trị viết/sửa trên trang *Script crawl* |
 | `apps/web` | React + Tailwind 3, 6 màn hình, chuyển sáng/tối/theo hệ thống |
-| `apps/extension` | **Tiện ích Chrome/Edge** (Manifest V3, React + Tailwind): tự gửi phiên eGov/eTask… về cổng khi người dùng đăng nhập |
+| `apps/desktop` | **Vala Desktop** (Electron) — sản phẩm chính: thanh ứng dụng theo danh mục đơn vị, Trợ lý AI, giữ phiên các hệ thống nguồn, **trang Quản trị đơn vị** (`admin/`) |
+| `packages/ui` | Giao diện dùng chung (React + Tailwind preset): song ngữ, sáng/tối, thành phần, client API |
+| `packages/admin` | Các trang Quản trị đơn vị (người dùng, ứng dụng, kịch bản, hệ thống nguồn, cấu hình chung) — dùng trong Vala Desktop; cổng web dùng tạm |
 
 ## Crawlab và script crawl (cập nhật 26/09/2026)
 
@@ -169,41 +171,12 @@ qua hàm CSDL `ensure_record_index` (tự dựng tên/biểu thức, kiểm đ�
 
 Danh mục hệ thống nằm trong bộ nhớ API (`SourceRegistry`), được nạp lại sau mỗi lần sửa. Chạy nhiều tiến trình API thì phải nạp lại ở mọi tiến trình, hoặc khởi động lại.
 
-## Tiện ích trình duyệt — không phải dán cookie (cập nhật 28/09/2026)
+## Tiện ích trình duyệt — đã ngừng (08/10/2026)
 
-Trang Vala không đọc được cookie của `egov.bkav.com` (trình duyệt chặn khác tên miền, cookie phiên lại HttpOnly), nên việc "người dùng đăng nhập eGov rồi Vala tự lấy phiên" đi qua tiện ích `apps/extension`. Cách này dùng được cho **mọi hệ thống nguồn**, kể cả hệ thống ngoài Bkav SSO, có captcha hoặc OTP, vì người dùng tự đăng nhập.
-
-```
-Người dùng đăng nhập eGov như mọi ngày
-  → tiện ích thấy cookie phiên đổi (chrome.cookies.onChanged, debounce 3 giây; thêm một lượt định kỳ 15 phút)
-  → đọc ĐÚNG cookies_required của adapter (vd egov_sid, bkavAuthen, BkavSSOv2) — không đọc cookie khác
-  → PUT /api/v1/ext/sources/egov/session
-  → API probe phiên (session_probe) → lưu vault → source_grants.auth_method = 'extension'
-Crawl/spider dùng phiên đó như mọi cách khác. Phiên hết hạn ⇒ kết nối "hết hạn", lần sau người dùng
-đăng nhập eGov thì tiện ích tự gửi phiên mới.
-```
-
-Kết nối từ cổng: trên *Tài khoản nguồn*, bấm **Đăng nhập qua tiện ích**. Nếu trình duyệt đã có phiên, tiện ích gửi ngay. Nếu chưa, tiện ích mở trang đăng nhập nguồn; người dùng đăng nhập xong thì tiện ích gửi phiên, hiện thông báo, đóng tab đăng nhập, đưa người dùng quay về cổng và cổng hiện hộp "Đã kết nối". Cổng và tiện ích nói chuyện với nhau qua `bridge.js` bằng `window.postMessage`, chỉ trên đúng origin máy chủ Vala. Kênh này chỉ truyền trạng thái, không có token hay cookie.
-
-Cookie phiên đặt ở tên miền cha (eGov thật dùng `Domain=.bkav.com`) ⇒ adapter khai `auth.cookie_domain`, tiện ích xin thêm quyền `*.bkav.com`. Nếu thiếu quyền này, Chrome không trả các cookie đó cho tiện ích. Nút **Chẩn đoán cookie** trong trang cài đặt liệt kê tên, tên miền, path và cờ của từng cookie, không có giá trị, để đối chiếu với `cookies_required`.
-
-An toàn:
-- Tiện ích **không được cấp sẵn quyền cho tên miền nào**. Mỗi hệ thống nguồn, và cả máy chủ Vala, đều phải được người dùng bấm "Cho phép" trong hộp thoại của Chrome, hộp thoại ghi rõ tên miền. Chỉ bản dev mới cấp sẵn `localhost`.
-- Token tiện ích (`vxt_…`) khác với token cổng. Nó chỉ gọi được `/api/v1/ext/*` và chỉ gửi được phiên của chính người đó, không đọc được báo cáo. Máy chủ chỉ lưu SHA-256 của token, hạn 180 ngày; người dùng ngắt được ở *Tài khoản nguồn → Tiện ích trình duyệt*.
-- Tiện ích không lưu giá trị cookie, chỉ lưu hash để biết phiên đã gửi hay chưa. Nó chỉ gửi tới máy chủ Vala đã cấu hình, và bắt buộc https (trừ localhost).
-- Kết nối mật khẩu/SSO còn tốt thì tiện ích **không ghi đè**, vì hệ thống đã tự lấy được phiên.
-- Phiên gửi lên thuộc một tài khoản nguồn đã gắn với người dùng khác ⇒ từ chối (403).
-
-Cài trên máy dev:
-```bash
-pnpm --filter @vala/extension build:dev     # ra apps/extension/dist-dev (cấp sẵn localhost)
-# Chrome → chrome://extensions → bật "Developer mode" → "Load unpacked" → chọn apps/extension/dist-dev
-# Bấm biểu tượng Vala → Đăng nhập (máy chủ http://localhost:5173, vd dieptx / Vala@2026)
-# Mở http://localhost:4010 (eGov giả lập), đăng nhập dieptx / Egov@2026 → vài giây sau cổng hiện "Tiện ích trình duyệt · Đang hoạt động"
-```
-Bản phát hành: `VITE_VALA_URL=https://<cổng> pnpm --filter @vala/extension build` ra `apps/extension/dist`. Phát hành nội bộ qua Chrome Web Store (chế độ riêng tư) hoặc cài bắt buộc bằng Group Policy (`ExtensionInstallForcelist`).
-
-Chưa kiểm chứng trên eGov thật: eGov có gắn phiên với IP hoặc trình duyệt hay không. Nếu có, cookie gửi lên máy chủ sẽ không dùng được, và probe sẽ báo "hết hạn" ngay khi gửi.
+Tiện ích Chrome/Edge (`apps/extension`) đã gỡ: dùng hoàn toàn **Vala Desktop** — người dùng đăng nhập các hệ thống nguồn
+trong app, app tự giữ và gửi phiên cho Vala (cách kết nối `extension` trong CSDL nay nghĩa là "qua Vala Desktop"). Máy chủ
+không còn `/ext/login`, và từ chối token thiết bị loại `extension` còn sót. Cầu nối cổng ↔ app (`apps/web/src/extension.ts`)
+giữ nguyên giao thức cũ nhưng chỉ Vala Desktop trả lời.
 
 ## Phiên uỷ quyền — cách hệ thống tự lấy phiên
 
@@ -234,7 +207,7 @@ Thử trên máy dev:
 
 ## Quy ước giao diện
 
-- Style bằng **Tailwind**. Không viết file CSS theo class tự đặt; component cơ sở nằm ở `apps/web/src/components/ui.tsx`.
+- Style bằng **Tailwind**. Không viết file CSS theo class tự đặt; component cơ sở nằm ở `packages/ui/src/ui.tsx` (dùng chung cổng web và trang Quản trị của Vala Desktop).
 - Mọi màu phải có biến thể `dark:`. Chế độ tối dùng class `dark` trên `<html>`, do nút chuyển Sáng / Tối / Theo hệ thống điều khiển (`src/theme.ts`, lưu ở localStorage). Một script nhỏ trong `index.html` đặt class này trước khi React chạy, để trang không nháy sai màu lúc tải.
 - Kiểm tra cả hai chế độ trước khi coi một màn hình là xong.
 - Dùng Tailwind 3 vì Tailwind 4 cần Node 20. Khi nâng Node thì có thể chuyển lên v4.

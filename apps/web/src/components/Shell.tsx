@@ -26,7 +26,7 @@ const M = messages({
   defaultTagline: 'Báo cáo tự động từ các hệ thống nguồn',
   sysAdmin: 'Quản trị hệ thống', appearance: 'Giao diện', mySourceAccounts: 'Tài khoản nguồn của tôi',
   changePassword: 'Đổi mật khẩu', signOut: 'Đăng xuất',
-  passwordChanged: 'Đã đổi mật khẩu. Lần đăng nhập sau (cả trên tiện ích) dùng mật khẩu mới.', close: 'Đóng',
+  passwordChanged: 'Đã đổi mật khẩu. Lần đăng nhập sau (cả trên Vala Desktop) dùng mật khẩu mới.', close: 'Đóng',
   mainNav: 'Điều hướng chính',
 }, {
   nav: {
@@ -39,7 +39,7 @@ const M = messages({
   defaultTagline: 'Automated reports from your source systems',
   sysAdmin: 'System administrator', appearance: 'Appearance', mySourceAccounts: 'My source accounts',
   changePassword: 'Change password', signOut: 'Sign out',
-  passwordChanged: 'Password changed. Use your new password next time you sign in (including in the browser extension).', close: 'Close',
+  passwordChanged: 'Password changed. Use your new password next time you sign in (including in Vala Desktop).', close: 'Close',
   mainNav: 'Main navigation',
 });
 

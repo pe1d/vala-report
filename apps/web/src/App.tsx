@@ -1,27 +1,29 @@
 import { createContext, useContext, useEffect, useRef, useState } from 'react';
-import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
+import { Link, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { api, auth, type Me } from './api';
 import { BASE } from './base';
 import { useAsync } from './hooks';
 import { ReauthGate } from './components/Reauth';
-import { sendDeviceToken, useValaExtension } from './extension';
+import { desktopAction, sendDeviceToken, useValaExtension } from './extension';
 import { Loading } from './components/States';
 import { Shell } from './components/Shell';
 import { ForcedPasswordChange } from './components/ChangePassword';
 import { LoginPage } from './pages/Login';
 import { MyConnectionsPage } from './pages/MyConnections';
 import { AdminSpidersPage } from './pages/AdminSpiders';
-import { AdminDesktopScriptsPage } from './pages/AdminDesktopScripts';
-import { AdminDesktopAppsPage } from './pages/AdminDesktopApps';
+// Các trang Quản trị đơn vị thuộc Vala Desktop (@vala/admin) — cổng dùng tạm cho tới khi Desktop có đủ.
+import { AdminDesktopScriptsPage } from '@vala/admin/AdminDesktopScripts';
+import { AdminDesktopAppsPage } from '@vala/admin/AdminDesktopApps';
+import { AdminEnvProvider, type AdminEnv } from '@vala/admin/env';
 import { CatalogPage } from './pages/Catalog';
 import { ReportPage } from './pages/Report';
 import { DataSchedulesPage } from './pages/DataSchedules';
 import { OpsPage } from './pages/Ops';
 import { AdminConnectionsPage } from './pages/AdminConnections';
-import { AdminSourcesPage } from './pages/AdminSources';
+import { AdminSourcesPage } from '@vala/admin/AdminSources';
 import { AdminReportsPage } from './pages/AdminReports';
-import { AdminUsersPage } from './pages/AdminUsers';
-import { AdminSettingsPage } from './pages/AdminSettings';
+import { AdminUsersPage } from '@vala/admin/AdminUsers';
+import { AdminSettingsPage } from '@vala/admin/AdminSettings';
 import { DashboardPage } from './pages/Dashboard';
 import { DesktopDownloadPage } from './pages/DesktopDownload';
 
@@ -61,12 +63,14 @@ function LoginDone({ onLogin }: { onLogin: (t: string) => void }) {
 
 function Authed({ onLogout }: { onLogout: () => void }) {
   const me = useAsync(() => api.get<Me>('/me'), []);
+  const ext = useValaExtension(() => {});
   if (me.loading) return <div className="p-8"><Loading /></div>;
   if (!me.data) { onLogout(); return null; }
   // Mật khẩu tạm (quản trị cấp/đặt lại) ⇒ đổi mật khẩu trước khi vào ứng dụng (máy chủ cũng chặn mọi API khác).
   if (me.data.must_change_password) return <ForcedPasswordChange name={me.data.ho_ten} onDone={me.reload} onLogout={onLogout} />;
   return (
     <MeContext.Provider value={me.data}>
+     <AdminEnvProvider value={adminEnv(me.data, ext.info?.scripts === true)}>
       <ReauthGate />
       <DesktopLink me={me.data} />
       <Shell me={me.data} onLogout={onLogout}>
@@ -89,8 +93,21 @@ function Authed({ onLogout }: { onLogout: () => void }) {
           <Route path="*" element={<Navigate to="/" />} />
         </Routes>
       </Shell>
+     </AdminEnvProvider>
     </MeContext.Provider>
   );
+}
+
+/** Môi trường cho các trang Quản trị khi mở trên cổng: chạy thử thao tác qua cầu nối Vala Desktop (nếu đang trong app). */
+function adminEnv(me: Me, inDesktop: boolean): AdminEnv {
+  return {
+    me: { id: me.id, email: me.email },
+    desktop: inDesktop ? {
+      listActions: (source) => desktopAction('list-actions', source),
+      runAction: (source, name, args) => desktopAction('run-action', source, name, args),
+    } : null,
+    crawlLink: (children) => <Link to="/script-crawl" className="text-blue-700 dark:text-blue-400">{children}</Link>,
+  };
 }
 
 /**

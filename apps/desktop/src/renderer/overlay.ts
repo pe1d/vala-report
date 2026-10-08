@@ -12,6 +12,8 @@ interface OverlayState {
   lang: 'vi' | 'en';
   theme: 'light' | 'dark' | 'system';
   dev: boolean;
+  /** Quản trị đơn vị ⇒ mục "Quản trị đơn vị" (khu /quan-tri của cổng). */
+  isAdmin: boolean;
   t: Record<string, string>;
   profile: { name: string; email: string; initials: string } | null;
   portalPassword: boolean;
@@ -58,6 +60,7 @@ interface ValaOverlayApi {
     signIn: ['M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4', 'M10 17l5-5-5-5', 'M15 12H3'],
     quit: ['M18 6L6 18', 'M6 6l12 12'],
     pin: ['M12 17v5', 'M9 3h6l-1 6 3 3v2H7v-2l3-3z'],
+    admin: ['M12 2l8 4v6c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V6z', 'M9 12l2 2 4-4'],
     search: ['M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14z', 'M20 20l-3.5-3.5'],
     action: ['M13 2L4 14h7l-1 8 9-12h-7z'],
     chat: ['M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z'],
@@ -101,6 +104,7 @@ interface ValaOverlayApi {
     const out: HTMLElement[] = [];
     out.push(el('div', 'truncate px-2.5 pb-1.5 pt-1 text-xs text-slate-500 dark:text-slate-400', s.profile ? s.profile.email : t.signIn));
     out.push(item('settings', t.settings, () => void api.command('settings'), 'Ctrl+,'));
+    if (s.isAdmin) out.push(item('admin', t.admin, () => void api.command('admin')));
     out.push(choice('language', t.language, [['vi', 'Tiếng Việt'], ['en', 'English']], s.lang, (v) => void api.prefs({ lang: v }).then(render)));
     out.push(choice('appearance', t.appearance, [['light', t.light], ['dark', t.dark], ['system', t.system]], s.theme, (v) => void api.prefs({ theme: v }).then(render)));
     out.push(sep());

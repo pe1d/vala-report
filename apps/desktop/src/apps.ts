@@ -22,7 +22,7 @@ export interface CatalogApp {
   pinned_default: boolean;
   is_default: boolean;
 }
-interface Catalog { apps: CatalogApp[]; layout: { pinned: string[] | null }; /** Host SSO của đơn vị (sso-session.ts). */ sso_hosts?: string[] }
+interface Catalog { apps: CatalogApp[]; layout: { pinned: string[] | null }; /** Host SSO của đơn vị (sso-session.ts). */ sso_hosts?: string[]; /** Quản trị đơn vị ⇒ mục "Quản trị đơn vị". */ is_admin?: boolean }
 
 /** 'changed' — danh mục / bố cục đổi ⇒ vẽ lại thanh ứng dụng. */
 export const appsEvents = new EventEmitter();

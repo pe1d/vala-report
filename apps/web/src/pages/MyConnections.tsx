@@ -12,6 +12,7 @@ import { METHOD_LABEL, STATE } from './AdminConnections';
 import { useBranding } from '../branding';
 import { ConsentBox } from '../components/Consent';
 import { messages, useT } from '../i18n';
+import { BASE } from '../base';
 
 const M = messages({
   grantErrors: (sso: string): Record<string, string> => ({
@@ -19,10 +20,10 @@ const M = messages({
     khong_lay_duoc_phien: `Đã đăng nhập ${sso} nhưng không lấy được phiên từ hệ thống nguồn. Vui lòng thử lại sau ít phút.`,
     sso_tu_choi: `Bạn đã không đồng ý trên ${sso}.`,
   }),
-  loginOpened: 'Đăng nhập trong tab vừa mở — xong tiện ích tự đưa bạn quay lại đây.',
-  needPermission: 'Bấm "Cho phép" trong trang tiện ích vừa mở.',
-  managed: 'Kết nối này đang dùng tài khoản/mật khẩu, hệ thống tự đăng nhập — không cần tiện ích.',
-  unknownSource: 'Tiện ích chưa đăng nhập tài khoản Vala. Bấm biểu tượng Vala trên thanh công cụ để đăng nhập.',
+  loginOpened: 'Đăng nhập trong tab vừa mở — xong Vala Desktop tự gửi phiên và đưa bạn quay lại đây.',
+  needPermission: 'Làm theo hướng dẫn trong tab vừa mở của Vala Desktop.',
+  managed: 'Kết nối này đang dùng tài khoản/mật khẩu, hệ thống tự đăng nhập — không cần đăng nhập trong Vala Desktop.',
+  unknownSource: 'Vala Desktop chưa có hệ thống này (danh sách cập nhật vài phút một lần). Thử lại sau ít phút.',
   testOk: (src: string) => `Kết nối ${src} hoạt động tốt.`, testFailed: 'Kết nối lỗi',
   syncing: (src: string, viaSpider: boolean) =>
     `Đang lấy dữ liệu ${src} ngay (${viaSpider ? 'qua spider' : 'qua worker'}). Số liệu cập nhật sau ít phút — mở Tổng quan hoặc Báo cáo để xem.`,
@@ -33,8 +34,8 @@ const M = messages({
   title: 'Tài khoản nguồn',
   subtitle: 'Cấp tài khoản của bạn trên từng hệ thống để hệ thống lấy dữ liệu thay bạn theo lịch. Mật khẩu và cookie được lưu trong kho bí mật, không ai xem lại được — kể cả quản trị.',
   grantOk: (sso: string) => `Đã uỷ quyền qua ${sso}.`, grantFailed: 'Uỷ quyền không thành công.',
-  extNotLoggedIn: 'Đã cài tiện ích Vala nhưng chưa đăng nhập. Bấm biểu tượng Vala trên thanh công cụ trình duyệt để đăng nhập, rồi quay lại đây.',
-  extOtherUser: (other: string, me: string) => `Tiện ích Vala đang đăng nhập bằng tài khoản khác (${other}). Đăng xuất tiện ích và đăng nhập bằng ${me} để kết nối cho bạn.`,
+  notInDesktop: 'Kết nối hệ thống nguồn dễ nhất bằng Vala Desktop: đăng nhập hệ thống như mọi ngày, ứng dụng tự gửi phiên cho Vala — không dán cookie, không đưa mật khẩu.', getDesktop: 'Tải Vala Desktop',
+  extOtherUser: (other: string, me: string) => `Vala Desktop đang đăng nhập bằng tài khoản khác (${other}). Đăng xuất Vala Desktop và đăng nhập bằng ${me} để kết nối cho bạn.`,
   connected: (src: string) => `Đã kết nối ${src}`, connectFailed: (src: string) => `Chưa kết nối được ${src}`,
   viewReports: 'Xem báo cáo',
   connectedBody: (src: string) => `Vala đã nhận phiên đăng nhập ${src}. Hệ thống sẽ lấy dữ liệu thay bạn theo lịch — bạn không phải dán cookie hay đăng nhập lại.`,
@@ -42,17 +43,16 @@ const M = messages({
   notGranted: (src: string) => `Chưa cấp tài khoản. Báo cáo dùng dữ liệu ${src} sẽ chưa có số liệu.`,
   failedHint: 'Hệ thống đã dừng tự đăng nhập để tránh khoá tài khoản của bạn. Hãy cập nhật mật khẩu.',
   cookieExpired: 'Cookie đã hết hạn — dán cookie mới.',
-  extExpired: (src: string) => `Phiên đã hết hạn — đăng nhập ${src} trên trình duyệt có tiện ích Vala, tiện ích tự gửi phiên mới.`,
-  resendViaExt: 'Gửi lại phiên qua tiện ích', test: 'Thử kết nối', grantVia: (sso: string) => `Uỷ quyền qua ${sso}`,
+  extExpired: (src: string) => `Phiên đã hết hạn — mở ${src} trong Vala Desktop và đăng nhập, ứng dụng tự gửi phiên mới.`,
+  resendViaExt: 'Gửi lại phiên từ Vala Desktop', test: 'Thử kết nối', grantVia: (sso: string) => `Uỷ quyền qua ${sso}`,
   remove: 'Gỡ tài khoản', consentFirst: 'Xác nhận đồng ý ở trên trước',
   update: 'Cập nhật', grant: 'Cấp tài khoản', fetching: 'Đang lấy…', syncNow: 'Đồng bộ ngay',
-  loginViaExt: 'Đăng nhập qua tiện ích',
-  confirmRevoke: (dev: string) => `Ngắt tiện ích trên "${dev}"? Trình duyệt đó sẽ không gửi phiên nữa. Phiên đã gửi vẫn dùng tới khi hết hạn hoặc bạn gỡ tài khoản.`,
-  extTitle: 'Tiện ích trình duyệt',
-  extIntro: 'Không muốn dán cookie hay đưa mật khẩu? Cài tiện ích Vala trên Chrome/Edge, đăng nhập bằng tài khoản cổng này, bấm "Cho phép" '
-    + 'cho từng hệ thống. Sau đó mỗi lần bạn đăng nhập các hệ thống đó như bình thường, tiện ích tự gửi phiên cho Vala — chỉ đúng '
-    + 'các cookie phiên cần thiết, không gửi mật khẩu.',
-  noDevices: 'Chưa có trình duyệt nào kết nối.',
+  loginViaExt: 'Đăng nhập trong Vala Desktop',
+  confirmRevoke: (dev: string) => `Ngắt "${dev}"? Máy đó phải đăng nhập Vala Desktop lại mới gửi phiên được. Phiên đã gửi vẫn dùng tới khi hết hạn hoặc bạn gỡ tài khoản.`,
+  extTitle: 'Vala Desktop đã đăng nhập',
+  extIntro: 'Các máy đang đăng nhập Vala Desktop bằng tài khoản này. Vala Desktop giữ phiên các hệ thống nguồn và tự gửi cho Vala '
+    + '— chỉ đúng các cookie phiên cần thiết, không gửi mật khẩu. Ngắt một máy ⇒ máy đó phải đăng nhập lại.',
+  noDevices: 'Chưa có máy nào đăng nhập Vala Desktop.',
   deviceInfo: (created: string, used: string) => `Kết nối ${created} · dùng lần cuối ${used}`,
   revoking: 'Đang ngắt…', revoke: 'Ngắt kết nối',
 }, {
@@ -61,10 +61,10 @@ const M = messages({
     khong_lay_duoc_phien: `You signed in to ${sso}, but no session could be obtained from the source system. Please try again in a few minutes.`,
     sso_tu_choi: `You did not give consent on ${sso}.`,
   }),
-  loginOpened: 'Sign in on the tab that just opened — the browser extension will bring you back here when done.',
-  needPermission: 'Click "Allow" on the browser extension page that just opened.',
-  managed: 'This connection uses a username/password and the system signs in automatically — no browser extension needed.',
-  unknownSource: 'The browser extension isn’t signed in to Vala. Click the Vala icon in the toolbar to sign in.',
+  loginOpened: 'Sign in on the tab that just opened — Vala Desktop sends the session and brings you back here when done.',
+  needPermission: 'Follow the instructions in the tab Vala Desktop just opened.',
+  managed: 'This connection uses a username/password and the system signs in automatically — no need to sign in in Vala Desktop.',
+  unknownSource: "Vala Desktop doesn't have this system yet (the list updates every few minutes). Try again in a few minutes.",
   testOk: (src: string) => `The ${src} connection is working.`, testFailed: 'Connection failed',
   syncing: (src: string, viaSpider: boolean) =>
     `Fetching ${src} data now (${viaSpider ? 'via spider' : 'via worker'}). Data will update in a few minutes — open Overview or Reports to see it.`,
@@ -75,8 +75,8 @@ const M = messages({
   title: 'Source accounts',
   subtitle: 'Provide your account for each system so Vala can fetch data for you on schedule. Passwords and cookies are kept in the secrets vault and can’t be viewed by anyone — including administrators.',
   grantOk: (sso: string) => `Authorized via ${sso}.`, grantFailed: 'Authorization failed.',
-  extNotLoggedIn: 'The Vala browser extension is installed but not signed in. Click the Vala icon in the browser toolbar to sign in, then come back here.',
-  extOtherUser: (other: string, me: string) => `The Vala browser extension is signed in with a different account (${other}). Sign out of the extension and sign in as ${me} to connect for yourself.`,
+  notInDesktop: 'The easiest way to connect source systems is Vala Desktop: sign in to your systems as usual and the app sends the session to Vala — no cookies to paste, no passwords to share.', getDesktop: 'Download Vala Desktop',
+  extOtherUser: (other: string, me: string) => `Vala Desktop is signed in with a different account (${other}). Sign out of Vala Desktop and sign in as ${me} to connect for yourself.`,
   connected: (src: string) => `Connected to ${src}`, connectFailed: (src: string) => `Couldn’t connect to ${src}`,
   viewReports: 'View reports',
   connectedBody: (src: string) => `Vala has received your ${src} sign-in session. It will fetch data for you on schedule — no need to paste cookies or sign in again.`,
@@ -84,17 +84,16 @@ const M = messages({
   notGranted: (src: string) => `No account provided. Reports using ${src} data won’t have any data yet.`,
   failedHint: 'Automatic sign-in has been paused to avoid locking your account. Please update your password.',
   cookieExpired: 'The cookie has expired — paste a new one.',
-  extExpired: (src: string) => `Session expired — sign in to ${src} in a browser with the Vala extension and it will send the new session automatically.`,
-  resendViaExt: 'Resend session via extension', test: 'Test connection', grantVia: (sso: string) => `Authorize via ${sso}`,
+  extExpired: (src: string) => `Session expired — open ${src} in Vala Desktop and sign in; the app sends the new session automatically.`,
+  resendViaExt: 'Resend session from Vala Desktop', test: 'Test connection', grantVia: (sso: string) => `Authorize via ${sso}`,
   remove: 'Remove account', consentFirst: 'Confirm your consent above first',
   update: 'Update', grant: 'Add account', fetching: 'Fetching…', syncNow: 'Sync now',
-  loginViaExt: 'Sign in via extension',
-  confirmRevoke: (dev: string) => `Disconnect the browser extension on "${dev}"? That browser will stop sending sessions. Sessions already sent remain valid until they expire or you remove the account.`,
-  extTitle: 'Browser extension',
-  extIntro: 'Don’t want to paste cookies or share your password? Install the Vala extension on Chrome/Edge, sign in with your portal account and click "Allow" '
-    + 'for each system. From then on, whenever you sign in to those systems as usual, the extension sends the session to Vala — only the '
-    + 'session cookies that are needed, never your password.',
-  noDevices: 'No browsers connected yet.',
+  loginViaExt: 'Sign in in Vala Desktop',
+  confirmRevoke: (dev: string) => `Disconnect "${dev}"? That computer must sign in to Vala Desktop again to send sessions. Sessions already sent remain valid until they expire or you remove the account.`,
+  extTitle: 'Signed-in Vala Desktop',
+  extIntro: 'Computers signed in to Vala Desktop with this account. Vala Desktop keeps your source-system sessions and sends them to Vala '
+    + '— only the session cookies that are needed, never your password. Disconnect a computer ⇒ it must sign in again.',
+  noDevices: 'No computers signed in to Vala Desktop yet.',
   deviceInfo: (created: string, used: string) => `Connected ${created} · last used ${used}`,
   revoking: 'Disconnecting…', revoke: 'Disconnect',
 });
@@ -118,7 +117,8 @@ export function MyConnectionsPage() {
   const me = useMe();
   const navigate = useNavigate();
 
-  // Tiện ích trình duyệt: bấm "Đăng nhập qua tiện ích" ⇒ tiện ích mở trang nguồn, lấy phiên, đưa người dùng về đây.
+  // Trong Vala Desktop: bấm "Đăng nhập trong Vala Desktop" ⇒ ứng dụng mở hệ thống nguồn, lấy phiên, đưa người dùng về đây
+  // (cầu nối window.postMessage — cùng giao thức tiện ích trình duyệt cũ, nay chỉ Vala Desktop trả lời).
   const onExtEvent = useCallback((e: ExtensionEvent) => {
     if (e.type === 'connected') { setNote(null); setResult({ ok: true, ten: e.ten }); conns.reload(); return; }
     if (e.type === 'connect-failed') { setNote(null); setResult({ ok: false, ten: e.ten, message: e.message }); conns.reload(); return; }
@@ -132,10 +132,12 @@ export function MyConnectionsPage() {
     if (m) setNote({ tone: m[0], text: m[1] });
   }, [conns, t]);
   const ext = useValaExtension(onExtEvent);
-  const extReady = !!ext.info?.logged_in;
+  // Chỉ Vala Desktop (tiện ích trình duyệt đã ngừng 08/10/2026).
+  const inDesktop = !!ext.info?.desktop;
+  const extReady = inDesktop && !!ext.info?.logged_in;
   const extOtherUser = extReady && ext.info?.email && ext.info.email.toLowerCase() !== me.email.toLowerCase();
 
-  // Đến từ Tổng quan (?ket-noi=egov): đợi biết có tiện ích hay không (tối đa ~1,5 giây) rồi kết nối ngay.
+  // Đến từ Tổng quan (?ket-noi=egov): đợi biết có đang trong Vala Desktop không (tối đa ~1,5 giây) rồi kết nối ngay.
   const want = params.get('ket-noi');
   const handled = useRef(false);
   const [waited, setWaited] = useState(false);
@@ -185,7 +187,12 @@ export function MyConnectionsPage() {
       {params.get('ket_qua') === 'ok' && <Banner tone="ok">{t.grantOk(ssoName)}</Banner>}
       {params.get('ket_qua') === 'loi' && <Banner tone="err">{t.grantErrors(ssoName)[params.get('ly_do') ?? ''] ?? t.grantFailed}</Banner>}
       {note && <Banner tone={note.tone} role="status">{note.text}</Banner>}
-      {ext.info && !ext.info.logged_in && <Banner tone="info">{t.extNotLoggedIn}</Banner>}
+      {waited && !inDesktop && (
+        <Banner tone="info">
+          <span className="flex-1">{t.notInDesktop}</span>
+          <a href={`${BASE}/desktop`} className="font-medium text-blue-700 underline-offset-2 hover:underline dark:text-blue-400">{t.getDesktop}</a>
+        </Banner>
+      )}
       {extOtherUser && <Banner tone="warn">{t.extOtherUser(ext.info!.email!, me.email)}</Banner>}
       {result && (
         <ResultDialog ok={result.ok} onClose={() => setResult(null)}
@@ -229,7 +236,7 @@ export function MyConnectionsPage() {
                 // Kết nối MỚI cần xác nhận đồng ý trước; kết nối đang có vẫn chạy bình thường (chỉ nhắc xác nhận).
                 const agreed = !!c.consented_at;
                 const canExt = extReady && !extOtherUser && (c.connection_methods ?? ['extension']).includes('extension');
-                const extActive = canExt && configured && c.state === 'active';   // gửi lại phiên: ít dùng (tiện ích tự lo) → menu
+                const extActive = canExt && configured && c.state === 'active';   // gửi lại phiên: ít dùng (Vala Desktop tự lo) → menu
                 const extReconnect = canExt && (!configured || c.state === 'expired');   // cần kết nối lại → nút nổi bật
                 // Hành động ít dùng gộp vào menu "…".
                 const more: MenuItem[] = [
@@ -271,8 +278,8 @@ export function MyConnectionsPage() {
 }
 
 /**
- * Tiện ích trình duyệt: người dùng đăng nhập hệ thống nguồn như mọi ngày, tiện ích tự gửi phiên về đây —
- * không phải dán cookie. Mỗi trình duyệt đã kết nối có token riêng, ngắt được ngay tại đây.
+ * Các máy đang đăng nhập Vala Desktop: ứng dụng giữ phiên hệ thống nguồn và tự gửi về đây — không phải dán cookie. Mỗi máy
+ * có token riêng, ngắt được ngay tại đây.
  */
 function ExtensionDevices() {
   const t = useT(M);

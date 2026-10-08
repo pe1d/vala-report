@@ -6,11 +6,12 @@ import { useAsync } from '../hooks';
 import { NoMatch, Pager, SearchBox, useTableView } from '../components/TableTools';
 import { Empty, ErrorBox, Loading } from '../components/States';
 import { Badge, Banner, Button, Muted, PageTitle, Select, Table, Td, Th, type Tone } from '../components/ui';
+import { METHOD_LABEL } from '@vala/admin/labels';
 import { messages, tr, useT } from '../i18n';
 
 const M = messages({
   state: { active: 'Đang hoạt động', pending: 'Chờ đăng nhập', expired: 'Phiên hết hạn', failed: 'Lỗi đăng nhập', revoked: 'Đã thu hồi', chua_cau_hinh: 'Chưa cấu hình' },
-  method: { password: 'Tài khoản/mật khẩu', cookie: 'Dán cookie', sso: 'Người dùng tự uỷ quyền (SSO)', extension: 'Tiện ích trình duyệt' },
+  method: { password: 'Tài khoản/mật khẩu', cookie: 'Dán cookie', sso: 'Người dùng tự uỷ quyền (SSO)', extension: 'Vala Desktop' },
   title: 'Kết nối dữ liệu',
   subtitle: 'Cấu hình cách hệ thống lấy dữ liệu thay cho từng người dùng. Mật khẩu và cookie chỉ được lưu trong kho bí mật (vault); hệ thống không hiển thị lại.',
   search: 'Tìm người dùng, email, tài khoản nguồn…', system: 'Hệ thống', filterBySystem: 'Lọc theo hệ thống',
@@ -19,7 +20,7 @@ const M = messages({
   status: 'Trạng thái', lastSuccess: 'Lấy thành công gần nhất', configure: 'Cấu hình', edit: 'Sửa', unit: 'kết nối',
 }, {
   state: { active: 'Active', pending: 'Awaiting sign-in', expired: 'Session expired', failed: 'Sign-in failed', revoked: 'Revoked', chua_cau_hinh: 'Not configured' },
-  method: { password: 'Username/password', cookie: 'Pasted cookie', sso: 'User-authorized (SSO)', extension: 'Browser extension' },
+  method: { password: 'Username/password', cookie: 'Pasted cookie', sso: 'User-authorized (SSO)', extension: 'Vala Desktop' },
   title: 'Data connections',
   subtitle: 'Configure how the system fetches data on behalf of each user. Passwords and cookies are stored only in the secrets vault and are never shown again.',
   search: 'Search users, emails, source accounts…', system: 'System', filterBySystem: 'Filter by system',
@@ -34,7 +35,8 @@ const lazy = <K extends string, V>(keys: readonly K[], get: (k: K) => V): Record
 const STATE_TONE: Record<Connection['state'], Tone> = { active: 'ok', pending: 'warn', expired: 'warn', failed: 'err', revoked: 'neutral', chua_cau_hinh: 'neutral' };
 export const STATE: Record<Connection['state'], [Tone, string]> =
   lazy(Object.keys(STATE_TONE) as Array<Connection['state']>, (k) => [STATE_TONE[k], tr(M).state[k]]);
-export const METHOD_LABEL: Record<AuthMethod, string> = lazy(['password', 'cookie', 'sso', 'extension'] as const, (k) => tr(M).method[k]);
+/** Nhãn cách kết nối dùng chung với trang Quản trị (@vala/admin). */
+export { METHOD_LABEL };
 
 /**
  * Màn hình quản trị — Kết nối dữ liệu. Quản trị cấu hình cách hệ thống lấy dữ liệu thay từng người dùng:

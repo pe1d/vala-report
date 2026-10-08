@@ -6,7 +6,7 @@ import type { ApiDeps } from './deps.js';
 import { adminRoutes } from './routes/admin.js';
 import { authRoutes } from './routes/auth.js';
 import { dashboardRoutes } from './routes/dashboard.js';
-import { extensionDeviceRoutes, extensionLoginRoutes, extensionRoutes } from './routes/extension.js';
+import { extensionDeviceRoutes, extensionRoutes } from './routes/extension.js';
 import { grantRoutes } from './routes/grants.js';
 import { internalRoutes } from './routes/internal.js';
 import { meRoutes } from './routes/me.js';
@@ -54,7 +54,6 @@ export async function buildApp(deps: ApiDeps, opts: { logger?: boolean } = {}) {
     await pub.register(brandingRoutes(deps));                   // tên / logo / màu của đơn vị (trang đăng nhập cần)
     // Luôn đăng ký: mỗi đơn vị tự có (hoặc không) SSO — /auth/sso/start báo lỗi rõ cho đơn vị chưa cấu hình.
     await pub.register(ssoRoutes(deps));
-    await pub.register(extensionLoginRoutes(deps));             // tiện ích trình duyệt đăng nhập
   }, { prefix: '/api/v1' });
 
   // Tiện ích trình duyệt: token thiết bị riêng, không dùng chung với token cổng.

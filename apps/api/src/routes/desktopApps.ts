@@ -54,6 +54,8 @@ export const desktopAppExtRoutes = (deps: ApiDeps): FastifyPluginAsync => async 
       layout: { pinned: row ? cleanLayout(row.pinned, apps.map((a) => a.ma)) : null },
       // Host SSO của đơn vị: Desktop giữ phiên SSO + mật khẩu SSO dùng chung cho mọi ứng dụng.
       sso_hosts: tenant ? ssoHostsOf(deps, tenant) : [],
+      // Quản trị đơn vị ⇒ Desktop hiện mục "Quản trị đơn vị" (khu /quan-tri của cổng).
+      is_admin: req.user.is_ops_admin,
     };
   }));
 

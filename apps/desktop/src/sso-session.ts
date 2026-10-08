@@ -8,7 +8,7 @@
  *     còn đăng nhập SSO. Chỉ cookie của đúng host SSO đơn vị khai (máy chủ trả `sso_hosts`), không đụng cookie khác.
  *   - Phiên SSO hết hạn phía IdP ⇒ trang đăng nhập SSO hiện trong một ứng dụng ⇒ tự điền mật khẩu SSO đã lưu (một mật
  *     khẩu cho mọi ứng dụng — autofill.ts, khoá `sso`).
- *   - Đăng xuất Desktop ⇒ xoá cookie của IdP (người khác đăng nhập máy này không dùng lại được phiên SSO).
+ *   - Đăng xuất Desktop ⇒ xoá toàn bộ dữ liệu web trong app, gồm cookie của IdP (account.ts clearWebSession).
  */
 import { session, type Cookie } from 'electron';
 import { catalog } from './apps';
@@ -46,15 +46,4 @@ async function keep(c: Cookie): Promise<void> {
 
 export function initSsoSession(): void {
   session.defaultSession.cookies.on('changed', (_e, c, _cause, removed) => { if (!removed) void keep(c); });
-}
-
-/** Đăng xuất Desktop ⇒ bỏ phiên SSO trong app (xoá cookie của các host SSO). */
-export async function clearSsoSession(hosts = ssoHosts()): Promise<void> {
-  const jar = session.defaultSession.cookies;
-  for (const host of new Set(hosts.map(hostname))) {
-    for (const c of await jar.get({ domain: host }).catch(() => [] as Cookie[])) {
-      if (cookieHost(c) === host) await jar.remove(cookieUrl(c), c.name).catch(() => {});
-    }
-  }
-  await jar.flushStore().catch(() => {});
 }

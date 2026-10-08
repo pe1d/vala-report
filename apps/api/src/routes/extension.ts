@@ -11,9 +11,7 @@ import { L, Problem, canAutoRenew, langOf, localizeStored, saveSourceAccount, va
 import { loadAllSpecs } from '@vala/core/adapter';
 import { audit } from '../audit.js';
 import type { ApiDeps } from '../deps.js';
-import { checkPortalPassword, emailOf, loginBodySchema } from './auth.js';
 import { issuePortalToken, PORTAL_TOKEN_TTL, type AuthUser } from '../auth.js';
-import { inLoginTenant } from '../login-target.js';
 import { desktopAppExtRoutes } from './desktopApps.js';
 import { autoRefresh } from './dataSchedules.js';
 import { consentsFor, giveConsent } from '../consent.js';
@@ -31,7 +29,7 @@ const hashToken = (t: string) => createHash('sha256').update(t).digest();
  * Cấp token thiết bị (vxt_…) cho một người dùng — tiện ích đăng nhập bằng mật khẩu (/ext/login), hoặc cổng cấp cho Vala
  * Desktop khi người dùng đã đăng nhập cổng trong ứng dụng (POST /me/extension-devices). Chỉ lưu SHA-256 của token.
  */
-async function issueDeviceToken(deps: ApiDeps, req: FastifyRequest, userId: number, deviceName: string | undefined, via: 'extension' | 'desktop') {
+async function issueDeviceToken(deps: ApiDeps, req: FastifyRequest, userId: number, deviceName: string | undefined, via: 'desktop') {
   // Mã đơn vị trong token ⇒ hook đơn vị chọn đúng schema trước khi tra token (multi-tenant). Bkav giữ dạng cũ không
   // mã (`vxt_<ngẫu nhiên>` ⇒ bkav): Desktop / tiện ích đã cài kiểm token theo dạng cũ và chỉ phục vụ Bkav.
   const tnt = currentTenant();
@@ -47,32 +45,22 @@ async function issueDeviceToken(deps: ApiDeps, req: FastifyRequest, userId: numb
   return { token, user };
 }
 
-/** POST /ext/login — tiện ích đăng nhập bằng tài khoản cổng, nhận token thiết bị. */
-export const extensionLoginRoutes = (deps: ApiDeps): FastifyPluginAsync => async (app) => {
-  app.post<{ Body: { username: string; password: string; device_name?: string; tenant?: string } }>('/ext/login', {
-    schema: { body: { ...loginBodySchema, properties: { ...loginBodySchema.properties, device_name: { type: 'string', maxLength: 100 } } } },
-  }, async (req) => inLoginTenant(deps, req.body.username, req.body.tenant, async (account, t) => {
-    // Tài khoản dạng tk@tênmiền ⇒ đúng đơn vị; tài khoản trơn (tiện ích cũ) ⇒ Bkav.
-    const row = await checkPortalPassword(deps, account, req.body.password, emailOf(account, req.body.username, t.domains));
-    if (row.must_change_password) {
-      throw new Problem('password_change_required', L('Cần đổi mật khẩu', 'Password change required'),
-        L('Đăng nhập cổng Vala một lần để đổi mật khẩu tạm, rồi đăng nhập lại tiện ích', 'Sign in to the Vala portal once to change your temporary password, then sign in to the extension again'));
-    }
-    return issueDeviceToken(deps, req, row.id, req.body.device_name, 'extension');
-  }));
-};
-
 /** Xác thực token thiết bị cho /ext/*. */
 function authenticateDevice(deps: ApiDeps) {
   return async (req: FastifyRequest) => {
     const m = /^Bearer (vxt_(?:[a-z][a-z0-9]{1,19}\.)?[\w-]{20,100})$/.exec(req.headers.authorization ?? '');
-    if (!m) throw new Problem('unauthenticated', L('Tiện ích chưa đăng nhập', 'The extension is not signed in'));
-    const row = await withTenant(deps.writer, (t) => t.oneOrNone<AuthUser & { device_id: number; stale: boolean }>(
-      `SELECT d.id AS device_id, u.id, u.ho_ten, u.email, u.is_ops_admin, u.must_change_password, u.password_hash IS NOT NULL AS has_password,
+    if (!m) throw new Problem('unauthenticated', L('Vala Desktop chưa đăng nhập', 'Vala Desktop is not signed in'));
+    const row = await withTenant(deps.writer, (t) => t.oneOrNone<AuthUser & { device_id: number; stale: boolean; kind: string }>(
+      `SELECT d.id AS device_id, d.kind, u.id, u.ho_ten, u.email, u.is_ops_admin, u.must_change_password, u.password_hash IS NOT NULL AS has_password,
               d.last_used_at IS NULL OR d.last_used_at < now() - interval '5 minutes' AS stale
          FROM extension_devices d JOIN app_users u ON u.id = d.app_user_id
         WHERE d.token_hash = $1 AND d.revoked_at IS NULL AND d.expires_at > now() AND u.is_active`, [hashToken(m[1]!)]));
-    if (!row) throw new Problem('unauthenticated', L('Tiện ích đã bị ngắt kết nối hoặc hết hạn', 'The extension was disconnected or has expired'), L('Đăng nhập lại trong tiện ích', 'Sign in again in the extension'));
+    if (!row) throw new Problem('unauthenticated', L('Vala Desktop đã bị ngắt kết nối hoặc hết hạn', 'Vala Desktop was disconnected or has expired'), L('Đăng nhập lại trong Vala Desktop', 'Sign in again in Vala Desktop'));
+    // Tiện ích trình duyệt đã ngừng (08/10/2026 — dùng hoàn toàn Vala Desktop): token cũ của tiện ích không dùng được nữa.
+    if (row.kind !== 'desktop') {
+      throw new Problem('unauthenticated', L('Tiện ích trình duyệt đã ngừng hỗ trợ', 'The browser extension is no longer supported'),
+        L('Cài Vala Desktop và đăng nhập ở đó — ứng dụng tự giữ phiên các hệ thống nguồn', 'Install Vala Desktop and sign in there — it keeps your source-system sessions'));
+    }
     if (row.stale) await withTenant(deps.writer, (t) => t.none('UPDATE extension_devices SET last_used_at = now() WHERE id = $1', [row.device_id]));
     req.user = { id: row.id, ho_ten: row.ho_ten, email: row.email, is_ops_admin: row.is_ops_admin,
       must_change_password: row.must_change_password, has_password: row.has_password };
@@ -258,7 +246,7 @@ export const extensionRoutes = (deps: ApiDeps): FastifyPluginAsync => async (app
   });
 };
 
-/** /me/extension-devices — người dùng xem và thu hồi các trình duyệt đã cài tiện ích (token cổng). */
+/** /me/extension-devices — người dùng xem và thu hồi các máy đã đăng nhập Vala Desktop (token cổng). */
 export const extensionDeviceRoutes = (deps: ApiDeps): FastifyPluginAsync => async (app) => {
   /**
    * Vala Desktop: người dùng đã đăng nhập cổng ngay trong ứng dụng (tab Báo cáo — mật khẩu hoặc SSO) ⇒ cổng cấp luôn token
@@ -276,7 +264,7 @@ export const extensionDeviceRoutes = (deps: ApiDeps): FastifyPluginAsync => asyn
   app.get('/me/extension-devices', async (req) => {
     const rows = await withTenant(deps.writer, (t) => t.any<{ ten: string }>(
       `SELECT id, ten, created_at, last_used_at, expires_at FROM extension_devices
-        WHERE app_user_id = $1 AND revoked_at IS NULL AND expires_at > now() ORDER BY created_at DESC`, [req.user.id]));
+        WHERE app_user_id = $1 AND kind = 'desktop' AND revoked_at IS NULL AND expires_at > now() ORDER BY created_at DESC`, [req.user.id]));
     // Tên mặc định khi tiện ích không gửi device_name.
     const en = langOf(req.headers['accept-language']) === 'en';
     return rows.map((r) => (en && r.ten === 'Trình duyệt' ? { ...r, ten: 'Browser' } : r));

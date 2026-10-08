@@ -6,11 +6,12 @@
 import { app } from 'electron';
 import { setupChannel } from './channel';
 import { cleanUserAgent } from './ua';
-import { accountEvents, logoutDevice } from './account';
+import { accountEvents, clearWebSession, logoutDevice } from './account';
 import { registerSettingsPage } from './settings-page';
 import { registerRecordingPage } from './recording-page';
 import { registerChatPage } from './chat-page';
 import { registerLoginPage } from './login-page';
+import { registerAdminPage } from './admin-page';
 import { clearLocalData } from './local-data';
 import { registerSearch } from './search';
 import { getSettings } from './settings';
@@ -21,11 +22,11 @@ import { portalHasPassword, setPortalUser } from './portal-state';
 import { registerAutofill } from './autofill';
 import { lockCredentials } from './credentials';
 import { installUiProtocol, refreshUi, registerUiScheme } from './ui-cache';
-import { contentBounds, browserWindow, preloadDefaultApp, showDefaultApp, forgetPortalLogin, initBrowser, isLoginContents, pushLogin, showLogin, showDefault, isChatContents, isRecordingContents, pushChat, isSettingsContents, openRecordingTab, openSettingsTab, pushRecording, pushSettings, refreshBrowser, revealWindow } from './browser';
+import { contentBounds, browserWindow, isAdminContents, openAdminTab, sendToAdmin, preloadDefaultApp, showDefaultApp, initBrowser, isLoginContents, pushLogin, showLogin, showDefault, isChatContents, isRecordingContents, pushChat, isSettingsContents, openRecordingTab, openSettingsTab, pushRecording, pushSettings, refreshBrowser, revealWindow } from './browser';
 import { setNotifyReveal } from './notify';
 import { createMenus, refreshMenus, tabContextMenu } from './menu';
 import { appsEvents, clearApps, refreshApps } from './apps';
-import { clearSsoSession, initSsoSession } from './sso-session';
+import { initSsoSession } from './sso-session';
 import { applyAutostart } from './autostart';
 import { announceUpdate, checkNow, initUpdater } from './updater';
 import { changePortalPassword, onTabLeave, portalUserEvents, registerBridge, showPortal, watchCookies } from './windows';
@@ -52,12 +53,14 @@ function startSync() {
   if (!syncTimer) syncTimer = setInterval(() => { void syncAll(); void refreshCatalog(); void refreshPackages(); void refreshUi(); }, SYNC_INTERVAL_MS);
 }
 
-/** Đăng xuất cả ứng dụng (thu hồi token thiết bị) lẫn cổng (xoá phiên cổng — không thì cổng lại tự cấp token mới). */
+/**
+ * Đăng xuất: thu hồi token thiết bị (đóng mọi tab — browser.ts) rồi xoá toàn bộ dữ liệu web trong app (phiên Vala, các
+ * hệ thống nguồn, SSO, cổng) — người đăng nhập sau không vào nhầm bằng phiên của người trước. Mật khẩu đã lưu giữ lại cho
+ * đúng người này đăng nhập lại; người khác đăng nhập thì account.ts xoá.
+ */
 async function signOut() {
-  // Bỏ phiên SSO của đơn vị trong app TRƯỚC khi quên danh mục (host SSO lấy từ danh mục / lần đăng nhập).
-  await clearSsoSession();
   await logoutDevice();
-  await forgetPortalLogin();
+  await clearWebSession();
   refreshAll();
 }
 
@@ -102,6 +105,7 @@ if (!app.requestSingleInstanceLock()) {
     });
     registerRecordingPage({ isRecording: (e) => isRecordingContents(e.sender), push: pushRecording, open: openRecordingTab });
     registerChatPage({ isChat: (e) => isChatContents(e.sender), push: pushChat });
+    registerAdminPage({ isAdmin: (e) => isAdminContents(e.sender), send: sendToAdmin });
     registerLoginPage({ isLogin: (e) => isLoginContents(e.sender), push: pushLogin, win: browserWindow, pageBounds: contentBounds });
     registerSearch();
     watchCookies();
@@ -111,6 +115,7 @@ if (!app.requestSingleInstanceLock()) {
       // Menu hồ sơ ở cuối thanh dọc (khung nổi).
       profileCommand: (cmd) => {
         if (cmd === 'settings') openSettings();
+        else if (cmd === 'admin') openAdminTab();
         else if (cmd === 'passwords') openSettings('mat-khau');
         else if (cmd === 'change-password') changePortalPassword();
         else if (cmd === 'sync') void syncAll(true);

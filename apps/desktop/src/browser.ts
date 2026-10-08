@@ -15,7 +15,7 @@
  * trang khác không gọi được gì.
  */
 import { join } from 'node:path';
-import { app, BrowserWindow, ipcMain, session, shell, WebContentsView, type HandlerDetails, type Input, type IpcMainInvokeEvent, type Menu, type WebContents } from 'electron';
+import { app, BrowserWindow, ipcMain, shell, WebContentsView, type HandlerDetails, type Input, type IpcMainInvokeEvent, type Menu, type WebContents } from 'electron';
 import { APP_NAME, ICON, IS_DEV } from './channel';
 import { messages, normLang } from './i18n';
 import { attachAutofill } from './autofill';
@@ -37,7 +37,7 @@ const M = messages({
   back: 'Quay lại (Alt+←)', forward: 'Tiến tới (Alt+→)', reload: 'Tải lại (F5)', collapse: 'Thu gọn thanh bên', expand: 'Mở rộng thanh bên',
   search: 'Tìm kiếm', minimize: 'Thu nhỏ', maximize: 'Phóng to', restore: 'Thu về', closeWindow: 'Đóng (ẩn xuống khay)',
   close: 'Đóng tab (Ctrl+W)', menu: 'Hệ thống nguồn',
-  signIn: 'Đăng nhập', signInTitle: 'Đăng nhập Vala Desktop', account: 'Tài khoản',
+  signIn: 'Đăng nhập', signInTitle: 'Đăng nhập Vala Desktop', account: 'Tài khoản', admin: 'Quản trị đơn vị',
   lightMode: 'Chế độ sáng', darkMode: 'Chế độ tối', recording: 'đang ghi thao tác',
   updateTitle: 'Cài bản mới: ứng dụng đóng lại, cài xong tự mở lại',
   updateLabel: (v: string) => `Đã có bản ${v} — Cập nhật`,
@@ -48,7 +48,7 @@ const M = messages({
   back: 'Back (Alt+←)', forward: 'Forward (Alt+→)', reload: 'Reload (F5)', collapse: 'Collapse sidebar', expand: 'Expand sidebar',
   search: 'Search', minimize: 'Minimize', maximize: 'Maximize', restore: 'Restore', closeWindow: 'Close (hide to tray)',
   close: 'Close tab (Ctrl+W)', menu: 'Source systems',
-  signIn: 'Sign in', signInTitle: 'Sign in to Vala Desktop', account: 'Account',
+  signIn: 'Sign in', signInTitle: 'Sign in to Vala Desktop', account: 'Account', admin: 'Organization admin',
   lightMode: 'Light mode', darkMode: 'Dark mode', recording: 'recording actions',
   updateTitle: 'Install the new version: the app closes, installs and reopens',
   updateLabel: (v: string) => `Version ${v} available — Update`,
@@ -80,7 +80,7 @@ interface Tab {
 }
 
 /** Lệnh từ menu hồ sơ (khung nổi) do main.ts xử lý. */
-export type ProfileCommand = 'settings' | 'passwords' | 'change-password' | 'sync' | 'check-update' | 'sign-out' | 'quit';
+export type ProfileCommand = 'settings' | 'admin' | 'passwords' | 'change-password' | 'sync' | 'check-update' | 'sign-out' | 'quit';
 
 export interface BrowserHooks {
   /** Rời một tab sau `ms` mili-giây đang xem (vd rời tab eGov ⇒ báo lấy dữ liệu ngay). */
@@ -131,11 +131,12 @@ function syncPinned(): void {
   const keep = new Set(defs.map((d) => d.key));
   const loaded = catalog().apps.length > 0;
   for (const t of [...tabs.values()]) {
-    if (t.pinned && !keep.has(t.key)) destroyTab(t.key);
-    else if (isAppKey(t.key) && !signedIn()) destroyTab(t.key);
+    // Đăng xuất ⇒ đóng MỌI tab (ứng dụng, trang mở từ link, Trợ lý AI — hội thoại của người trước), chỉ còn đăng nhập / Cài đặt.
+    if (!signedIn() && t.key !== LOGIN && t.key !== SETTINGS) destroyTab(t.key);
+    else if (t.pinned && !keep.has(t.key)) destroyTab(t.key);
     else if (loaded && (t.key === 'portal' || t.key.startsWith('web:')) && !appByKey(t.key)) destroyTab(t.key);
   }
-  for (const d of defs) if (!tabs.get(d.key)) tabs.set(d.key, { key: d.key, pinned: true, url: d.url, view: null });
+  if (signedIn()) for (const d of defs) if (!tabs.get(d.key)) tabs.set(d.key, { key: d.key, pinned: true, url: d.url, view: null });
 }
 
 /** Tab Báo cáo chưa nạp trang: cập nhật địa chỉ sẽ nạp (bản trong máy vừa có / vừa đổi). */
@@ -219,12 +220,16 @@ const RECORDING = 'recording';
 export const CHAT = 'chat';
 /** Màn hình đăng nhập (login-page.ts) — trang duy nhất khi chưa đăng nhập. */
 export const LOGIN = 'login';
+/** Quản trị đơn vị (admin-page.ts; giao diện admin/ build ra dist/admin) — chỉ quản trị đơn vị. */
+const ADMIN = 'admin';
 let settingsSection = '';
 const LOCAL: Record<string, { preload: string; html: string }> = {
   [SETTINGS]: { preload: 'settings-preload.js', html: 'settings.html' },
   [RECORDING]: { preload: 'recording-preload.js', html: 'recording.html' },
   [CHAT]: { preload: 'chat-preload.js', html: 'chat.html' },
   [LOGIN]: { preload: 'login-preload.js', html: 'login.html' },
+  // Trang React build bằng Vite (admin/) — đường dẫn tính từ resources/.
+  [ADMIN]: { preload: 'admin-preload.js', html: '../dist/admin/index.html' },
 };
 
 function createLocalView(t: Tab): WebContentsView {
@@ -551,6 +556,23 @@ export function preloadDefaultApp(): void {
   if (t && !t.view) { createView(t); pushState(); }
 }
 
+/** Mở trang Quản trị đơn vị (trang cục bộ của app — admin-page.ts), chỉ quản trị đơn vị. */
+export function openAdminTab(): void {
+  if (!catalog().is_admin) return;
+  if (!tabs.has(ADMIN)) {
+    tabs.set(ADMIN, { key: ADMIN, pinned: false, url: '', view: null });
+    order.push(ADMIN);
+  }
+  showTab(ADMIN);
+}
+
+export const isAdminContents = (wc: WebContents): boolean => tabs.get(ADMIN)?.view?.webContents === wc;
+/** Gửi tin cho trang Quản trị (nếu đang mở). */
+export function sendToAdmin(channel: string, payload: unknown): void {
+  const wc = tabs.get(ADMIN)?.view?.webContents;
+  if (wc && !wc.isDestroyed()) wc.send(channel, payload);
+}
+
 /** Mở ứng dụng mặc định (menu khay "Mở Vala Desktop" cũ ⇒ tab Vala). */
 export function showDefaultApp(): void {
   const def = appDefs().find((a) => a.isDefault) ?? appDefs()[0];
@@ -597,7 +619,7 @@ function itemOf(key: string, label: string | undefined, t: (typeof M)['vi'], clo
   const title = (wc && !wc.isDestroyed() ? wc.getTitle() : '') || '';
   return {
     key,
-    label: label ?? src?.ten ?? (title || t.newTab),
+    label: key === ADMIN ? t.admin : label ?? src?.ten ?? (title || t.newTab),
     title: title || label || src?.ten || '',
     // Favicon của trang; chưa có ⇒ biểu tượng quản trị khai trong danh mục.
     favicon: tab?.favicon ?? appByKey(key)?.icon ?? null,
@@ -606,7 +628,7 @@ function itemOf(key: string, label: string | undefined, t: (typeof M)['vi'], clo
     opened: !!tab?.view,
     closable,
     // Biểu tượng riêng của mục cố định (thanh dọc vẽ sẵn) — mục khác dùng favicon / chữ cái đầu.
-    glyph: key === CHAT ? 'chat' : key === SETTINGS ? 'settings' : key === RECORDING ? 'recording' : null,
+    glyph: key === CHAT ? 'chat' : key === SETTINGS || key === ADMIN ? 'settings' : key === RECORDING ? 'recording' : null,
   };
 }
 
@@ -779,6 +801,7 @@ function overlayState() {
   const { version, installUpdate, ...plain } = t;
   return {
     kind: overlayKind, anchor: overlayAnchor, collapsed: !!s.sidebarCollapsed, lang: s.lang, theme: s.theme, dev: IS_DEV,
+    isAdmin: !!catalog().is_admin,
     t: { ...plain, version: version(app.getVersion()), installUpdate: up ? installUpdate(up.version) : '' },
     profile: s.deviceToken && name ? { name, email: s.user?.email ?? '', initials: initialsOf(name) } : null,
     // Tài khoản cổng đăng nhập bằng mật khẩu (không phải SSO) ⇒ có mục "Đổi mật khẩu Vala".
@@ -793,7 +816,7 @@ function overlayState() {
 
 function registerOverlayIpc(): void {
   const own = (e: IpcMainInvokeEvent) => { if (!overlay || e.sender !== overlay.webContents) throw new Error('forbidden'); };
-  const COMMANDS: ProfileCommand[] = ['settings', 'passwords', 'change-password', 'sync', 'check-update', 'sign-out', 'quit'];
+  const COMMANDS: ProfileCommand[] = ['settings', 'admin', 'passwords', 'change-password', 'sync', 'check-update', 'sign-out', 'quit'];
   ipcMain.handle('overlay:state', (e) => { own(e); return overlayState(); });
   ipcMain.handle('overlay:close', (e) => { own(e); closeOverlay(); });
   ipcMain.handle('overlay:command', (e, cmd: unknown) => {
@@ -810,7 +833,7 @@ function registerOverlayIpc(): void {
 
 /** Chữ của khung nổi (menu hồ sơ, khung ⊞). */
 const O = messages({
-  settings: 'Cài đặt', language: 'Ngôn ngữ', appearance: 'Giao diện', light: 'Sáng', dark: 'Tối', system: 'Theo hệ thống',
+  settings: 'Cài đặt', admin: 'Quản trị đơn vị', language: 'Ngôn ngữ', appearance: 'Giao diện', light: 'Sáng', dark: 'Tối', system: 'Theo hệ thống',
   passwords: 'Quản lý mật khẩu', sync: 'Đồng bộ phiên ngay', checkUpdate: 'Kiểm tra cập nhật', signOut: 'Đăng xuất', quit: 'Thoát',
   signIn: 'Đăng nhập', changePassword: 'Đổi mật khẩu Vala', allApps: 'Tất cả ứng dụng', allAppsHint: 'Bấm để mở. Ghim để luôn hiện trên thanh bên.',
   searchPlaceholder: 'Tìm ứng dụng, thao tác, hội thoại…', secRecent: 'Ứng dụng gần đây', secChats: 'Hội thoại gần đây',
@@ -820,7 +843,7 @@ const O = messages({
   pin: 'Ghim lên thanh bên', unpin: 'Bỏ ghim', noApps: 'Đơn vị chưa khai ứng dụng nào. Liên hệ quản trị của đơn vị.',
   version: (v: string) => `Phiên bản ${v}`, installUpdate: (v: string) => `Cập nhật lên bản ${v}`,
 }, {
-  settings: 'Settings', language: 'Language', appearance: 'Appearance', light: 'Light', dark: 'Dark', system: 'System',
+  settings: 'Settings', admin: 'Organization admin', language: 'Language', appearance: 'Appearance', light: 'Light', dark: 'Dark', system: 'System',
   passwords: 'Manage passwords', sync: 'Sync sessions now', checkUpdate: 'Check for updates', signOut: 'Sign out', quit: 'Quit',
   signIn: 'Sign in', changePassword: 'Change Vala password', allApps: 'All apps', allAppsHint: 'Click to open. Pin to keep it on the sidebar.',
   searchPlaceholder: 'Search apps, actions, conversations…', secRecent: 'Recent apps', secChats: 'Recent conversations',
@@ -870,22 +893,4 @@ function initialsOf(name: string): string {
   const w = name.trim().split(/\s+/).filter(Boolean);
   if (!w.length) return '?';
   return ((w[0]![0] ?? '') + (w.length > 1 ? w[w.length - 1]![0] ?? '' : '')).toUpperCase();
-}
-
-/**
- * Đăng xuất: xoá phiên cổng (token trong localStorage của trang cổng) — không thì cổng còn đăng nhập sẽ lại tự cấp token
- * thiết bị mới cho ứng dụng. Tab Báo cáo đang mở thì nạp lại (hiện màn hình đăng nhập).
- */
-export async function forgetPortalLogin(): Promise<void> {
-  const s = getSettings();
-  if (!s.serverUrl) return;
-  const wc = tabs.get('portal')?.view?.webContents;
-  if (wc && !wc.isDestroyed()) {
-    // vala.noAutoSso: trang đăng nhập cổng không tự chuyển sang SSO ngay lần này (phiên SSO còn sống sẽ đăng nhập lại luôn).
-    try { await wc.executeJavaScript("localStorage.removeItem('vala.token'); sessionStorage.setItem('vala.noAutoSso', '1'); 1", true); } catch { /* trang đang tải */ }
-    void wc.loadURL(uiPortalUrl() ?? s.serverUrl);
-  } else {
-    for (const origin of [new URL(s.serverUrl).origin, UI_ORIGIN]) await session.defaultSession.clearStorageData({ origin, storages: ['localstorage'] });
-  }
-  pushState();
 }

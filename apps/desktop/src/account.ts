@@ -5,6 +5,10 @@
  * Tab Báo cáo lấy phiên cổng từ ứng dụng qua cầu nối (portalToken) — không phải đăng nhập lần nữa.
  */
 import { EventEmitter } from 'node:events';
+import { session } from 'electron';
+import { clearApps } from './apps';
+import { deleteAllCredentials } from './credentials';
+import { clearLocalData } from './local-data';
 import { api } from './api';
 import { messages } from './i18n';
 import { getSettings, setSettings } from './settings';
@@ -51,10 +55,37 @@ export async function portalToken(): Promise<string | null> {
   } catch { return null; }
 }
 
-/** Nhận token thiết bị do cổng cấp. Đang đăng nhập người khác ⇒ thu hồi token cũ trước. */
+/**
+ * Xoá toàn bộ dữ liệu web trong ứng dụng: cookie (phiên Vala, eGov, eTask, SSO…), localStorage, IndexedDB, cache. Đăng
+ * xuất / đổi người ⇒ người sau không vào nhầm các ứng dụng bằng phiên của người trước.
+ */
+export async function clearWebSession(): Promise<void> {
+  const ses = session.defaultSession;
+  await ses.clearStorageData().catch(() => {});
+  await ses.clearCache().catch(() => {});
+  await ses.clearAuthCache().catch(() => {});
+  await ses.cookies.flushStore().catch(() => {});
+}
+
+/** `<mã đơn vị>:<email>` của token thiết bị (`vxt_<mã>.…`; dạng cũ ⇒ bkav). */
+const accountOf = (token: string, email: string) => `${/^vxt_([a-z][a-z0-9]{1,19})\./.exec(token)?.[1] ?? 'bkav'}:${email.trim().toLowerCase()}`;
+
+/**
+ * Nhận token thiết bị (màn hình đăng nhập / cổng cấp). Đang đăng nhập người khác ⇒ thu hồi token cũ trước. Người đăng nhập
+ * KHÁC người dùng máy này lần trước ⇒ xoá sạch dữ liệu của người trước: phiên web, mật khẩu đã lưu, lịch sử, hội thoại,
+ * danh mục ứng dụng.
+ */
 export async function adoptDeviceToken(token: string, user: { ho_ten: string; email: string }): Promise<void> {
   const s = getSettings();
   if (s.deviceToken === token) return;
+  const account = accountOf(token, user.email);
+  if (s.lastAccount && s.lastAccount !== account) {
+    await clearWebSession();
+    deleteAllCredentials();
+    clearLocalData();
+    clearApps();
+  }
+  setSettings({ lastAccount: account });
   if (s.deviceToken) {
     try { await api('POST', '/ext/logout'); } catch { /* token cũ đã hết hạn / máy chủ không tới được */ }
     resetSync();

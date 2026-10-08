@@ -33,6 +33,8 @@ export interface Settings {
   pinnedApps?: string[] | null;
   /** Lần đăng nhập gần nhất (bước 1 đã tra xong) ⇒ màn hình đăng nhập mở thẳng bước 2 (login-page.ts). */
   lastLogin?: LoginTarget | null;
+  /** Tài khoản đăng nhập gần nhất (`<mã đơn vị>:<email>`): người khác đăng nhập ⇒ xoá dữ liệu của người trước (account.ts). */
+  lastAccount?: string | null;
 }
 
 /** Kết quả bước 1 của đăng nhập (POST /auth/lookup). */

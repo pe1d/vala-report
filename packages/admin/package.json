@@ -1,0 +1,27 @@
+{
+  "name": "@vala/admin",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Các trang Quản trị đơn vị (người dùng, ứng dụng, kịch bản Desktop, hệ thống nguồn, cấu hình chung) — trang Quản trị của Vala Desktop; cổng web dùng tạm.",
+  "exports": {
+    "./env": "./src/env.tsx",
+    "./labels": "./src/labels.ts",
+    "./AdminUsers": "./src/AdminUsers.tsx",
+    "./AdminDesktopApps": "./src/AdminDesktopApps.tsx",
+    "./AdminDesktopScripts": "./src/AdminDesktopScripts.tsx",
+    "./AdminSources": "./src/AdminSources.tsx",
+    "./AdminSettings": "./src/AdminSettings.tsx"
+  },
+  "scripts": { "typecheck": "tsc -p .", "test": "echo 'admin: chưa có test'" },
+  "dependencies": { "@vala/ui": "workspace:*" },
+  "peerDependencies": { "react": "^18.3.1", "react-dom": "^18.3.1", "react-router-dom": "^6.30.6" },
+  "devDependencies": {
+    "@types/react": "^18.3.31",
+    "@types/react-dom": "^18.3.7",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.30.6",
+    "typescript": "~5.9.3"
+  }
+}

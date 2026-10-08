@@ -96,6 +96,11 @@ export function setAutoLogin(code: string, auto: boolean) {
   write(s);
 }
 
+/** Đổi người dùng Vala Desktop ⇒ xoá mọi mật khẩu đã lưu của người trước (không để tự đăng nhập nhầm tài khoản). */
+export function deleteAllCredentials() {
+  write({ ...read(), sources: {}, never: [] });
+}
+
 export function deleteCredential(code: string) {
   const s = read();
   delete s.sources[code];
