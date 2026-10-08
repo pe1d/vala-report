@@ -1,7 +1,7 @@
 /** Chữ hiển thị của tab Cài đặt (settings-page.ts). Bản tiếng Anh phải đủ khoá như tiếng Việt. */
 const vi = {
   title: 'Cài đặt',
-  navAccount: 'Tài khoản', navPasswords: 'Mật khẩu', navAppearance: 'Giao diện', navStartup: 'Khởi động', navAbout: 'Giới thiệu',
+  navAccount: 'Tài khoản', navPasswords: 'Mật khẩu', navAppearance: 'Giao diện', navStartup: 'Khởi động & cập nhật', navAbout: 'Giới thiệu',
   accountHint: 'Tài khoản Vala Desktop của bạn: dùng để mở các ứng dụng của đơn vị, giữ phiên các hệ thống nguồn và gửi cho Vala lấy dữ liệu thay bạn.',
   notSignedIn: 'Chưa đăng nhập.', signIn: 'Đăng nhập', signedInAs: 'Đã đăng nhập', serverIs: 'Máy chủ',
   openPortal: 'Mở cổng báo cáo', logout: 'Đăng xuất',
@@ -18,13 +18,17 @@ const vi = {
   autostartLabel: 'Chạy Vala Desktop cùng hệ điều hành, ẩn ở khay hệ thống',
   autostartHint: 'Để Vala Desktop giữ phiên và tự đăng nhập lại ngay khi bật máy. Đóng cửa sổ chỉ ẩn xuống khay; muốn tắt hẳn thì chọn Thoát.',
   autostartDev: 'Bản dev không đăng ký chạy cùng hệ điều hành.',
+  autoUpdateLabel: 'Tự động cập nhật',
+  autoUpdateHint: 'Bản mới tải ngầm và tự cài khi bạn không dùng máy (cửa sổ ẩn xuống khay hoặc máy để không 10 phút), rồi mở lại. Tắt thì Vala Desktop chỉ báo có bản mới để bạn tự bấm Cập nhật. Trên Ubuntu luôn cần bạn bấm vì phải nhập mật khẩu quản trị.',
+  errorReportLabel: 'Tự gửi báo lỗi cho Bkav',
+  errorReportHint: 'Khi ứng dụng gặp lỗi hoặc bị đóng đột ngột, gửi thông tin kỹ thuật (phiên bản, hệ điều hành, mô tả lỗi) để Bkav sửa. Không gửi nội dung trang, mật khẩu hay cookie.',
   aboutVersion: 'Phiên bản', checkUpdate: 'Kiểm tra cập nhật', installUpdate: 'Cập nhật lên bản',
   whatsNewCurrent: 'Có gì mới trong bản này', whatsNewPending: 'Có gì mới trong bản', 
   updateHint: 'Vala Desktop tự kiểm tra bản mới lúc mở và 4 giờ một lần.', noUpdate: 'Bản này không tự cập nhật được (bản dev hoặc bản zip).',
 };
 const en: typeof vi = {
   title: 'Settings',
-  navAccount: 'Account', navPasswords: 'Passwords', navAppearance: 'Appearance', navStartup: 'Startup', navAbout: 'About',
+  navAccount: 'Account', navPasswords: 'Passwords', navAppearance: 'Appearance', navStartup: 'Startup & updates', navAbout: 'About',
   accountHint: 'Your Vala Desktop account: used to open your organization\'s apps, keep your source-system sessions and send them to Vala to fetch data for you.',
   notSignedIn: 'Not signed in.', signIn: 'Sign in', signedInAs: 'Signed in as', serverIs: 'Server',
   openPortal: 'Open reporting portal', logout: 'Sign out',
@@ -41,6 +45,10 @@ const en: typeof vi = {
   autostartLabel: 'Start Vala Desktop with the operating system, hidden in the system tray',
   autostartHint: 'So Vala Desktop keeps sessions and signs in again as soon as the computer starts. Closing the window only hides it to the tray; choose Quit to exit.',
   autostartDev: 'The dev build does not register to start with the operating system.',
+  autoUpdateLabel: 'Update automatically',
+  autoUpdateHint: "New versions download in the background and install when you're not using the computer (window hidden to the tray or 10 minutes idle), then reopen. Turned off, Vala Desktop only tells you an update is ready so you click Update yourself. On Ubuntu you always click, because it needs an administrator password.",
+  errorReportLabel: 'Send error reports to Bkav automatically',
+  errorReportHint: 'When the app hits an error or closes unexpectedly, send technical details (version, operating system, error description) so Bkav can fix it. Page content, passwords and cookies are never sent.',
   aboutVersion: 'Version', checkUpdate: 'Check for updates', installUpdate: 'Update to version',
   whatsNewCurrent: 'What’s new in this version', whatsNewPending: 'What’s new in version', 
   updateHint: 'Vala Desktop checks for a new version when it starts and every 4 hours.', noUpdate: 'This copy cannot update itself (dev or zip build).',

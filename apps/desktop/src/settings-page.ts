@@ -18,7 +18,7 @@ import { strings } from './settings-strings';
 import { SSO_KEY } from './autofill';
 import { ssoHosts } from './sso-session';
 import { cachedSources, events as syncEvents } from './sync';
-import { canUpdate, checkNow, currentNotes, installNow, pendingUpdate } from './updater';
+import { autoUpdateEnabled, canUpdate, checkNow, currentNotes, installNow, pendingUpdate, setAutoUpdate } from './updater';
 
 export interface SettingsHooks {
   signIn: () => void;
@@ -63,6 +63,7 @@ function state() {
     lang: s.lang, theme: s.theme, dev: IS_DEV, version: app.getVersion(),
     serverUrl: s.serverUrl || DEFAULT_SERVER, user: s.deviceToken ? s.user : null,
     autostart: { enabled: autostartEnabled(), supported: autostartSupported() },
+    options: { autoUpdate: autoUpdateEnabled(), errorReport: getSettings().errorReport !== false },
     update: { pending: pendingUpdate()?.version ?? null, canUpdate: canUpdate() },
     // Điểm mới của bản đang chạy và của bản đã tải chờ cài (null ⇒ không có ghi chú).
     whatsNew: { current: currentNotes()?.[s.lang] ?? null, pending: pendingUpdate()?.notes?.[s.lang] ?? null },
@@ -81,6 +82,12 @@ export function registerSettingsPage(hooks: SettingsHooks): void {
   ipcMain.handle('vala:set-lang', (e, l: unknown) => { own(e); setPrefs({ lang: normLang(l) }); return state(); });
   ipcMain.handle('vala:set-theme', (e, v: unknown) => { own(e); setPrefs({ theme: v }); return state(); });
   ipcMain.handle('vala:set-autostart', (e, on: unknown) => { own(e); setAutostart(on === true); return state(); });
+  ipcMain.handle('vala:set-option', (e, a: { key?: unknown; on?: unknown }) => {
+    own(e);
+    if (a?.key === 'autoUpdate') setAutoUpdate(a.on === true);
+    else if (a?.key === 'errorReport') setSettings({ errorReport: a.on === true });
+    return state();
+  });
   ipcMain.handle('vala:sign-in', (e) => { own(e); hooks.signIn(); });
   ipcMain.handle('vala:logout', async (e) => { own(e); await hooks.signOut(); return state(); });
   ipcMain.handle('vala:open-portal', (e) => { own(e); hooks.openPortal(); });

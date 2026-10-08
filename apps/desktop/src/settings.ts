@@ -23,6 +23,10 @@ export interface Settings {
   theme: ThemeMode;
   /** Chạy cùng hệ điều hành (ẩn ở khay). Không đặt ⇒ bật. Chỉ có tác dụng ở bản cài. */
   autostart?: boolean;
+  /** Tự cài bản mới (tải ngầm, cài lúc rảnh / khi thoát rồi mở lại). Không đặt ⇒ bật (người dùng chốt 08/10/2026). */
+  autoUpdate?: boolean;
+  /** Tự gửi báo lỗi / crash về máy chủ Vala (error-report.ts). Không đặt ⇒ bật. */
+  errorReport?: boolean;
   /** Chỉ bản dev: trang chính tự đặt để thử (đè trang quản trị đặt trên cổng). Bản cho người dùng bỏ qua trường này. */
   devHomeUrl?: string | null;
   /** Phiên bản lần chạy trước — khác bản đang chạy ⇒ vừa cập nhật, báo "có gì mới" một lần (updater.ts). */

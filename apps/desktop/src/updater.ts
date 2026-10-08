@@ -4,12 +4,15 @@
  * Bấm ⇒ hộp "Bản … có gì mới" (Cài ngay / Để sau); không bấm ⇒ cài khi thoát. Lần đầu mở bản mới ⇒ thông báo "Đã cập nhật
  * lên bản …" (bấm ⇒ Cài đặt → Giới thiệu). Điểm mới lấy từ CHANGELOG.md (release-notes.ts).
  *
+ * "Tự động cập nhật" (Cài đặt → Khởi động & cập nhật, mặc định bật — người dùng chốt 08/10/2026): tải xong ⇒ tự cài im
+ * lặng rồi mở lại khi không phiền người dùng (cửa sổ ẩn xuống khay hoặc máy để không 10 phút — updater-model.ts).
+ *
  * Chỉ chạy ở bản CÀI ĐẶT: Windows NSIS (hỏi latest.yml), Ubuntu gói .deb (hỏi latest-linux.yml) — bản zip/bản chạy từ mã
  * nguồn không tự thay được chính nó. Gói .deb cài bằng quyền quản trị (pkexec hỏi mật khẩu) nên trên Linux chỉ cài khi người
  * dùng bấm "Cập nhật", không tự cài lúc thoát (tránh bị hỏi mật khẩu bất ngờ khi tắt máy).
  * Phát hành: chép file cài + .blockmap lên thư mục /desktop/ của máy chủ trước, latest.yml sau cùng (docs/trien-khai-k3s.md).
  */
-import { app, BrowserWindow, dialog } from 'electron';
+import { app, BrowserWindow, dialog, powerMonitor } from 'electron';
 import { notify } from './notify';
 import { autoUpdater } from 'electron-updater';
 import { existsSync, readFileSync } from 'node:fs';
@@ -17,6 +20,7 @@ import { join } from 'node:path';
 import { messages, type Lang } from './i18n';
 import { parseNotes, type ReleaseNotes } from './release-notes';
 import { getSettings, setSettings, updateFeedUrl } from './settings';
+import { shouldAutoInstall } from './updater-model';
 
 const M = messages({
   readyTitle: (v: string) => `Đã có Vala Desktop bản ${v}`,
@@ -49,6 +53,25 @@ const M = messages({
 });
 
 const CHECK_EVERY_MS = 4 * 3600_000;
+
+/** Bật / tắt tự cài bản mới (không đặt ⇒ bật). */
+export const autoUpdateEnabled = (): boolean => getSettings().autoUpdate !== false;
+export function setAutoUpdate(on: boolean): void { setSettings({ autoUpdate: on }); }
+
+/** Đã tải xong bản mới ⇒ mỗi phút xem đã đến lúc tự cài chưa (không cài giữa lúc người dùng đang làm việc). */
+let autoTimer: ReturnType<typeof setInterval> | null = null;
+function scheduleAutoInstall(): void {
+  if (autoTimer) return;
+  autoTimer = setInterval(() => {
+    if (!ready) return;
+    const ok = shouldAutoInstall({
+      enabled: autoUpdateEnabled(), platform: process.platform,
+      windowVisible: BrowserWindow.getAllWindows().some((w) => w.isVisible() && !w.isMinimized()),
+      idleSeconds: powerMonitor.getSystemIdleTime(),
+    });
+    if (ok) installNow();
+  }, 60_000);
+}
 
 let ready: { version: string; notes: ReleaseNotes | null } | null = null;
 /** Người dùng tự bấm "Kiểm tra cập nhật" ⇒ báo cả khi không có bản mới / lỗi. */
@@ -98,7 +121,9 @@ export function initUpdater(onReady: () => void): void {
     const t = M[lang];
     // Thông báo nêu điểm mới đầu tiên; bấm ⇒ hộp "có gì mới" đầy đủ.
     const first = ready.notes?.[lang][0];
-    notify(t.readyTitle(info.version), first ? `${first}…` : process.platform === 'linux' ? t.readyBodyLinux : t.readyBody, promptInstall);
+    // Tự cập nhật đang bật (không phải Ubuntu) ⇒ không báo, tự cài lúc rảnh; còn lại ⇒ báo để người dùng bấm.
+    if (autoUpdateEnabled() && process.platform !== 'linux') scheduleAutoInstall();
+    else notify(t.readyTitle(info.version), first ? `${first}…` : process.platform === 'linux' ? t.readyBodyLinux : t.readyBody, promptInstall);
     onReady();
   });
   autoUpdater.on('update-not-available', () => {
