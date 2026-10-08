@@ -4,6 +4,7 @@ import { authenticate } from './auth.js';
 import { installTenantHook } from './tenant-hook.js';
 import type { ApiDeps } from './deps.js';
 import { adminRoutes } from './routes/admin.js';
+import { systemTenantRoutes } from './routes/systemTenants.js';
 import { authRoutes } from './routes/auth.js';
 import { dashboardRoutes } from './routes/dashboard.js';
 import { extensionDeviceRoutes, extensionRoutes } from './routes/extension.js';
@@ -70,6 +71,7 @@ export async function buildApp(deps: ApiDeps, opts: { logger?: boolean } = {}) {
     await api.register(dataScheduleRoutes(deps));
     await api.register(opsRoutes(deps));
     await api.register(adminRoutes(deps));                      // cấu hình kết nối crawl (chỉ quản trị)
+    await api.register(systemTenantRoutes(deps));               // quản trị hệ thống → đơn vị
   }, { prefix: '/api/v1' });
 
   await app.register(internalRoutes(deps), { prefix: '/internal' });

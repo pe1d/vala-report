@@ -6,7 +6,7 @@ import type { FastifyPluginAsync } from 'fastify';
 import { L, Problem, hashPassword, passwordPolicyError, runInTenant, verifyPassword, withTenant } from '@vala/core';
 import { authenticate, issuePortalToken } from '../auth.js';
 import type { ApiDeps } from '../deps.js';
-import { accountExists, fillFor, inLoginTenant, loginMethodsOf, parseLogin, ssoAutoCreate, ssoHostsOf, takeN, tenantByDomain } from '../login-target.js';
+import { accountExists, domainTenantStatus, fillFor, inLoginTenant, loginMethodsOf, parseLogin, ssoAutoCreate, ssoHostsOf, takeN, tenantByDomain } from '../login-target.js';
 
 const MAX_FAILS = 5;
 const LOCK_MINUTES = 15;
@@ -83,8 +83,15 @@ export const authRoutes = (deps: ApiDeps): FastifyPluginAsync => async (app) => 
     }
     const { account, domain } = p as { account: string; domain: string };
     const t = await tenantByDomain(deps, domain);
-    if (!t) throw new Problem('not_found', L('Không tìm thấy đơn vị', 'Organization not found'),
-      L(`Chưa có đơn vị nào dùng tên miền ${domain}`, `No organization uses the domain ${domain}`));
+    if (!t) {
+      const st = await domainTenantStatus(deps, domain);
+      if (st === 'tam_khoa') throw new Problem('forbidden', L('Đơn vị đang tạm khoá', 'Organization suspended'),
+        L('Liên hệ quản trị hệ thống Vala để mở lại', 'Contact the Vala system administrator to resume it'));
+      if (st === 'dang_tao' || st === 'loi') throw new Problem('not_found', L('Đơn vị chưa sẵn sàng', 'Organization not ready yet'),
+        L('Đơn vị đang được thiết lập — thử lại sau ít phút', 'The organization is still being set up. Try again in a few minutes'));
+      throw new Problem('not_found', L('Không tìm thấy đơn vị', 'Organization not found'),
+        L(`Chưa có đơn vị nào dùng tên miền ${domain}`, `No organization uses the domain ${domain}`));
+    }
     const methods = loginMethodsOf(deps, t);
     const exists = await runInTenant(t.ma, () => accountExists(deps, account, `${account}@${domain}`));
     if (!exists && !ssoAutoCreate(deps, t)) {
@@ -103,6 +110,11 @@ export const authRoutes = (deps: ApiDeps): FastifyPluginAsync => async (app) => 
   app.post<{ Body: { username?: string; password?: string; tenant?: string } }>('/auth/login', {
     schema: { body: loginBodySchema },
   }, async (req) => inLoginTenant(deps, req.body.username!, req.body.tenant, async (account, t) => {
+    // Đơn vị tắt "Mật khẩu Vala" (chỉ SSO) ⇒ máy chủ cũng từ chối, không chỉ giao diện chuyển sang SSO.
+    if (!loginMethodsOf(deps, t).includes('password')) {
+      throw new Problem('forbidden', L('Đăng nhập bằng mật khẩu đang tắt', 'Password sign-in is disabled'),
+        L(`${t.ten} chỉ đăng nhập bằng SSO`, `${t.ten} only allows SSO sign-in`));
+    }
     const row = await checkPortalPassword(deps, account, req.body.password!, emailOf(account, req.body.username!, t.domains));
     return {
       access_token: issuePortalToken(row.id, deps.config.jwtSecret),

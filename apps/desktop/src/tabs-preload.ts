@@ -7,6 +7,8 @@ contextBridge.exposeInMainWorld('valaTabs', {
   close: (key: string) => ipcRenderer.invoke('tabs:close', key),
   nav: (cmd: 'back' | 'forward' | 'reload') => ipcRenderer.invoke('tabs:nav', cmd),
   collapse: () => ipcRenderer.invoke('tabs:collapse'),
+  peek: (on: boolean) => ipcRenderer.invoke('tabs:peek', on),
+  onPeekSlide: (cb: (open: boolean) => void) => { ipcRenderer.on('tabs:peek-slide', (_e, open) => cb(open === true)); },
   overlay: (kind: 'profile' | 'apps' | 'search', r: { x: number; y: number; w: number; h: number }) => ipcRenderer.invoke('tabs:overlay', { kind, ...r }),
   win: (cmd: 'minimize' | 'maximize' | 'close') => ipcRenderer.invoke('tabs:window', cmd),
   onOpenSearch: (cb: () => void) => { ipcRenderer.on('tabs:open-search', () => cb()); },

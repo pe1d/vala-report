@@ -1,7 +1,9 @@
 /**
  * Script header + thanh ứng dụng dọc (chạy trong trang, không có Node). Không import gì: build ra script thường.
  * Header: thu gọn, logo, ◀ ▶ ⟳, ô tìm kiếm (Ctrl+K — mở trên lớp khung nổi), ─ □ ✕.
- * Thanh dọc: ✦ Trợ lý AI · ỨNG DỤNG (ghim) · ĐANG MỞ · hồ sơ + ⊞ ở cuối. Thu gọn ⇒ chỉ biểu tượng (tên ở tooltip).
+ * Thanh dọc: ✦ Trợ lý AI · ỨNG DỤNG (ghim) · ĐANG MỞ · hồ sơ + ⊞ ở cuối. Thu gọn ⇒ chỉ biểu tượng (tên ở tooltip); rê
+ * chuột vào thanh thu gọn ⇒ "xem nhanh" (như Edge): cùng trang này ở chế độ #peek (chỉ thanh dọc, luôn mở rộng) hiện trên
+ * một view riêng ĐÈ lên trang web; tiến trình chính ẩn khi chuột rời vùng thanh (browser.ts showPeek).
  * Dựng DOM bằng textContent, không dùng innerHTML (tiêu đề tab là chữ của trang web bất kỳ).
  */
 interface TabView {
@@ -25,6 +27,8 @@ interface TabsState {
   chat: TabView;
   apps: TabView[];
   open: TabView[];
+  /** Số ứng dụng chưa ghim ⇒ nút "Thêm" cuối nhóm Ứng dụng (mở nhanh, như Lark). */
+  more: number;
   nav: { back: boolean; forward: boolean; reload: boolean };
   /** Cửa sổ đang phóng to (nút □ thành "Thu về"). */
   maximized: boolean;
@@ -43,7 +47,9 @@ interface ValaTabsApi {
   close(key: string): Promise<void>;
   nav(cmd: 'back' | 'forward' | 'reload'): Promise<void>;
   collapse(): Promise<void>;
-  overlay(kind: 'profile' | 'apps' | 'search', r: { x: number; y: number; w: number; h: number }): Promise<void>;
+  peek(on: boolean): Promise<void>;
+  onPeekSlide(cb: (open: boolean) => void): void;
+  overlay(kind: 'profile' | 'apps' | 'search' | 'more', r: { x: number; y: number; w: number; h: number }): Promise<void>;
   win(cmd: 'minimize' | 'maximize' | 'close'): Promise<void>;
   onOpenSearch(cb: () => void): void;
   resized(): void;
@@ -56,6 +62,8 @@ interface ValaTabsApi {
 (() => {
   const api = (window as unknown as { valaTabs: ValaTabsApi }).valaTabs;
   const $ = <E extends HTMLElement>(id: string) => document.getElementById(id) as E;
+  /** Bản "xem nhanh" của thanh dọc (view riêng đè lên trang web). */
+  const PEEK = location.hash === '#peek';
 
   // Sáng / tối: lựa chọn chung của ứng dụng (prefs.ts) — tiến trình chính đặt nativeTheme nên prefers-color-scheme đúng.
   const media = window.matchMedia('(prefers-color-scheme: dark)');
@@ -66,7 +74,8 @@ interface ValaTabsApi {
     ok: 'bg-emerald-500', warn: 'bg-amber-500', off: 'bg-slate-400 dark:bg-slate-500',
   };
   const SVG = 'http://www.w3.org/2000/svg';
-  const PATHS: Record<'chat' | 'settings' | 'recording' | 'close', string[]> = {
+  const PATHS: Record<'chat' | 'settings' | 'recording' | 'close' | 'more', string[]> = {
+    more: ['M5 13a1 1 0 1 0 0-2 1 1 0 0 0 0 2z', 'M12 13a1 1 0 1 0 0-2 1 1 0 0 0 0 2z', 'M19 13a1 1 0 1 0 0-2 1 1 0 0 0 0 2z'],
     chat: ['M12 3l1.9 4.6L18.5 9.5l-4.6 1.9L12 16l-1.9-4.6L5.5 9.5l4.6-1.9z', 'M19 15l.9 2.1L22 18l-2.1.9L19 21l-.9-2.1L16 18l2.1-.9z'],
     settings: ['M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z', 'M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z'],
     recording: ['M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z', 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z'],
@@ -164,33 +173,61 @@ interface ValaTabsApi {
     display(n.close, tab.closable && !s.collapsed);
     setIf(n.close, 'title', s.t.close);
     setIf(n.close, 'aria-label', s.t.close);
-    // Thu gọn: biểu tượng căn giữa.
-    n.el.classList.toggle('justify-center', s.collapsed);
-    n.el.classList.toggle('px-0', s.collapsed);
   }
 
+  /** Nút "Thêm" (⋯) cuối nhóm Ứng dụng: khung các ứng dụng chưa ghim, ngay bên phải nút. */
+  const moreEl = document.createElement('button');
+  moreEl.type = 'button';
+  moreEl.className = 'side-item text-slate-500 dark:text-slate-400';
+  const moreIcon = document.createElement('span');
+  moreIcon.className = 'flex h-5 w-5 shrink-0 items-center justify-center';
+  moreIcon.append(glyph('more'));
+  const moreLabel = document.createElement('span');
+  moreLabel.className = 'min-w-0 flex-1 truncate';
+  moreEl.append(moreIcon, moreLabel);
+  moreEl.addEventListener('click', () => void api.overlay('more', rect(moreEl)));
+
   /** Vẽ một nhóm mục vào khung `box`; chỉ sắp lại khi thứ tự đổi (giữ phần tử ⇒ không nháy). */
-  function renderList(box: HTMLElement, list: TabView[], s: TabsState) {
+  function renderList(box: HTMLElement, list: TabView[], s: TabsState, extra?: HTMLElement) {
     const wanted = list.map((tab) => {
       let n = nodes.get(tab.key);
       if (!n) { n = createNode(tab.key); nodes.set(tab.key, n); }
       updateNode(n, tab, tab.key === s.active, s);
       return n.el;
     });
+    if (extra) wanted.push(extra);
     const current = Array.from(box.children);
     if (current.length !== wanted.length || current.some((c, i) => c !== wanted[i])) box.replaceChildren(...wanted);
   }
 
-  /** Tên nhóm; thu gọn ⇒ vạch ngăn mảnh. */
+  /**
+   * Tên nhóm; thu gọn ⇒ vạch ngăn mảnh trong ô CAO BẰNG tên nhóm — các mục bên dưới không đổi chỗ giữa thu gọn / mở rộng
+   * (xem nhanh đè lên đúng chỗ, như Edge).
+   */
   function sectionTitle(el: HTMLElement, text: string, collapsed: boolean, show: boolean) {
-    setText(el, collapsed ? '' : text);
-    el.className = collapsed ? 'mx-2 my-2 border-t border-slate-300 dark:border-slate-700' : 'side-sec';
+    el.className = 'side-sec';
+    if (collapsed) {
+      if (!el.querySelector('[data-rule]')) {
+        const rule = document.createElement('span');
+        rule.dataset.rule = '1';
+        rule.className = 'flex h-4 items-center';
+        const line = document.createElement('span');
+        line.className = 'h-px w-full bg-slate-300 dark:bg-slate-700';
+        rule.append(line);
+        el.replaceChildren(rule);
+      }
+    } else setText(el, text);
     display(el, show);
   }
 
   let lastActive: string | null = null;
 
-  function render(s: TabsState) {
+  let collapsedNow = false;
+
+  function render(state: TabsState) {
+    // Bản xem nhanh luôn vẽ thanh mở rộng.
+    const s = PEEK ? { ...state, collapsed: false } : state;
+    collapsedNow = state.collapsed;
     document.documentElement.lang = s.lang;
     const keys = new Set([s.chat.key, ...s.apps.map((t) => t.key), ...s.open.map((t) => t.key)]);
     for (const [k] of nodes) if (!keys.has(k)) nodes.delete(k);
@@ -198,15 +235,24 @@ interface ValaTabsApi {
     // Độ rộng + bố cục theo trạng thái thu gọn (khớp SIDEBAR_W / SIDEBAR_MIN_W của browser.ts).
     const c = s.collapsed;
     $('bar').classList.toggle('w-[248px]', !c);
-    $('bar').classList.toggle('w-[56px]', c);
-    $('me').classList.toggle('flex-col', c);
+    $('bar').classList.toggle('w-[52px]', c);
+    // Thu gọn: ảnh đại diện vẫn ở hàng cuối (đúng chỗ như lúc mở rộng), nút ⊞ lên trên nó.
+    $('me').classList.toggle('flex-col-reverse', c);
+    $('me').classList.toggle('items-start', c);
+    $('apps-grid').classList.toggle('ml-1', c);
+    // Xếp cột thì flex-1 (cơ sở 0) đè chiều cao h-12 của nút hồ sơ ⇒ ảnh đại diện lệch so với lúc mở rộng.
+    $('profile').classList.toggle('flex-1', !c);
     display($('profile-text'), !c);
     display($('profile-chev'), !c);
 
     renderList($('chat-slot'), [s.chat], s);
-    sectionTitle($('apps-title'), s.t.appsSection, c, s.apps.length > 0);
+    sectionTitle($('apps-title'), s.t.appsSection, c, s.apps.length > 0 || s.more > 0);
     sectionTitle($('open-title'), s.t.openSection, c, s.open.length > 0);
-    renderList($('apps'), s.apps, s);
+    setText(moreLabel, s.t.more);
+    display(moreLabel, !c);
+    setIf(moreEl, 'title', `${s.t.moreTitle} (${s.more})`);
+    setIf(moreEl, 'aria-label', `${s.t.moreTitle} (${s.more})`);
+    renderList($('apps'), s.apps, s, s.more > 0 ? moreEl : undefined);
     renderList($('open'), s.open, s);
     if (s.active !== lastActive) {
       lastActive = s.active;
@@ -292,8 +338,41 @@ interface ValaTabsApi {
   display($('dev-badge'), false);
   display($('win-restore-icon'), false);
   api.onState(render);
-  // Trang thanh dọc phủ cả cửa sổ: khung nhìn đổi cỡ = cửa sổ đổi cỡ ⇒ báo tiến trình chính canh lại trang web.
-  window.addEventListener('resize', () => api.resized());
+  if (PEEK) {
+    // Chỉ thanh dọc trên nền trong suốt; thanh có nền, viền, bóng đổ (đè lên trang web bên phải).
+    display($('header'), false);
+    display($('card'), false);
+    document.body.style.background = 'transparent';
+    $('bar').classList.add('rounded-r-xl', 'border-r', 'border-slate-200', 'bg-slate-100', 'shadow-2xl', 'dark:border-slate-700', 'dark:bg-slate-900');
+    // Trượt ra từ đúng mép thanh thu gọn (52px) tới đủ rộng (kể cả bóng đổ) và ngược lại — cắt bằng clip-path, chạy trên GPU.
+    const bar = $('bar');
+    const CLOSED = 'inset(0 calc(100% - 52px) 0 0)';
+    const OPEN = 'inset(0 -24px 0 0)';
+    bar.style.clipPath = CLOSED;
+    bar.style.transition = 'clip-path 200ms cubic-bezier(0.215, 0.61, 0.355, 1)';
+    api.onPeekSlide((open) => {
+      if (open) {
+        // Bắt đầu từ trạng thái thu gọn (view vừa gắn lại có thể còn khung hình cũ) rồi mới trượt ra.
+        bar.style.transition = 'none';
+        bar.style.clipPath = CLOSED;
+        void bar.offsetWidth;
+        bar.style.transition = 'clip-path 200ms cubic-bezier(0.215, 0.61, 0.355, 1)';
+      }
+      requestAnimationFrame(() => { bar.style.clipPath = open ? OPEN : CLOSED; });
+    });
+  } else {
+    // Trang thanh dọc phủ cả cửa sổ: khung nhìn đổi cỡ = cửa sổ đổi cỡ ⇒ báo tiến trình chính canh lại trang web.
+    window.addEventListener('resize', () => api.resized());
+    // Thu gọn / mở rộng: thanh trượt cùng nhịp với khung trang (browser.ts animateSidebar, 200ms, ease-out).
+    $('bar').style.transition = 'width 200ms cubic-bezier(0.215, 0.61, 0.355, 1)';
+    // Thanh đang thu gọn: dừng chuột trên thanh một nhịp ⇒ xem nhanh (lướt qua thì không bật).
+    let hover: number | undefined;
+    $('bar').addEventListener('mouseenter', () => {
+      if (!collapsedNow) return;
+      hover = window.setTimeout(() => void api.peek(true), 250);
+    });
+    $('bar').addEventListener('mouseleave', () => window.clearTimeout(hover));
+  }
   applyTheme();
   void api.ready();
 })();

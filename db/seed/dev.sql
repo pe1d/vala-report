@@ -15,3 +15,7 @@ SELECT setval('app_users_id_seq', (SELECT max(id) FROM app_users));
 INSERT INTO user_org_units (app_user_id, org_unit_id, vai_tro, is_primary) VALUES
     (7, 1, 'thanh_vien', true)
 ON CONFLICT DO NOTHING;
+
+-- Quản trị hệ thống (Quản trị → Đơn vị trong Vala Desktop).
+INSERT INTO core.system_admins (tenant, user_id) VALUES ('bkav', 7)
+ON CONFLICT DO NOTHING;

@@ -11,7 +11,7 @@ import { LangToggle, ThemeToggle } from './ui';
 import { ChangePasswordForm } from './ChangePassword';
 import { BrandMark, useBranding } from '../branding';
 import { messages, useT } from '../i18n';
-import { onDesktopCommand, reportPortalUser, useInDesktop } from '../desktopPrefs';
+import { useInDesktop } from '../desktopPrefs';
 
 const NAV_VI = {
   reports: 'Báo cáo', overview: 'Tổng quan', catalog: 'Danh mục báo cáo', schedules: 'Lịch cập nhật',
@@ -93,11 +93,8 @@ export function Shell({ me, onLogout, children }: { me: Me; onLogout: () => void
   useEffect(() => setDrawer(false), [location.pathname]);
   const rail = collapsed && !drawer;   // ngăn kéo trên điện thoại luôn hiện đủ chữ
   // Trong Vala Desktop: thanh tab của ứng dụng đã có ngôn ngữ, sáng/tối, hồ sơ, đăng xuất ⇒ bỏ header của cổng, sidebar
-  // luôn hiện (cửa sổ app không hẹp như điện thoại). "Đổi mật khẩu" mở từ menu hồ sơ của app (lệnh qua cầu nối).
+  // luôn hiện (cửa sổ app không hẹp như điện thoại). "Đổi mật khẩu" nằm ở menu hồ sơ của app (Vala Desktop tự làm).
   const desktop = useInDesktop();
-  const [pw, setPw] = useState<'form' | 'done' | null>(null);
-  useEffect(() => { reportPortalUser({ has_password: me.has_password }); return () => reportPortalUser(null); }, [me.has_password]);
-  useEffect(() => onDesktopCommand((name) => { if (name === 'change-password' && me.has_password) setPw('form'); }), [me.has_password]);
   if (desktop) {
     return (
       <div className={`grid min-h-screen transition-[grid-template-columns] duration-200 ${collapsed ? 'grid-cols-[64px_minmax(0,1fr)]' : 'grid-cols-[240px_minmax(0,1fr)]'}`}>
@@ -106,7 +103,6 @@ export function Shell({ me, onLogout, children }: { me: Me; onLogout: () => void
           <CollapseButton collapsed={collapsed} rail={collapsed} onClick={toggleCollapsed} />
         </aside>
         <main className="w-full min-w-0 p-4 md:px-8 md:py-6">{children}</main>
-        <PasswordDialog state={pw} onState={setPw} />
       </div>
     );
   }

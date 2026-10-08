@@ -4,10 +4,9 @@
  * @vala/admin. Ở đây: API quản trị qua tiến trình chính bằng phiên cổng của ứng dụng (account.ts portalToken — không cần
  * mở cổng web), chỉ cho các đường trang cần; chạy thử thao tác kịch bản ngay trong app (windows.ts). IPC chỉ nhận từ đúng trang.
  */
-import { ipcMain, net, type IpcMainInvokeEvent } from 'electron';
-import { portalToken } from './account';
+import { ipcMain, type IpcMainInvokeEvent } from 'electron';
+import { portalApi } from './account';
 import { currentPrefs, prefsEvents } from './prefs';
-import { getSettings } from './settings';
 import { runSourceAction, sourceActions } from './windows';
 
 export interface AdminPageHooks {
@@ -17,7 +16,7 @@ export interface AdminPageHooks {
 }
 
 /** Đường API trang Quản trị được gọi (sau /api/v1) — ngoài danh sách ⇒ từ chối. */
-const ALLOWED = /^\/(admin\/[\w\-/.%]+(\?[\w=&%.\-]*)?|me|branding|auth\/config)$/;
+const ALLOWED = /^\/((admin|system)\/[\w\-/.%]+(\?[\w=&%.\-]*)?|me|branding|auth\/config)$/;
 const METHODS = new Set(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']);
 const CODE = /^[a-z0-9_]{1,40}$/;
 const NAME = /^[a-z][a-z0-9_]{0,62}$/;
@@ -33,20 +32,7 @@ export function registerAdminPage(hooks: AdminPageHooks): void {
     const method = String(a?.method ?? '').toUpperCase();
     const path = typeof a?.path === 'string' ? a.path : '';
     if (!METHODS.has(method) || !ALLOWED.test(path)) return { status: 403, ok: false, json: { type: 'forbidden', title: 'forbidden' } };
-    const token = await portalToken();
-    if (!token) return { status: 401, ok: false, json: { type: 'unauthenticated', title: 'Vala Desktop chưa đăng nhập' } };
-    const headers: Record<string, string> = { Authorization: `Bearer ${token}`, 'Accept-Language': a?.lang === 'en' ? 'en' : 'vi' };
-    if (a?.body !== undefined && method !== 'GET') headers['Content-Type'] = 'application/json';
-    try {
-      const res = await net.fetch(`${getSettings().serverUrl}/api/v1${path}`, {
-        method, headers, body: a?.body === undefined || method === 'GET' ? undefined : JSON.stringify(a.body),
-      });
-      if (res.status === 204) return { status: 204, ok: true };
-      const json = (res.headers.get('content-type') ?? '').includes('json') ? await res.json() : undefined;
-      return { status: res.status, ok: res.ok, json };
-    } catch {
-      return { status: 0, ok: false, json: { type: 'network', title: 'Không kết nối được máy chủ Vala' } };
-    }
+    return portalApi(method, path, a?.body, a?.lang === 'en' ? 'en' : 'vi');
   });
 
   ipcMain.handle('admin:list-actions', async (e, code: unknown) => {

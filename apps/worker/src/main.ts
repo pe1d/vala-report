@@ -7,7 +7,7 @@
 import { Worker } from 'bullmq';
 import {
   CRAWL_CONCURRENCY, CRAWL_QUEUE, ConnectionSessions, CrawlabClient, DEFAULT_TENANT, MAINTENANCE_QUEUE, SessionManager, SourceRegistries, SsoClient, activeTenants, closeAllPools, forEachTenant, runInTenant,
-  checkCrawlabHealth, checkSpiderLaunches, crawlUserSource, crawlQueue, crawlabConfigFromEnv, ensureRecordIndexes, heartbeat, markSourceMfa, runDueSchedules, maintenanceQueue, redisConnection, keepAliveSessions, refreshExpiringSessions, secretStore,
+  checkCrawlabHealth, checkSpiderLaunches, crawlUserSource, crawlQueue, crawlabConfigFromEnv, ensureRecordIndexes, heartbeat, markSourceMfa, ownerDb, provisionPendingTenants, runDueSchedules, maintenanceQueue, redisConnection, keepAliveSessions, refreshExpiringSessions, secretStore,
   ssoConfigFromEnv, withTenant, writerDb, type CrawlJob,
 } from '@vala/core';
 import { loadAllSpecs, registerSpecs } from '@vala/core/adapter';
@@ -70,6 +70,25 @@ void forEachTenant(writer, async (tenant) => {
   const n = await ensureRecordIndexes(writer);
   if (n.length) log.info('chỉ mục kho chung', { tenant, indexes: n.length });
 }, tenantError('tạo chỉ mục kho chung'));
+
+// Dựng đơn vị do quản trị hệ thống tạo (Quản trị → Đơn vị): cần quyền chủ CSDL (tạo schema) ⇒ chỉ worker làm. API báo
+// ngay khi tạo / thử lại (việc bảo trì `tenant_provision`); quét thêm lúc khởi động và mỗi phút phòng khi lỡ tin.
+const owner = process.env.DATABASE_OWNER_URL ? ownerDb() : null;
+async function provisionTenants(): Promise<void> {
+  if (!owner) return;
+  const done = await provisionPendingTenants(owner, (tenant, e) => log.error('dựng đơn vị lỗi', { tenant, err: e.message }));
+  for (const tenant of done) {
+    log.info('đã dựng đơn vị', { tenant });
+    await registry.reloadAll(registryError);
+    await runInTenant(tenant, async () => {
+      await withTenant(writer, (t) => registerSpecs(t, loadAllSpecs()));
+      await ensureRecordIndexes(writer);
+      // Spider chép từ đơn vị khác ⇒ đẩy lên Crawlab ngay với tên riêng của đơn vị (không chờ lượt kiểm tra 10 phút).
+      if (crawlab) await checkCrawlabHealth(writer, crawlab, crawlabSync);
+    }).catch((e: Error) => log.error('khởi tạo adapter cho đơn vị mới lỗi', { tenant, err: e.message }));
+  }
+}
+await provisionTenants().catch((e: Error) => log.error('dựng đơn vị lỗi', { err: e.message }));
 log.info('worker khởi động', { tenants: await activeTenants(writer), concurrency: CRAWL_CONCURRENCY });
 
 const crawlWorker = new Worker<CrawlJob>(
@@ -123,6 +142,9 @@ const maintenanceWorker = new Worker(
         }, tenantError('lịch đến hạn'));
         await heartbeat(writer, 'worker', { pid: process.pid });
         return;
+      case 'tenant_provision':
+        await provisionTenants();
+        return;
       case 'crawlab_health':
         // Crawlab còn liên lạc được không, spider nào mất file (vd sau khi khởi động lại) ⇒ đẩy lại mã từ CSDL.
         await forEachTenant(writer, async (tenant) => {
@@ -141,6 +163,7 @@ await maintenance.upsertJobScheduler('raw_partitions', { pattern: '0 2 * * *', t
 await maintenance.upsertJobScheduler('session_refresh', { every: 10 * 60_000 }, { name: 'session_refresh' });
 await maintenance.upsertJobScheduler('due_subscriptions', { every: 60_000 }, { name: 'due_subscriptions' });
 await maintenance.upsertJobScheduler('session_keepalive', { every: 5 * 60_000 }, { name: 'session_keepalive' });
+await maintenance.upsertJobScheduler('tenant_provision', { every: 60_000 }, { name: 'tenant_provision' });
 await maintenance.upsertJobScheduler('crawlab_health', { every: 10 * 60_000 }, { name: 'crawlab_health' });
 // Ngay khi khởi động: báo còn sống + kiểm tra Crawlab (máy chủ vừa khởi động lại thì Crawlab hay mất mã spider).
 await heartbeat(writer, 'worker', { pid: process.pid, started: true }).catch(() => {});

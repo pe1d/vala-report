@@ -22,7 +22,10 @@ export interface CatalogApp {
   pinned_default: boolean;
   is_default: boolean;
 }
-interface Catalog { apps: CatalogApp[]; layout: { pinned: string[] | null }; /** Host SSO của đơn vị (sso-session.ts). */ sso_hosts?: string[]; /** Quản trị đơn vị ⇒ mục "Quản trị đơn vị". */ is_admin?: boolean }
+interface Catalog { apps: CatalogApp[]; layout: { pinned: string[] | null }; /** Host SSO của đơn vị (sso-session.ts). */ sso_hosts?: string[]; /** Quản trị đơn vị ⇒ mục "Quản trị đơn vị". */ is_admin?: boolean;
+  /** Quản trị hệ thống ⇒ trang Quản trị có thêm mục Đơn vị. */ is_system_admin?: boolean;
+  /** Đổi mật khẩu: có mật khẩu Vala ⇒ form trong app; chỉ SSO ⇒ trang đổi mật khẩu của SSO (nếu đơn vị khai). */
+  account?: { has_password: boolean; sso_password_url: string | null } }
 
 /** 'changed' — danh mục / bố cục đổi ⇒ vẽ lại thanh ứng dụng. */
 export const appsEvents = new EventEmitter();
@@ -47,6 +50,9 @@ function save(c: Catalog): void {
 
 export const appKey = (a: Pick<CatalogApp, 'kind' | 'ma' | 'source_system'>): string =>
   a.kind === 'source' ? `src:${a.source_system}` : a.kind === 'reports' ? 'portal' : `web:${a.ma}`;
+
+/** Mở được trang Quản trị: quản trị đơn vị hoặc quản trị hệ thống. */
+export const canAdmin = (): boolean => !!(catalog().is_admin || catalog().is_system_admin);
 
 export const appByKey = (key: string): CatalogApp | undefined => catalog().apps.find((a) => appKey(a) === key);
 

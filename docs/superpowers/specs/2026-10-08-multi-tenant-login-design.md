@@ -101,6 +101,9 @@ khoản lần trước (localStorage) ⇒ lần sau vào thẳng bước 2.
 
 ## 3. Quản trị hệ thống
 
+> Cập nhật 08/10/2026: trang đặt **trong Vala Desktop** (trang Quản trị, mục Đơn vị), không ở cổng web; quản trị hệ thống
+> ban đầu ops@bkav.com. Cách làm: `docs/superpowers/plans/2026-10-08-multi-tenant-dot3-don-vi.md`, `docs/nhieu-don-vi.md`.
+
 - `core.system_admins`: vài tài khoản Bkav; thấy thêm **Quản trị hệ thống → Đơn vị**: danh sách (mã, tên, tên miền,
   cách đăng nhập, số người dùng, trạng thái); tạo (mã, tên, tên miền, cách đăng nhập + SSO + bộ chọn, **quản trị đầu
   tiên** — tài khoản + mật khẩu tạm bắt đổi, "Sao chép cấu hình từ đơn vị…") ⇒ "Đang tạo" ⇒ worker ⇒ "Hoạt động" /

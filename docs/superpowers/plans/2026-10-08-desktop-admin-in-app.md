@@ -5,7 +5,7 @@ desktop không phụ thuộc vào web." Chốt: CHUYỂN code các trang quản 
 tới khi bản Desktop đủ, rồi bỏ khỏi web.
 
 **Goal:** trang cục bộ "Quản trị đơn vị" trong Vala Desktop (như Cài đặt) gồm Người dùng, Ứng dụng Desktop, Kịch bản
-Desktop, Hệ thống nguồn, Cấu hình chung — chạy không cần cổng web; gọi API quản trị qua tiến trình chính bằng phiên của app.
+Desktop, Hệ thống nguồn — chạy không cần cổng web (Cấu hình chung chỉ ảnh hưởng Báo cáo ⇒ ở lại cổng); gọi API quản trị qua tiến trình chính bằng phiên của app.
 
 **Architecture:**
 - `packages/ui` (@vala/ui): phần giao diện dùng chung, chuyển từ apps/web: song ngữ (`i18n`), sáng/tối (`theme`), `useAsync`,

@@ -7,7 +7,7 @@
  */
 import type { FastifyPluginAsync } from 'fastify';
 import { L, Problem, currentTenant, withTenant, type Tx } from '@vala/core';
-import { ssoHostsOf, tenantByCode } from '../login-target.js';
+import { loginMethodsOf, ssoHostsOf, ssoPasswordUrlOf, tenantByCode } from '../login-target.js';
 import { audit } from '../audit.js';
 import type { ApiDeps } from '../deps.js';
 
@@ -54,8 +54,12 @@ export const desktopAppExtRoutes = (deps: ApiDeps): FastifyPluginAsync => async 
       layout: { pinned: row ? cleanLayout(row.pinned, apps.map((a) => a.ma)) : null },
       // Host SSO của đơn vị: Desktop giữ phiên SSO + mật khẩu SSO dùng chung cho mọi ứng dụng.
       sso_hosts: tenant ? ssoHostsOf(deps, tenant) : [],
-      // Quản trị đơn vị ⇒ Desktop hiện mục "Quản trị đơn vị" (khu /quan-tri của cổng).
+      // Quản trị đơn vị ⇒ Desktop hiện mục "Quản trị đơn vị".
       is_admin: req.user.is_ops_admin,
+    is_system_admin: req.user.is_system_admin,
+      // Đổi mật khẩu trong Desktop: có mật khẩu Vala ⇒ form ngay trong app; chỉ dùng SSO ⇒ mở trang đổi mật khẩu của SSO.
+      // Đơn vị đã tắt mật khẩu Vala ⇒ mật khẩu cũ (nếu còn) không dùng được nữa: coi như chỉ SSO.
+      account: { has_password: req.user.has_password && (!tenant || loginMethodsOf(deps, tenant).includes('password')), sso_password_url: tenant ? ssoPasswordUrlOf(deps, tenant) : null },
     };
   }));
 

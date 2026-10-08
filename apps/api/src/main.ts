@@ -1,6 +1,6 @@
 import { Queue } from 'bullmq';
 import {
-  CRAWL_QUEUE, ConnectionSessions, CrawlabClient, SessionManager, SourceRegistries, SsoClient, crawlabConfigFromEnv, env, markSourceMfa, packageSigner, readerDb,
+  CRAWL_QUEUE, ConnectionSessions, MAINTENANCE_QUEUE, CrawlabClient, SessionManager, SourceRegistries, SsoClient, crawlabConfigFromEnv, env, markSourceMfa, packageSigner, readerDb,
   redisConnection, secretStore, ssoConfigFromEnv, withTenant, writerDb, type CrawlJob,
 } from '@vala/core';
 import { buildApp } from './app.js';
@@ -77,6 +77,7 @@ const app = await buildApp({
   sourceInfo,
   crawlab,
   queue,
+  maintenance: new Queue(MAINTENANCE_QUEUE, { connection }),
   limiter,
   packageSigner: signer,
   config: {
@@ -88,6 +89,7 @@ const app = await buildApp({
     spiderApiUrl: process.env.SPIDER_API_URL ?? `http://localhost:${port}`,
     crawlabWebUrl: process.env.CRAWLAB_WEB_URL ?? crawlabCfg?.url,
     runnerUrl: process.env.RUNNER_URL?.trim().replace(/\/+$/, '') || undefined,
+    ssoPasswordUrl: /^https?:\/\//.test(process.env.SSO_PASSWORD_URL?.trim() ?? '') ? process.env.SSO_PASSWORD_URL!.trim() : undefined,
   },
 }, { logger: true });
 

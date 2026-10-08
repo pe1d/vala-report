@@ -14,6 +14,8 @@ export interface ApiConfig {
   crawlabWebUrl?: string;
   /** Runner chạy gói kịch bản Vala Desktop trên máy chủ (apps/runner). Không có ⇒ chỉ chạy được trong Vala Desktop. */
   runnerUrl?: string;
+  /** Trang đổi mật khẩu SSO của Bkav (SSO_PASSWORD_URL, vd trang tài khoản của WSO2) — Vala Desktop mở cho người dùng SSO. */
+  ssoPasswordUrl?: string;
 }
 
 export interface RateLimiter {
@@ -34,6 +36,8 @@ export interface ApiDeps {
   /** Có ⇒ lịch chạy và "chạy ngay" đi qua Crawlab; không có ⇒ worker nội bộ. */
   crawlab?: CrawlabClient;
   queue: Pick<Queue<CrawlJob>, 'addBulk'>;
+  /** Hàng đợi bảo trì của worker — báo dựng đơn vị ngay (Quản trị hệ thống → Đơn vị). Không có ⇒ worker tự quét mỗi phút. */
+  maintenance?: Pick<Queue, 'add'>;
   limiter: RateLimiter;
   /** Ký gói kịch bản Vala Desktop (khoá từ .env, không trong CSDL). */
   packageSigner: PackageSigner;

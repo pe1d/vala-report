@@ -6,18 +6,21 @@
  */
 interface OverlayApp { key: string; label: string; favicon: string | null; pinned: boolean; status: 'ok' | 'warn' | 'off' | null }
 interface OverlayState {
-  kind: 'profile' | 'apps' | 'search';
+  kind: 'profile' | 'apps' | 'search' | 'password' | 'more' | 'context';
   anchor: { x: number; y: number; w: number; h: number };
   collapsed: boolean;
   lang: 'vi' | 'en';
   theme: 'light' | 'dark' | 'system';
   dev: boolean;
-  /** Quản trị đơn vị ⇒ mục "Quản trị đơn vị" (khu /quan-tri của cổng). */
+  /** Quản trị đơn vị / hệ thống ⇒ mục "Quản trị" (trang quản trị trong app). */
   isAdmin: boolean;
   t: Record<string, string>;
   profile: { name: string; email: string; initials: string } | null;
-  portalPassword: boolean;
+  /** Có mật khẩu Vala ⇒ form đổi mật khẩu; chỉ SSO ⇒ trang đổi mật khẩu của SSO (nếu đơn vị khai); null ⇒ không có mục. */
+  account: { has_password: boolean; sso_password_url: string | null } | null;
   apps: OverlayApp[];
+  /** Menu chuột phải của một mục thanh dọc (kind 'context'). */
+  context: { title: string; items: Array<{ id: string; label: string; enabled: boolean; checked?: boolean; sep?: boolean; icon?: string; hint?: string }> } | null;
 }
 type OverlayItem = { kind: 'app' | 'action' | 'chat'; title: string; sub: string; ref: Record<string, string> };
 interface OverlaySection { kind: 'recent' | 'chats' | 'apps' | 'actions'; items: OverlayItem[] }
@@ -31,6 +34,8 @@ interface ValaOverlayApi {
   search(q: string): Promise<OverlaySection[]>;
   pick(item: OverlayItem): Promise<void>;
   clearHistory(): Promise<OverlaySection[]>;
+  contextRun(id: string): Promise<void>;
+  changePassword(current: string, next: string): Promise<{ ok: boolean; type?: string; title?: string; detail?: string }>;
   onOpen(cb: () => void): void;
 }
 
@@ -60,6 +65,8 @@ interface ValaOverlayApi {
     signIn: ['M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4', 'M10 17l5-5-5-5', 'M15 12H3'],
     quit: ['M18 6L6 18', 'M6 6l12 12'],
     pin: ['M12 17v5', 'M9 3h6l-1 6 3 3v2H7v-2l3-3z'],
+    open: ['M14 4h6v6', 'M20 4l-9 9', 'M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5'],
+    check: ['M5 12l5 5 9-10'],
     admin: ['M12 2l8 4v6c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V6z', 'M9 12l2 2 4-4'],
     search: ['M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14z', 'M20 20l-3.5-3.5'],
     action: ['M13 2L4 14h7l-1 8 9-12h-7z'],
@@ -109,7 +116,8 @@ interface ValaOverlayApi {
     out.push(choice('appearance', t.appearance, [['light', t.light], ['dark', t.dark], ['system', t.system]], s.theme, (v) => void api.prefs({ theme: v }).then(render)));
     out.push(sep());
     out.push(item('passwords', t.passwords, () => void api.command('passwords')));
-    if (s.portalPassword) out.push(item('changePassword', t.changePassword, () => void api.command('change-password')));
+    if (s.account?.has_password) out.push(item('changePassword', t.changePassword, () => void api.command('change-password')));
+    else if (s.account?.sso_password_url) out.push(item('changePassword', t.changeSsoPassword, () => void api.command('change-password')));
     if (s.profile) out.push(item('sync', t.sync, () => void api.command('sync')));
     out.push(sep());
     if (t.installUpdate) out.push(item('update', t.installUpdate, () => void api.command('install-update')));
@@ -121,6 +129,58 @@ interface ValaOverlayApi {
   }
 
   const DOT: Record<string, string> = { ok: 'bg-emerald-500', warn: 'bg-amber-500', off: 'bg-slate-400' };
+
+  /** Biểu tượng ứng dụng: favicon dùng được, không thì chữ cái đầu trong ô màu. */
+  function appIcon(a: OverlayApp): HTMLElement {
+    const box = el('span', 'flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-blue-600 text-[11px] font-semibold text-white dark:bg-blue-500', (a.label.trim()[0] ?? '•').toUpperCase());
+    if (a.favicon) {
+      const img = el('img', 'h-5 w-5');
+      img.alt = '';
+      img.addEventListener('load', () => { if (img.naturalWidth > 1) { box.className = 'flex h-6 w-6 shrink-0 items-center justify-center'; box.replaceChildren(img); } });
+      img.src = a.favicon;
+    }
+    return box;
+  }
+
+  /** Nút "Thêm" cuối nhóm Ứng dụng (như Lark): ứng dụng chưa ghim — bấm mở, 📌 ghim lên thanh bên. */
+  function morePanel(s: OverlayState): HTMLElement[] {
+    const t = s.t;
+    const out: HTMLElement[] = [el('div', 'px-2.5 pb-0.5 pt-1 text-sm font-semibold', t.moreTitle), el('div', 'px-2.5 pb-1.5 text-xs text-slate-500 dark:text-slate-400', t.moreHint)];
+    const list = s.apps.filter((a) => !a.pinned);
+    if (!list.length) out.push(el('div', 'px-2.5 py-2 text-xs text-slate-500 dark:text-slate-400', t.moreEmpty));
+    for (const a of list) {
+      const row = el('div', 'group flex items-center gap-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700');
+      const open = el('button', 'flex min-w-0 flex-1 items-center gap-2.5 px-2.5 py-1.5 text-left');
+      open.type = 'button';
+      open.append(appIcon(a), el('span', 'min-w-0 flex-1 truncate', a.label));
+      if (a.status) open.append(el('span', `h-2 w-2 shrink-0 rounded-full ${DOT[a.status]}`));
+      open.addEventListener('click', () => void api.openApp(a.key));
+      const pin = el('button', 'mr-1 flex h-6 w-6 shrink-0 items-center justify-center rounded text-slate-400 hover:bg-slate-200 hover:text-blue-600 dark:hover:bg-slate-600 dark:hover:text-blue-400');
+      pin.type = 'button';
+      pin.title = t.pin;
+      pin.setAttribute('aria-label', `${t.pin}: ${a.label}`);
+      pin.append(icon('pin', 'h-3.5 w-3.5'));
+      pin.addEventListener('click', () => void api.pin(a.key, true).then(render));
+      row.append(open, pin);
+      out.push(row);
+    }
+    return out;
+  }
+
+  /** Menu chuột phải của một mục thanh dọc — cùng kiểu menu hồ sơ. */
+  function contextPanel(s: OverlayState): HTMLElement[] {
+    const c = s.context;
+    if (!c) return [];
+    const out: HTMLElement[] = [];
+    if (c.title) out.push(el('div', 'truncate px-2.5 pb-1 pt-1 text-xs text-slate-500 dark:text-slate-400', c.title));
+    for (const it of c.items) {
+      if (it.sep) { out.push(sep()); continue; }
+      if (!it.enabled) { out.push(el('div', 'truncate px-2.5 py-1.5 text-xs text-slate-500 dark:text-slate-400', it.label)); continue; }
+      const b = item(it.checked !== undefined ? (it.checked ? 'check' : '') : it.icon ?? '', it.label, () => void api.contextRun(it.id), it.hint ?? '');
+      out.push(b);
+    }
+    return out;
+  }
   function appsPanel(s: OverlayState): HTMLElement[] {
     const t = s.t;
     const out: HTMLElement[] = [el('div', 'px-2.5 pb-0.5 pt-1 text-sm font-semibold', t.allApps), el('div', 'px-2.5 pb-2 text-xs text-slate-500 dark:text-slate-400', t.allAppsHint)];
@@ -230,9 +290,94 @@ interface ValaOverlayApi {
     return { nodes: [box, list, foot], input };
   }
 
+  /** Đổi mật khẩu Vala (giữa cửa sổ): quy tắc mật khẩu kiểm ở máy chủ, ở đây chỉ nhắc trước như trang web. */
+  function passwordPanel(s: OverlayState): { nodes: HTMLElement[]; first: HTMLInputElement } {
+    const t = s.t;
+    const form = el('form', 'grid gap-3 p-3');
+    form.noValidate = true;
+    const field = (label: string, ac: AutoFill) => {
+      const wrap = el('label', 'grid gap-1');
+      const input = el('input', 'w-full rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-[13px] outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/30 dark:border-slate-600 dark:bg-slate-900');
+      input.type = 'password';
+      input.autocomplete = ac;
+      input.maxLength = 400;
+      wrap.append(el('span', 'text-xs text-slate-600 dark:text-slate-300', label), input);
+      form.append(wrap);
+      return input;
+    };
+    const err = el('div', 'hidden rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-950/50 dark:text-red-300');
+    err.setAttribute('role', 'alert');
+    form.append(el('div', 'text-sm font-semibold', t.changePassword), err);
+    const cur = field(t.currentPassword, 'current-password');
+    const next = field(t.newPassword, 'new-password');
+    const again = field(t.confirmPassword, 'new-password');
+    const hint = el('p', 'hidden text-xs text-amber-800 dark:text-amber-300');
+    const actions = el('div', 'flex justify-end gap-2 pt-1');
+    const cancel = el('button', 'rounded-lg px-3 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-700', t.cancel);
+    cancel.type = 'button';
+    cancel.addEventListener('click', () => void api.close());
+    const save = el('button', 'rounded-lg bg-blue-600 px-3 py-1.5 font-medium text-white hover:bg-blue-700 disabled:opacity-50 dark:bg-blue-500 dark:hover:bg-blue-600', t.passwordSave);
+    save.type = 'submit';
+    actions.append(cancel, save);
+    form.append(hint, actions);
+    let busy = false;
+    const check = () => {
+      const weak = !!next.value && (next.value.length < 8 || !/[A-Za-zÀ-ỹ]/.test(next.value) || !/\d/.test(next.value));
+      const mismatch = !!again.value && next.value !== again.value;
+      hint.textContent = weak ? t.passwordWeak : mismatch ? t.passwordMismatch : '';
+      hint.classList.toggle('hidden', !hint.textContent);
+      save.disabled = busy || !cur.value || !next.value || weak || next.value !== again.value || next.value === cur.value;
+    };
+    for (const i of [cur, next, again]) i.addEventListener('input', check);
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      check();
+      if (save.disabled) return;
+      busy = true; save.disabled = true; save.textContent = t.passwordSaving; err.classList.add('hidden');
+      void api.changePassword(cur.value, next.value).then((r) => {
+        if (r.ok) {
+          const done = el('button', 'rounded-lg bg-blue-600 px-3 py-1.5 font-medium text-white hover:bg-blue-700 dark:bg-blue-500', t.done);
+          done.type = 'button';
+          done.addEventListener('click', () => void api.close());
+          const row = el('div', 'flex justify-end');
+          row.append(done);
+          form.replaceChildren(el('div', 'text-sm font-semibold', t.changePassword), el('p', 'text-[13px] text-slate-600 dark:text-slate-300', t.passwordChanged), row);
+          done.focus();
+          return;
+        }
+        err.textContent = r.type === 'invalid_credentials' ? t.passwordWrong : r.detail || r.title || t.passwordFailed;
+        err.classList.remove('hidden');
+        busy = false; save.textContent = t.passwordSave; check();
+      }, () => {
+        err.textContent = t.passwordFailed;
+        err.classList.remove('hidden');
+        busy = false; save.textContent = t.passwordSave; check();
+      });
+    });
+    check();
+    return { nodes: [form], first: cur };
+  }
+
+  const backdrop = document.getElementById('backdrop')!;
   function render(s: OverlayState) {
     document.documentElement.lang = s.lang;
     applyTheme();
+    // Khung đổi mật khẩu là hộp thoại: nền mờ, bấm ra ngoài KHÔNG đóng (tránh mất chữ đang gõ) — Esc / Huỷ để đóng.
+    backdrop.className = s.kind === 'password' ? 'fixed inset-0 bg-black/30' : 'fixed inset-0';
+    backdrop.dataset.modal = String(s.kind === 'password');
+    if (s.kind === 'password') {
+      const { nodes, first } = passwordPanel(s);
+      panel.replaceChildren(...nodes);
+      const w = Math.min(window.innerWidth - 16, 380);
+      panel.style.width = `${w}px`;
+      panel.style.left = `${Math.max(8, Math.round(window.innerWidth / 2 - w / 2))}px`;
+      panel.style.top = `${Math.max(8, Math.round(window.innerHeight / 5))}px`;
+      panel.style.bottom = '';
+      panel.classList.remove('p-1.5', 'overflow-hidden');
+      panel.classList.add('overflow-y-auto');
+      first.focus();
+      return;
+    }
     if (s.kind === 'search') {
       // Đè đúng ô tìm kiếm của header, rộng hơn một chút (tối thiểu 560px), kết quả xổ xuống.
       const { nodes, input } = searchPanel(s);
@@ -249,6 +394,21 @@ interface ValaOverlayApi {
     }
     panel.classList.add('p-1.5', 'overflow-y-auto');
     panel.classList.remove('overflow-hidden');
+    if (s.kind === 'context' || s.kind === 'more') {
+      // Menu chuột phải: tại con trỏ; "Thêm": bên phải nút. Lật / dời cho khỏi tràn mép cửa sổ.
+      panel.replaceChildren(...(s.kind === 'context' ? contextPanel(s) : morePanel(s)));
+      const w = s.kind === 'context' ? 248 : 288;
+      panel.style.width = `${w}px`;
+      panel.style.bottom = '';
+      const x = s.kind === 'context' ? s.anchor.x : s.anchor.x + s.anchor.w + 16;
+      panel.style.left = `${Math.max(8, Math.min(window.innerWidth - w - 8, x))}px`;
+      panel.style.top = `${s.anchor.y}px`;
+      const h = panel.offsetHeight;
+      if (s.anchor.y + h > window.innerHeight - 8) {
+        panel.style.top = `${Math.max(8, s.kind === 'context' ? s.anchor.y - h : window.innerHeight - 8 - h)}px`;
+      }
+      return;
+    }
     panel.replaceChildren(...(s.kind === 'profile' ? profileMenu(s) : appsPanel(s)));
     panel.style.width = s.kind === 'profile' ? '320px' : '360px';
     // Neo: thanh mở rộng ⇒ ngay trên nút (căn trái thanh); thu gọn ⇒ bên phải thanh, đáy ngang nút.
@@ -259,7 +419,7 @@ interface ValaOverlayApi {
   }
 
   const load = () => void api.state().then(render);
-  document.getElementById('backdrop')!.addEventListener('mousedown', () => void api.close());
+  backdrop.addEventListener('mousedown', () => { if (backdrop.dataset.modal !== 'true') void api.close(); });
   api.onOpen(load);
   load();
 })();

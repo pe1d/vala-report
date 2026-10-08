@@ -80,30 +80,40 @@ async function ensureLoginRoles(db: pgPromise.IDatabase<unknown>, readerUrl: str
   }
 }
 
+export const TENANT_MIGRATIONS_DIR = join(REPO_ROOT, 'db/migrations/tenant');
+
+/** Các file migration loại đơn vị theo thứ tự. */
+export function tenantMigrationFiles(dir = TENANT_MIGRATIONS_DIR): string[] {
+  return existsSync(dir) ? readdirSync(dir).filter((f) => /^\d{3}_.*\.sql$/.test(f)).sort() : [];
+}
+
+/** Áp một migration loại đơn vị cho một đơn vị, trong giao dịch `t` của nơi gọi (search_path chỉ trong giao dịch). */
+export async function applyTenantMigration(t: pgPromise.ITask<unknown>, ma: string, file: string, dir = TENANT_MIGRATIONS_DIR): Promise<void> {
+  await t.any('SELECT set_config(\'search_path\', $1, true)', [`${tenantSchema(ma)}, core, public`]);
+  await t.none(readFileSync(join(dir, file), 'utf8'));
+  await t.none('INSERT INTO core.tenant_migrations (tenant, name) VALUES ($1, $2)', [ma, file]);
+}
+
 /**
- * Migration loại đơn vị (`db/migrations/tenant/NNN_*.sql`, viết KHÔNG ghi tên schema): áp cho từng đơn vị đã tạo xong
- * schema (mọi trạng thái trừ 'dang_tao'), search_path = tenant_<mã>; ghi nhận ở core.tenant_migrations. Trả về
- * ['<mã>:<file>', …] đã áp lần này.
+ * Migration loại đơn vị (`db/migrations/tenant/NNN_*.sql`, viết KHÔNG ghi tên schema): áp cho từng đơn vị đã có schema
+ * (đơn vị đang dựng / dựng lỗi chưa có — tenant-provision.ts tự áp khi dựng), search_path = tenant_<mã>; ghi nhận ở
+ * core.tenant_migrations. Trả về ['<mã>:<file>', …] đã áp lần này.
  */
-export async function applyTenantMigrations(ownerUrl: string, dir = join(REPO_ROOT, 'db/migrations/tenant'),
+export async function applyTenantMigrations(ownerUrl: string, dir = TENANT_MIGRATIONS_DIR,
   log: (msg: string) => void = () => {}): Promise<string[]> {
-  if (!existsSync(dir)) return [];
-  const files = readdirSync(dir).filter((f) => /^\d{3}_.*\.sql$/.test(f)).sort();
+  const files = tenantMigrationFiles(dir);
   if (!files.length) return [];
   const db = pgp({ connectionString: ownerUrl, max: 1 });
   const applied: string[] = [];
   try {
-    const tenants = (await db.any<{ ma: string }>(`SELECT ma FROM core.tenants WHERE status <> 'dang_tao' ORDER BY ma`)).map((r) => r.ma);
+    const tenants = (await db.any<{ ma: string }>(
+      `SELECT t.ma FROM core.tenants t JOIN pg_namespace n ON n.nspname = 'tenant_' || t.ma
+        WHERE t.status <> 'dang_tao' ORDER BY t.ma`)).map((r) => r.ma);
     for (const ma of tenants) {
       const done = new Set((await db.any<{ name: string }>('SELECT name FROM core.tenant_migrations WHERE tenant = $1', [ma])).map((r) => r.name));
       for (const f of files) {
         if (done.has(f)) continue;
-        const sql = readFileSync(join(dir, f), 'utf8');
-        await db.tx(async (t) => {
-          await t.any('SELECT set_config(\'search_path\', $1, true)', [`${tenantSchema(ma)}, core, public`]);
-          await t.none(sql);
-          await t.none('INSERT INTO core.tenant_migrations (tenant, name) VALUES ($1, $2)', [ma, f]);
-        });
+        await db.tx((t) => applyTenantMigration(t, ma, f, dir));
         applied.push(`${ma}:${f}`);
         log(`đã áp dụng ${f} cho đơn vị ${ma}`);
       }

@@ -10,6 +10,7 @@ import { existsSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { withTenant, type Db } from './db/index.js';
 import { REPO_ROOT } from './env.js';
+import { DEFAULT_TENANT, currentTenant } from './tenant.js';
 import type { SpiderRow } from './ingest/spider.js';
 
 export interface CrawlabConfig {
@@ -135,6 +136,12 @@ export interface SyncResult {
   spiders: Array<{ code: string; crawlab_spider_id: string; files: number; schedules: number }>;
 }
 
+/**
+ * Tên spider trên Crawlab: Bkav giữ đúng mã spider (như trước nhiều đơn vị); đơn vị khác `<mã đơn vị>__<mã spider>` — một
+ * Crawlab dùng chung cho mọi đơn vị, hai đơn vị cùng mã spider không được ghi đè mã của nhau.
+ */
+export const crawlabSpiderName = (code: string): string => (currentTenant() === DEFAULT_TENANT ? code : `${currentTenant()}__${code}`);
+
 export async function syncCrawlab(db: Db, client: CrawlabClient, opts: SyncOptions): Promise<SyncResult> {
   await client.setEnvironment('VALA_API_URL', opts.apiUrlForSpiders);
   await client.setEnvironment('VALA_INTERNAL_TOKEN', opts.internalToken);
@@ -145,8 +152,9 @@ export async function syncCrawlab(db: Db, client: CrawlabClient, opts: SyncOptio
   const out: SyncResult = { spiders: [] };
 
   for (const sp of rows) {
-    const meta = { name: sp.code, description: sp.ten, cmd: 'python main.py' };
-    let id = sp.crawlab_spider_id && existing.some((e) => e._id === sp.crawlab_spider_id) ? sp.crawlab_spider_id : existing.find((e) => e.name === sp.code)?._id;
+    const name = crawlabSpiderName(sp.code);
+    const meta = { name, description: sp.ten, cmd: 'python main.py' };
+    let id = sp.crawlab_spider_id && existing.some((e) => e._id === sp.crawlab_spider_id) ? sp.crawlab_spider_id : existing.find((e) => e.name === name)?._id;
     if (id) await client.updateSpider(id, meta);
     else id = (await client.createSpider(meta))._id;
 
@@ -157,7 +165,7 @@ export async function syncCrawlab(db: Db, client: CrawlabClient, opts: SyncOptio
 
     // Lịch cố định theo preset (trước migration 015) thôi dùng: worker Vala tự hẹn giờ theo lịch từng người rồi
     // chạy spider với --user. Xoá hết lịch Crawlab của spider này để không chạy trùng.
-    const stale = schedules.filter((x) => x.spider_id === id || x.name.startsWith(`${sp.code}:`));
+    const stale = schedules.filter((x) => x.spider_id === id || x.name.startsWith(`${name}:`));
     for (const x of stale) await client.deleteSchedule(x._id);
     await withTenant(db, (t) => t.none('DELETE FROM spider_schedules WHERE spider_code = $1', [sp.code]));
     const n = 0;

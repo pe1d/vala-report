@@ -37,6 +37,13 @@ export async function tenantByDomain(deps: ApiDeps, domain: string): Promise<Ten
       WHERE d.domain = $1 AND t.status = 'hoat_dong'`, [domain]));
 }
 
+/** Trạng thái đơn vị của một tên miền (kể cả chưa hoạt động) — để báo đúng lý do ở bước 1 đăng nhập. */
+export async function domainTenantStatus(deps: ApiDeps, domain: string): Promise<TenantRow['status'] | null> {
+  const r = await withCore(deps.writer, (t) => t.oneOrNone<{ status: TenantRow['status'] }>(
+    'SELECT t.status FROM tenant_domains d JOIN tenants t ON t.ma = d.tenant WHERE d.domain = $1', [domain]));
+  return r?.status ?? null;
+}
+
 export async function tenantByCode(deps: ApiDeps, ma: string): Promise<TenantFull | null> {
   return withCore(deps.writer, (t) => t.oneOrNone<TenantFull>(
     `SELECT ma, ten, status, login_methods, sso, login_fill, login_selectors, domains FROM tenants WHERE ma = $1 AND status = 'hoat_dong'`, [ma]));
@@ -67,6 +74,12 @@ export function ssoHostsOf(deps: ApiDeps, t: Pick<TenantRow, 'ma' | 'sso' | 'log
     for (const u of [j.origin, j.issuer, j.authorize_url]) add(u);
   }
   return [...hosts];
+}
+
+/** Trang đổi mật khẩu SSO của đơn vị (Bkav: SSO_PASSWORD_URL; đơn vị khác: core.tenants.sso.password_url). */
+export function ssoPasswordUrlOf(deps: ApiDeps, t: Pick<TenantRow, 'ma' | 'sso'>): string | null {
+  const u = t.ma === DEFAULT_TENANT ? deps.config.ssoPasswordUrl : (t.sso as { password_url?: unknown } | null)?.password_url;
+  return typeof u === 'string' && /^https?:\/\//.test(u) ? u : null;
 }
 
 /** Đơn vị bật tự tạo tài khoản khi đăng nhập SSO lần đầu ⇒ bước 1 không kiểm tài khoản. */

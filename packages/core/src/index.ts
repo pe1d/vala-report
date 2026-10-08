@@ -1,6 +1,7 @@
 export * from './env.js';
 export * from './tenant.js';
 export * from './tenants.js';
+export * from './tenant-provision.js';
 export * from './db/index.js';
 export * from './errors.js';
 export * from './localize.js';

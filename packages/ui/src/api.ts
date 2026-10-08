@@ -48,7 +48,7 @@ export const api = {
 export type Scope = 'ca_nhan' | 'don_vi';
 export type AuthMethod = 'password' | 'cookie' | 'sso' | 'extension';
 export interface ExtensionDevice { id: number; ten: string; created_at: string; last_used_at: string | null; expires_at: string }
-export interface Me { id: number; ho_ten: string; email: string; is_ops_admin: boolean; must_change_password: boolean; has_password: boolean; scopes: Scope[]; org_units: { id: number; ten: string; vai_tro: string }[] }
+export interface Me { id: number; ho_ten: string; email: string; is_ops_admin: boolean; /** Quản trị hệ thống: quản lý các đơn vị (trang Đơn vị trong Vala Desktop). */ is_system_admin?: boolean; must_change_password: boolean; has_password: boolean; scopes: Scope[]; org_units: { id: number; ten: string; vai_tro: string }[] }
 export interface AdminUser {
   id: number; ho_ten: string; email: string; username: string | null; is_ops_admin: boolean; is_active: boolean;
   must_change_password: boolean; locked: boolean; has_password: boolean; has_sso: boolean;

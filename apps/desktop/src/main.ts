@@ -18,18 +18,17 @@ import { getSettings } from './settings';
 import { syncAll } from './sync';
 import { forgetPackages, refreshPackages } from './scripts';
 import { applyTheme, prefsEvents } from './prefs';
-import { portalHasPassword, setPortalUser } from './portal-state';
 import { registerAutofill } from './autofill';
 import { lockCredentials } from './credentials';
 import { installUiProtocol, refreshUi, registerUiScheme } from './ui-cache';
-import { contentBounds, browserWindow, isAdminContents, openAdminTab, sendToAdmin, preloadDefaultApp, showDefaultApp, initBrowser, isLoginContents, pushLogin, showLogin, showDefault, isChatContents, isRecordingContents, pushChat, isSettingsContents, openRecordingTab, openSettingsTab, pushRecording, pushSettings, refreshBrowser, revealWindow } from './browser';
+import { changePassword, contentBounds, browserWindow, isAdminContents, openAdminTab, sendToAdmin, preloadDefaultApp, showDefaultApp, initBrowser, isLoginContents, pushLogin, showLogin, showDefault, isChatContents, isRecordingContents, pushChat, isSettingsContents, openRecordingTab, openSettingsTab, pushRecording, pushSettings, refreshBrowser, revealWindow } from './browser';
 import { setNotifyReveal } from './notify';
 import { createMenus, refreshMenus, tabContextMenu } from './menu';
 import { appsEvents, clearApps, refreshApps } from './apps';
 import { initSsoSession } from './sso-session';
 import { applyAutostart } from './autostart';
 import { announceUpdate, checkNow, initUpdater } from './updater';
-import { changePortalPassword, onTabLeave, portalUserEvents, registerBridge, showPortal, watchCookies } from './windows';
+import { onTabLeave, registerBridge, showPortal, watchCookies } from './windows';
 
 const SYNC_INTERVAL_MS = 15 * 60_000;
 /** Mở lúc Windows khởi động ⇒ chỉ chạy nền, không bật cửa sổ. */
@@ -67,11 +66,10 @@ async function signOut() {
 // Đăng nhập cổng ở tab Báo cáo ⇒ cổng cấp token thiết bị qua cầu nối (account.ts) ⇒ bắt đầu giữ/gửi phiên.
 accountEvents.on('login', () => { refreshAll(); startSync(); });
 // Đăng xuất ⇒ xoá cả lịch sử trang, hội thoại Trợ lý, danh mục thao tác trên máy (có dữ liệu của các hệ thống nguồn).
-accountEvents.on('logout', () => { forgetPackages(); setPortalUser(null); lockCredentials(); clearLocalData(); clearApps(); refreshAll(); });
+accountEvents.on('logout', () => { forgetPackages(); lockCredentials(); clearLocalData(); clearApps(); refreshAll(); });
 appsEvents.on('changed', refreshAll);
 // Đổi ngôn ngữ / sáng-tối ở bất kỳ đâu ⇒ menu, khay, thanh dọc theo (browser.ts tự báo cổng).
 prefsEvents.on('changed', refreshAll);
-portalUserEvents.on('changed', refreshAll);
 
 /** Cài đặt mở thành tab (như chrome://settings); `section` ⇒ nhảy tới mục đó. */
 const openSettings = (section?: string) => openSettingsTab(section);
@@ -109,15 +107,15 @@ if (!app.requestSingleInstanceLock()) {
     registerLoginPage({ isLogin: (e) => isLoginContents(e.sender), push: pushLogin, win: browserWindow, pageBounds: contentBounds });
     registerSearch();
     watchCookies();
-    createMenus({ showMain: showDefaultApp, showDefault, showPortal, signIn: showLogin, openSettings, signOut: () => void signOut(), changePassword: changePortalPassword });
+    createMenus({ showMain: showDefaultApp, showDefault, showPortal, signIn: showLogin, openSettings, signOut: () => void signOut(), changePassword });
     initBrowser({
-      onLeave: onTabLeave, signIn: showLogin, tabMenu: tabContextMenu, portalHasPassword,
+      onLeave: onTabLeave, signIn: showLogin, tabMenu: tabContextMenu,
       // Menu hồ sơ ở cuối thanh dọc (khung nổi).
       profileCommand: (cmd) => {
         if (cmd === 'settings') openSettings();
         else if (cmd === 'admin') openAdminTab();
         else if (cmd === 'passwords') openSettings('mat-khau');
-        else if (cmd === 'change-password') changePortalPassword();
+        else if (cmd === 'change-password') changePassword();
         else if (cmd === 'sync') void syncAll(true);
         else if (cmd === 'check-update') checkNow();
         else if (cmd === 'sign-out') void signOut();

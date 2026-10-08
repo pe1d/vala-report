@@ -12,6 +12,7 @@
   "scripts": {
     "migrate": "tsx scripts/migrate.ts",
     "seed": "tsx scripts/migrate.ts --seed",
+    "tenant-baseline": "tsx scripts/tenant-baseline.ts",
     "typecheck": "tsc -p .",
     "test": "vitest run",
     "test:db": "vitest run -c vitest.db.config.ts"

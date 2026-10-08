@@ -52,9 +52,10 @@ function authenticateDevice(deps: ApiDeps) {
     if (!m) throw new Problem('unauthenticated', L('Vala Desktop chưa đăng nhập', 'Vala Desktop is not signed in'));
     const row = await withTenant(deps.writer, (t) => t.oneOrNone<AuthUser & { device_id: number; stale: boolean; kind: string }>(
       `SELECT d.id AS device_id, d.kind, u.id, u.ho_ten, u.email, u.is_ops_admin, u.must_change_password, u.password_hash IS NOT NULL AS has_password,
+              EXISTS (SELECT 1 FROM core.system_admins s WHERE s.tenant = $2 AND s.user_id = u.id) AS is_system_admin,
               d.last_used_at IS NULL OR d.last_used_at < now() - interval '5 minutes' AS stale
          FROM extension_devices d JOIN app_users u ON u.id = d.app_user_id
-        WHERE d.token_hash = $1 AND d.revoked_at IS NULL AND d.expires_at > now() AND u.is_active`, [hashToken(m[1]!)]));
+        WHERE d.token_hash = $1 AND d.revoked_at IS NULL AND d.expires_at > now() AND u.is_active`, [hashToken(m[1]!), currentTenant()]));
     if (!row) throw new Problem('unauthenticated', L('Vala Desktop đã bị ngắt kết nối hoặc hết hạn', 'Vala Desktop was disconnected or has expired'), L('Đăng nhập lại trong Vala Desktop', 'Sign in again in Vala Desktop'));
     // Tiện ích trình duyệt đã ngừng (08/10/2026 — dùng hoàn toàn Vala Desktop): token cũ của tiện ích không dùng được nữa.
     if (row.kind !== 'desktop') {
@@ -63,7 +64,7 @@ function authenticateDevice(deps: ApiDeps) {
     }
     if (row.stale) await withTenant(deps.writer, (t) => t.none('UPDATE extension_devices SET last_used_at = now() WHERE id = $1', [row.device_id]));
     req.user = { id: row.id, ho_ten: row.ho_ten, email: row.email, is_ops_admin: row.is_ops_admin,
-      must_change_password: row.must_change_password, has_password: row.has_password };
+      must_change_password: row.must_change_password, has_password: row.has_password, is_system_admin: row.is_system_admin };
     req.extDeviceId = row.device_id;
   };
 }

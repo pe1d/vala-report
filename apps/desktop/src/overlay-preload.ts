@@ -11,5 +11,7 @@ contextBridge.exposeInMainWorld('valaOverlay', {
   search: (q: string) => ipcRenderer.invoke('overlay:search', q),
   pick: (item: unknown) => ipcRenderer.invoke('overlay:pick', item),
   clearHistory: () => ipcRenderer.invoke('overlay:clear-history'),
+  contextRun: (id: string) => ipcRenderer.invoke('overlay:context-run', id),
+  changePassword: (current: string, next: string) => ipcRenderer.invoke('overlay:change-password', { current, next }),
   onOpen: (cb: () => void) => { ipcRenderer.on('overlay:open', () => cb()); },
 });

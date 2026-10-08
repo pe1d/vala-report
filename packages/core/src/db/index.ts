@@ -38,6 +38,12 @@ export function writerDb(url = process.env.DATABASE_WRITER_URL): Db {
   return makeDb(url, 10);
 }
 
+/** Chủ CSDL (vala_owner): chỉ worker dùng, cho việc cần quyền tạo schema — dựng đơn vị (tenant-provision.ts). */
+export function ownerDb(url = process.env.DATABASE_OWNER_URL): Db {
+  if (!url) throw new Error('Thiếu DATABASE_OWNER_URL');
+  return makeDb(url, 2);
+}
+
 export async function closeAllPools(): Promise<void> {
   pools.clear();
   await pgp.end();

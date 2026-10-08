@@ -8,7 +8,6 @@
 import { app, BrowserWindow, Menu, nativeImage, Tray, type BaseWindow, type MenuItemConstructorOptions } from 'electron';
 import { APP_NAME, ICON } from './channel';
 import { messages } from './i18n';
-import { portalHasPassword } from './portal-state';
 import { getSettings } from './settings';
 import { cachedSources, events, statusOf, syncAll, type SourceFull, type SyncResult } from './sync';
 import { credentialEvents, deleteCredential, savedCredential, secureStorageAvailable, setAutoLogin } from './credentials';
@@ -16,6 +15,7 @@ import { targetForUrl } from './autofill';
 import { openCredentialDialog } from './credential-window';
 import { checkNow, pendingUpdate, promptInstall } from './updater';
 import { openSourceTab } from './windows';
+import { catalog } from './apps';
 import { openRecordingTab, tabWebContents } from './browser';
 import { notify } from './notify';
 import { RecorderError, recordingKey, startRecording, stopRecording } from './recorder';
@@ -27,7 +27,7 @@ const M = messages({
   sources: 'Hệ thống nguồn', noSources: '(chưa có hệ thống nào)', signInFirst: '(đăng nhập trước)',
   syncNow: 'Đồng bộ phiên ngay',
   view: 'Xem', reload: 'Tải lại', back: 'Quay lại', forward: 'Tiến tới', zoomIn: 'Phóng to', zoomOut: 'Thu nhỏ', zoomReset: 'Cỡ gốc',
-  settingsMenu: 'Cài đặt', settings: 'Cài đặt…', signIn: 'Đăng nhập…', signOut: 'Đăng xuất', quit: 'Thoát', changePassword: 'Đổi mật khẩu…',
+  settingsMenu: 'Cài đặt', settings: 'Cài đặt…', signIn: 'Đăng nhập…', signOut: 'Đăng xuất', quit: 'Thoát', changePassword: 'Đổi mật khẩu…', changeSsoPassword: 'Đổi mật khẩu SSO…',
   open: (ten: string) => `Mở ${ten}`, credSaved: (u: string) => `Mật khẩu: ${u} ✓ đã lưu`, credNone: 'Chưa lưu mật khẩu',
   credAuto: 'Tự đăng nhập lại', credEnter: 'Lưu mật khẩu…', credChange: 'Đổi mật khẩu…', credDelete: 'Xoá mật khẩu',
   credUnavailable: 'Máy chưa có kho mật khẩu của hệ điều hành',
@@ -45,7 +45,7 @@ const M = messages({
   sources: 'Source systems', noSources: '(no systems yet)', signInFirst: '(sign in first)',
   syncNow: 'Sync sessions now',
   view: 'View', reload: 'Reload', back: 'Back', forward: 'Forward', zoomIn: 'Zoom in', zoomOut: 'Zoom out', zoomReset: 'Actual size',
-  settingsMenu: 'Settings', settings: 'Settings…', signIn: 'Sign in…', signOut: 'Sign out', quit: 'Quit', changePassword: 'Change password…',
+  settingsMenu: 'Settings', settings: 'Settings…', signIn: 'Sign in…', signOut: 'Sign out', quit: 'Quit', changePassword: 'Change password…', changeSsoPassword: 'Change SSO password…',
   open: (ten: string) => `Open ${ten}`, credSaved: (u: string) => `Password: ${u} ✓ saved`, credNone: 'No saved password',
   credAuto: 'Sign in again automatically', credEnter: 'Save password…', credChange: 'Change password…', credDelete: 'Delete password',
   credUnavailable: 'No operating-system password store on this computer',
@@ -104,9 +104,10 @@ export function tabContextMenu(key: string, url: string): Menu | null {
   const rec = recordItems(key, url);
   const withRec = (items: MenuItemConstructorOptions[]) => (rec.length ? [...items, { type: 'separator' as const }, ...rec] : items);
   const src = getSettings().deviceToken ? cachedSources().find((x) => `src:${x.code}` === key) : undefined;
-  if (src) return Menu.buildFromTemplate(withRec(sourceMenuItems(src)));
+  // Tên + "Mở" đã có ở menu chuột phải của thanh dọc (browser.ts openContextMenu) ⇒ ở đây chỉ mật khẩu + ghi thao tác.
+  if (src) return Menu.buildFromTemplate(withRec(credentialItems(src)));
   const tg = targetForUrl(url);
-  if (tg) return Menu.buildFromTemplate(withRec([{ label: tg.ten, enabled: false }, { type: 'separator' }, ...credentialItems({ code: tg.key, ten: tg.ten })]));
+  if (tg) return Menu.buildFromTemplate(withRec(credentialItems({ code: tg.key, ten: tg.ten })));
   return rec.length ? Menu.buildFromTemplate(rec) : null;
 }
 
@@ -183,8 +184,9 @@ export function trayMenu(): Menu {
     s.deviceToken ? { label: t.openPortal, click: actions.showPortal } : { label: t.signIn, click: actions.signIn },
     { label: t.sources, submenu: sourceItems() },
     { type: 'separator' },
-    // Tài khoản đăng nhập bằng mật khẩu (không phải SSO) ⇒ đổi mật khẩu ngay trong cổng.
-    ...(s.deviceToken && portalHasPassword() ? [{ label: t.changePassword, click: actions.changePassword }] : []),
+    // Có mật khẩu Vala ⇒ form đổi mật khẩu của app; chỉ SSO ⇒ trang đổi mật khẩu của SSO đơn vị (nếu có).
+    ...(s.deviceToken && (catalog().account?.has_password || catalog().account?.sso_password_url)
+      ? [{ label: catalog().account?.has_password ? t.changePassword : t.changeSsoPassword, click: actions.changePassword }] : []),
     { label: t.settings, click: () => actions.openSettings() },
     updateItem(t),
     { label: t.version(app.getVersion()), enabled: false },

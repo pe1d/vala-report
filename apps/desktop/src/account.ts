@@ -5,7 +5,7 @@
  * Tab Báo cáo lấy phiên cổng từ ứng dụng qua cầu nối (portalToken) — không phải đăng nhập lần nữa.
  */
 import { EventEmitter } from 'node:events';
-import { session } from 'electron';
+import { net, session } from 'electron';
 import { clearApps } from './apps';
 import { deleteAllCredentials } from './credentials';
 import { clearLocalData } from './local-data';
@@ -33,6 +33,25 @@ export function deviceName(): string {
 
 /** `vxt_<ngẫu nhiên>` (Bkav, dạng cũ) hoặc `vxt_<mã đơn vị>.<ngẫu nhiên>` (nhiều đơn vị). */
 export const DEVICE_TOKEN = /^vxt_(?:[a-z][a-z0-9]{1,19}\.)?[\w-]{20,100}$/;
+
+/**
+ * Gọi API máy chủ (`/api/v1…`) bằng phiên của ứng dụng (token cổng xin từ token thiết bị — không cần mở cổng web): trang
+ * Quản trị đơn vị, đổi mật khẩu. Trả mã HTTP + JSON (lỗi RFC 7807 nằm trong json).
+ */
+export async function portalApi(method: string, path: string, body?: unknown, lang = getSettings().lang): Promise<{ status: number; ok: boolean; json?: unknown }> {
+  const token = await portalToken();
+  if (!token) return { status: 401, ok: false, json: { type: 'unauthenticated', title: lang === 'en' ? 'Vala Desktop is not signed in' : 'Vala Desktop chưa đăng nhập' } };
+  const headers: Record<string, string> = { Authorization: `Bearer ${token}`, 'Accept-Language': lang };
+  if (body !== undefined && method !== 'GET') headers['Content-Type'] = 'application/json';
+  try {
+    const res = await net.fetch(`${getSettings().serverUrl}/api/v1${path}`, { method, headers, body: body === undefined || method === 'GET' ? undefined : JSON.stringify(body) });
+    if (res.status === 204) return { status: 204, ok: true };
+    const json = (res.headers.get('content-type') ?? '').includes('json') ? await res.json() : undefined;
+    return { status: res.status, ok: res.ok, json };
+  } catch {
+    return { status: 0, ok: false, json: { type: 'network', title: lang === 'en' ? 'Cannot reach the Vala server' : 'Không kết nối được máy chủ Vala' } };
+  }
+}
 
 /** Phiên cổng (JWT) cho tab Báo cáo — có từ lúc đăng nhập, hết hạn thì xin lại bằng token thiết bị. */
 let portal: { token: string; exp: number } | null = null;

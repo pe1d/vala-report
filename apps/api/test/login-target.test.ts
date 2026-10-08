@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { MemoryRateLimiter } from '../src/deps';
-import { fillFor, parseLogin, takeN } from '../src/login-target';
+import { DEFAULT_TENANT } from '@vala/core';
+import { MemoryRateLimiter, type ApiDeps } from '../src/deps';
+import { fillFor, parseLogin, ssoPasswordUrlOf, takeN } from '../src/login-target';
 
 describe('parseLogin', () => {
   it('tách tài khoản / tên miền, chữ thường, bỏ khoảng trắng', () => {
@@ -25,5 +26,18 @@ describe('takeN', () => {
     const r = [];
     for (let i = 0; i < 4; i++) r.push(await takeN(l, 'k', 3, 60));
     expect(r).toEqual([true, true, true, false]);
+  });
+});
+
+describe('ssoPasswordUrlOf', () => {
+  const deps = (ssoPasswordUrl?: string) => ({ config: { ssoPasswordUrl } }) as unknown as ApiDeps;
+  it('đơn vị mặc định ⇒ theo cấu hình máy chủ (SSO_PASSWORD_URL)', () => {
+    expect(ssoPasswordUrlOf(deps('https://iam.bkav.com/doi-mat-khau'), { ma: DEFAULT_TENANT, sso: null })).toBe('https://iam.bkav.com/doi-mat-khau');
+    expect(ssoPasswordUrlOf(deps(), { ma: DEFAULT_TENANT, sso: null })).toBeNull();
+  });
+  it('đơn vị khác ⇒ sso.password_url của đơn vị, chỉ nhận http(s)', () => {
+    expect(ssoPasswordUrlOf(deps('https://x.vn'), { ma: 'abc', sso: { password_url: 'https://sso.abc.vn/pw' } } as never)).toBe('https://sso.abc.vn/pw');
+    expect(ssoPasswordUrlOf(deps('https://x.vn'), { ma: 'abc', sso: { password_url: 'javascript:alert(1)' } } as never)).toBeNull();
+    expect(ssoPasswordUrlOf(deps('https://x.vn'), { ma: 'abc', sso: null })).toBeNull();
   });
 });

@@ -11,6 +11,8 @@ export interface AuthUser {
   /** Đang dùng mật khẩu tạm ⇒ chỉ được gọi /me và đổi mật khẩu. */
   must_change_password: boolean;
   has_password: boolean;
+  /** Quản trị hệ thống (core.system_admins): quản lý các đơn vị — Quản trị → Đơn vị trong Vala Desktop. */
+  is_system_admin: boolean;
 }
 
 /** Khi còn phải đổi mật khẩu, chỉ các đường này được gọi (để hiện màn hình đổi mật khẩu). */
@@ -37,8 +39,9 @@ export function authenticate(deps: ApiDeps) {
     if (!payload || payload.kind !== 'portal') throw new Problem('unauthenticated', L('Phiên đăng nhập không hợp lệ hoặc đã hết hạn', 'Your sign-in session is invalid or has expired'));
     // Pool writer: pool reader chỉ được đọc một số cột của app_users (không có cột mật khẩu / trạng thái mật khẩu).
     const user = await withTenant(deps.writer, (t) => t.oneOrNone<AuthUser>(
-      `SELECT id, ho_ten, email, is_ops_admin, must_change_password, password_hash IS NOT NULL AS has_password
-         FROM app_users WHERE id = $1 AND is_active`, [payload.uid]));
+      `SELECT id, ho_ten, email, is_ops_admin, must_change_password, password_hash IS NOT NULL AS has_password,
+              EXISTS (SELECT 1 FROM core.system_admins s WHERE s.tenant = $2 AND s.user_id = id) AS is_system_admin
+         FROM app_users WHERE id = $1 AND is_active`, [payload.uid, currentTenant()]));
     if (!user) throw new Problem('unauthenticated', L('Tài khoản không tồn tại hoặc đã bị khoá', 'The account does not exist or has been locked'));
     if (user.must_change_password && !ALLOWED_BEFORE_PASSWORD_CHANGE.has(req.url.split('?')[0]!)) {
       throw new Problem('password_change_required', L('Cần đổi mật khẩu', 'Password change required'), L('Bạn đang dùng mật khẩu tạm — đổi mật khẩu để tiếp tục', 'You are using a temporary password — change it to continue'));

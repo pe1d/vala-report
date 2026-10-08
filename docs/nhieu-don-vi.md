@@ -1,7 +1,7 @@
 # Nhiều đơn vị (multi-tenant) — cách code chạy
 
-Thiết kế: `docs/superpowers/specs/2026-10-08-multi-tenant-login-design.md`. Đợt 1 (nền tảng) và đợt 2 (đăng nhập 2 bước)
-xong 08/10/2026; trang Quản trị hệ thống → Đơn vị (đợt 3) làm sau.
+Thiết kế: `docs/superpowers/specs/2026-10-08-multi-tenant-login-design.md`. Đợt 1 (nền tảng), đợt 2 (đăng nhập 2 bước) và
+đợt 3 (Quản trị hệ thống → Đơn vị, trong Vala Desktop) xong 08/10/2026.
 
 ## Mỗi đơn vị một schema
 
@@ -67,11 +67,35 @@ xong 08/10/2026; trang Quản trị hệ thống → Đơn vị (đợt 3) làm 
   xuất ⇒ xoá cookie của host SSO. Mật khẩu SSO lưu một lần với khoá `sso` (autofill.ts) ⇒ trang đăng nhập SSO trong
   bất kỳ ứng dụng nào tự điền / tự đăng nhập (giới hạn chống khoá tài khoản của T08).
 
+## Quản trị hệ thống → Đơn vị (đợt 3)
+
+- Ai: `core.system_admins (tenant, user_id)` — ban đầu dieptx@bkav.com + ops@bkav.com (migration 028, nếu tài khoản có sẵn; dev seed có ops). API trả `is_system_admin`
+  ở `/me` và `/ext/apps`. Giao diện: Vala Desktop → menu hồ sơ → Quản trị đơn vị → mục **Đơn vị** (nhóm Quản trị hệ
+  thống). Cổng web không có trang này.
+- API `/system/tenants` (`apps/api/src/routes/systemTenants.ts`): danh sách (kèm số người dùng), xem, tạo, sửa (tên, tên
+  miền, cách đăng nhập, SSO — client secret vào vault `vault://core/tenants/<mã>/sso`, không trả ra; `sso.password_url` =
+  trang đổi mật khẩu SSO), tạm khoá / mở lại (không tự khoá đơn vị mình), thử lại khi lỗi. Bkav: cách đăng nhập theo
+  `.env`, chỉ sửa tên + tên miền. **Không xoá** đơn vị trên giao diện.
+- Tạo ⇒ `core.tenants` trạng thái `dang_tao` + `provision` (chép từ đơn vị nào, quản trị đầu tiên — mật khẩu đã băm; pool
+  reader không đọc được cột này) ⇒ API đẩy việc bảo trì `tenant_provision` ⇒ worker dựng bằng **quyền chủ CSDL**
+  (`DATABASE_OWNER_URL`) — `packages/core/src/tenant-provision.ts`, một giao dịch: schema từ bản nền → migration đơn vị
+  sau bản nền → chép cấu hình (hệ thống nguồn, adapter, spider, tab Tổng quan, báo cáo, kịch bản + ứng dụng Desktop,
+  thương hiệu) → `app_settings`, đơn vị tổ chức gốc, quản trị đầu tiên (`must_change_password`), phân vùng → `hoat_dong`.
+  Lỗi ⇒ huỷ hết, `loi` + `status_note`. Worker còn quét `dang_tao` lúc khởi động và mỗi phút; dựng xong thì nạp adapter,
+  chỉ mục và đẩy spider lên Crawlab ngay.
+- **Bản nền** `db/tenant-baseline.sql`: `pg_dump --schema-only` của `tenant_bkav` (bỏ phân vùng `raw_records_*`, chỉ mục
+  động `records_f_*`), tên schema là `{{schema}}`, dòng đầu ghi các migration đơn vị đã gồm. Sinh lại:
+  `pnpm --filter @vala/core tenant-baseline` (không bắt buộc sau mỗi migration đơn vị — đơn vị mới vẫn được áp các
+  migration sau bản nền). Test `test/db/provision.test.ts` so cấu trúc (cột, mặc định, ràng buộc, chỉ mục, RLS, hàm, quyền)
+  của đơn vị dựng từ bản nền với `tenant_bkav` dựng từ migration ⇒ lệch là test đỏ.
+- **Crawlab** dùng chung: spider của đơn vị khác Bkav tên `<mã đơn vị>__<mã spider>` (`crawlabSpiderName`), Bkav giữ tên cũ.
+- Bước 1 đăng nhập báo rõ: đơn vị tạm khoá / đang thiết lập / không có tên miền.
+
 ## Migration
 
 - `db/migrations/NNN_*.sql` — phần chung, chạy một lần (như cũ).
 - `db/migrations/tenant/NNN_*.sql` — **thay đổi bảng trong schema đơn vị từ nay viết ở đây**, không ghi tên schema;
-  `pnpm db:migrate` áp cho từng đơn vị (`core.tenant_migrations` ghi đã áp cho ai). Nhớ `GRANT` cho `app_reader` /
+  `pnpm db:migrate` áp cho từng đơn vị đã có schema (`core.tenant_migrations` ghi đã áp cho ai); đơn vị dựng sau tự áp. Nhớ `GRANT` cho `app_reader` /
   `app_writer` như các migration cũ.
 
 ## Test
