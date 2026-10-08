@@ -90,17 +90,18 @@ vala.action('lay_chi_tiet_van_ban', { mo_ta: 'Thông tin và lịch sử xử l�
   return chiTiet(await vala.webform(`/ChiTiet.aspx?id=${Number(id)}`));
 });
 
-vala.action('tao_du_thao', {
-  mo_ta: 'Tạo dự thảo văn bản',
-  params: { loai_van_ban: 'mã hoặc tên loại', trich_yeu: 'bắt buộc', noi_dung: '', tep: '[{ ten, loai, base64 }] — tối đa 1 tệp' },
-}, async ({ loai_van_ban, trich_yeu, noi_dung = '', tep }) => {
+async function taoDuThao({ loai_van_ban, trich_yeu, noi_dung = '', tep }) {
   const f = await vala.webform('/DuThao.aspx');
   await f.submit('btnLuu', { ddlLoai: chon(f.options('ddlLoai'), loai_van_ban, 'Loại văn bản'), txtTrichYeu: trich_yeu ?? '', txtNoiDung: noi_dung }, tepDinhKem(tep));
   const id = Number(new URL(f.url).searchParams.get('id'));
   const ct = chiTiet(f);
   if (!id || ct.trang_thai !== 'Dự thảo' || ct.trich_yeu !== String(trich_yeu).trim()) throw loi('Không xác nhận được dự thảo vừa tạo');
   return { id, ...ct };
-});
+}
+vala.action('tao_du_thao', {
+  mo_ta: 'Tạo dự thảo văn bản',
+  params: { loai_van_ban: 'mã hoặc tên loại', trich_yeu: 'bắt buộc', noi_dung: '', tep: '[{ ten, loai, base64 }] — tối đa 1 tệp' },
+}, taoDuThao);
 
 async function chuyen({ id, don_vi, nguoi_nhan = [], y_kien = '', han_xu_ly = '', tep }) {
   const f = await vala.webform(`/Chuyen.aspx?id=${Number(id)}`);
@@ -167,10 +168,37 @@ const HOP = [
   { ma: 'da_phat_hanh', ten: 'Đã phát hành', loai: 'di', trang_thai: 'Đã phát hành' },
 ];
 
-vala.action('vb_thong_tin', { mo_ta: 'Giao diện Văn bản: tên hệ thống và các hộp văn bản' }, async () => ({
+vala.action('vb_thong_tin', { mo_ta: 'Giao diện Văn bản: tên hệ thống, menu, loại văn bản tạo được' }, async () => ({
   he_thong: 'QLVB Thử nghiệm',
-  hop: HOP.map(({ ma, ten, loai }) => ({ ma, ten, loai })),
+  menu: [{ ten: 'Văn bản', muc: HOP.map(({ ma, ten, loai }) => ({ ma, ten, loai })) }],
+  tao: [{ ma: 'du_thao', ten: 'Dự thảo văn bản' }],
 }));
+
+vala.action('vb_dem', { mo_ta: 'Giao diện Văn bản: số văn bản mỗi hộp' }, async () => {
+  const out = {};
+  for (const h of HOP) out[h.ma] = { tong: (await layDanhSach({ trang_thai: h.trang_thai })).tong };
+  return out;
+});
+
+vala.action('vb_mau_tao', { mo_ta: 'Giao diện Văn bản: form tạo một loại văn bản' }, async ({ loai }) => {
+  if (loai !== 'du_thao') throw loi(`Không tạo được loại ${loai}`);
+  const f = await vala.webform('/DuThao.aspx');
+  return {
+    ten: 'Dự thảo văn bản',
+    truong: [
+      { ma: 'loai_van_ban', ten: 'Loại văn bản', loai: 'chon', bat_buoc: true, lua_chon: f.options('ddlLoai').filter((o) => o.value).map((o) => ({ ma: o.value, ten: o.text })) },
+      { ma: 'trich_yeu', ten: 'Trích yếu', loai: 'doan', bat_buoc: true, goi_y: 'V/v …' },
+      { ma: 'noi_dung', ten: 'Nội dung', loai: 'doan' },
+      { ma: 'tep', ten: 'Tệp đính kèm', loai: 'tep' },
+    ],
+  };
+});
+
+vala.action('vb_tao', { mo_ta: 'Giao diện Văn bản: tạo văn bản (dự thảo) trên hệ thống' }, async ({ loai, loai_van_ban, trich_yeu, noi_dung = '', tep = [] }) => {
+  if (loai !== 'du_thao') throw loi(`Không tạo được loại ${loai}`);
+  const r = await taoDuThao({ loai_van_ban, trich_yeu, noi_dung, tep: tep.length ? tep : undefined });
+  return { id: String(r.id), thong_bao: 'Đã tạo dự thảo' };
+});
 
 vala.action('vb_danh_sach', { mo_ta: 'Giao diện Văn bản: danh sách một hộp (10 dòng / trang)' }, async ({ hop = 'tat_ca', trang = 1, tim = '' }) => {
   const h = HOP.find((x) => x.ma === hop) || HOP[0];
@@ -210,7 +238,11 @@ vala.action('vb_chi_tiet', { mo_ta: 'Giao diện Văn bản: chi tiết, quá tr
   return {
     id: String(ct.id), so_ky_hieu: ct.so_ky_hieu, trich_yeu: ct.trich_yeu, trang_thai: ct.trang_thai, han_xu_ly: ngayISO(ct.han_xu_ly),
     loai: ct.loai, noi_dung: ct.noi_dung,
-    tep: ct.tep ? [{ id: '1', ten: ct.tep }] : [],
+    // Hệ thống chỉ hiện tên tệp ("a.pdf (123 byte), …"), không cho tải ⇒ tệp không có mã.
+    tep: (ct.tep || '').split(/,\s*(?=[^,]+\(\d+ byte\))/).filter(Boolean).map((x) => {
+      const m = /^(.*)\s\((\d+) byte\)$/.exec(x.trim());
+      return m ? { ten: m[1], kich_thuoc: `${Math.max(1, Math.round(Number(m[2]) / 1024))} KB` } : { ten: x.trim() };
+    }),
     qua_trinh: ct.lich_su.map((l) => ({ luc: ngayISO(l.thoi_gian), nguoi: l.nguoi_xu_ly, viec: [l.hanh_dong, l.noi_dung].filter(Boolean).join(': ') })),
     thao_tac,
   };

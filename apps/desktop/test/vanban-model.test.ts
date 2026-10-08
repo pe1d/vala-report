@@ -23,21 +23,32 @@ describe('ứng dụng nào dùng giao diện Văn bản', () => {
 });
 
 describe('làm sạch kết quả phiên dịch', () => {
-  it('thông tin: bỏ hộp sai mã, loại lạ ⇒ khac', () => {
-    expect(cleanThongTin({ he_thong: 'iOffice', hop: [{ ma: 'den', ten: 'Đến', loai: 'den' }, { ma: 'x y', ten: 'Sai' }, { ma: 'k', ten: 'K', loai: 'zzz' }] }))
-      .toEqual({ he_thong: 'iOffice', nguoi_dung: undefined, hop: [{ ma: 'den', ten: 'Đến', loai: 'den' }, { ma: 'k', ten: 'K', loai: 'khac' }] });
+  it('thông tin: menu nhóm ⇒ mục, bỏ mục sai mã, loại lạ ⇒ khac, mục chưa phiên dịch giữ địa chỉ trang gốc', () => {
+    const r = cleanThongTin({ he_thong: 'iOffice', menu: [{ ten: 'Văn bản đến', muc: [
+      { ma: 'den', ten: 'Đến', loai: 'den' }, { ma: 'x y', ten: 'Sai' }, { ma: 'k', ten: 'K', loai: 'zzz', goc: 'https://a.vn/x?y=1' }, { ma: 'j', ten: 'J', goc: 'javascript:alert(1)' }] }],
+      tao: [{ ma: 'du_thao', ten: 'Dự thảo' }] });
+    expect(r.menu).toEqual([{ ten: 'Văn bản đến', muc: [
+      { ma: 'den', ten: 'Đến', loai: 'den', goc: undefined, loc: undefined },
+      { ma: 'k', ten: 'K', loai: 'khac', goc: 'https://a.vn/x?y=1', loc: undefined },
+      { ma: 'j', ten: 'J', loai: 'khac', goc: undefined, loc: undefined }] }]);
+    expect(r.tao).toEqual([{ ma: 'du_thao', ten: 'Dự thảo' }]);
+  });
+  it('thông tin: phiên dịch cũ khai `hop` phẳng ⇒ một nhóm', () => {
+    expect(cleanThongTin({ he_thong: 'X', hop: [{ ma: 'a', ten: 'A' }] }).menu).toEqual([{ ten: '', muc: [{ ma: 'a', ten: 'A', loai: 'khac', goc: undefined, loc: undefined }] }]);
   });
   it('danh sách: id số ⇒ chuỗi, dòng không id bị bỏ, object lạ trong trường chữ bị bỏ', () => {
     const r = cleanDanhSach({ tong: '2', so_trang: 1, dong: [{ id: 5, trich_yeu: 'A', so_ky_hieu: { x: 1 } }, { trich_yeu: 'không id' }] });
-    expect(r).toEqual({ tong: 2, so_trang: 1, dong: [expect.objectContaining({ id: '5', trich_yeu: 'A', so_ky_hieu: undefined })] });
+    expect(r).toEqual({ tong: 2, so_trang: 1, dong: [expect.objectContaining({ id: '5', trich_yeu: 'A', so_ky_hieu: undefined, them: [] })] });
     expect(cleanDanhSach(null)).toEqual({ tong: 0, so_trang: 1, dong: [] });
   });
   it('chi tiết: thao tác + trường hợp lệ, trường chọn giữ lựa chọn', () => {
     const ct = cleanChiTiet({ id: '1', trich_yeu: 'X', tep: [{ id: 1, ten: 'a.pdf' }], qua_trinh: [{ viec: 'Chuyển' }, {}],
       thao_tac: [{ ma: 'chuyen', ten: 'Chuyển', truong: [{ ma: 'nguoi', ten: 'Người', loai: 'chon', nhieu: true, lua_chon: [{ ma: '1|2', ten: 'B' }] }, { ma: 'BAD', ten: 'x' }] }, { ma: '', ten: 'x' }] });
     expect(ct?.tep).toEqual([{ id: '1', ten: 'a.pdf', kich_thuoc: undefined }]);
+    expect(cleanChiTiet({ id: '1', trich_yeu: 'X', tep: [{ ten: 'chỉ tên.docx' }], them: [{ ten: 'Sổ đến', gia_tri: 12 }, { ten: 'rỗng' }] }))
+      .toMatchObject({ tep: [{ id: undefined, ten: 'chỉ tên.docx' }], them: [{ ten: 'Sổ đến', gia_tri: '12' }] });
     expect(ct?.qua_trinh).toEqual([{ luc: undefined, nguoi: undefined, viec: 'Chuyển' }]);
-    expect(ct?.thao_tac).toEqual([{ ma: 'chuyen', ten: 'Chuyển', xac_nhan: undefined, truong: [{ ma: 'nguoi', ten: 'Người', loai: 'chon', bat_buoc: undefined, nhieu: true, lua_chon: [{ ma: '1|2', ten: 'B' }] }] }]);
+    expect(ct?.thao_tac).toEqual([{ ma: 'chuyen', ten: 'Chuyển', xac_nhan: undefined, truong: [{ ma: 'nguoi', ten: 'Người', loai: 'chon', bat_buoc: undefined, nhieu: true, goi_y: undefined, lua_chon: [{ ma: '1|2', ten: 'B' }] }] }]);
   });
 });
 
@@ -54,3 +65,13 @@ describe('formValues', () => {
     expect(formValues(tt, { nguoi: ['zzz'] })).toEqual({ ok: false, missing: 'Người nhận' });
   });
 });
+
+describe('form có tệp', () => {
+  it('tệp: chỉ { ten, loai, base64 } hợp lệ, một tệp khi không `nhieu`, bắt buộc', () => {
+    const f = { truong: [{ ma: 'tep', ten: 'Tệp', loai: 'tep' as const, bat_buoc: true }] };
+    expect(formValues(f, { tep: [{ ten: 'a.pdf', loai: 'application/pdf', base64: 'QUJD' }, { ten: 'b', base64: 'QQ==' }] }))
+      .toEqual({ ok: true, values: { tep: [{ ten: 'a.pdf', loai: 'application/pdf', base64: 'QUJD' }] } });
+    expect(formValues(f, { tep: [{ ten: 'x', base64: 'không phải base64!' }] })).toEqual({ ok: false, missing: 'Tệp' });
+  });
+});
+

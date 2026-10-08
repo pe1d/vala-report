@@ -38,6 +38,65 @@ const LOC_TRA_CUU = {
   phanloaivb: '', vb_phieuchuyen: '',
 };
 
+// ---- menu: đọc CHÍNH menu của hệ thống ⇒ Vala có đủ mọi chức năng; mục đã phiên dịch vẽ bằng giao diện Vala, mục chưa
+// phiên dịch mở đúng trang đó của hệ thống (địa chỉ như trang tự đặt lên thanh địa chỉ khi bấm menu — hàm link()).
+const TRANG_CHINH = 'CEt1CzAwJyHx4yjbTq9vCBtuTt9fCcPbUo..';
+const urlGoc = (q) => `${location.origin}/qlvbdh/main?IzL1Dx9w5BxmCEtw5A9c6Bnb=${TRANG_CHINH}&${q}`;
+/** Mã menu của hệ thống ⇒ mã hộp đã phiên dịch. */
+const DA_PHIEN_DICH = { m4905: 'den_ngoai', m4906: 'den_trong', m2282: 'di_cho_xu_ly', m2286: 'tra_cuu' };
+const giaiThucThe = (s) => { const t = document.createElement('textarea'); t.innerHTML = s; return t.value; };
+const tenMenu = (s) => giaiThucThe(String(s || '')).replace(/\s*\(\s*\d+\s*\)/g, '').replace(/\s+/g, ' ').trim();
+
+/** HTML menu trái: trang chính đã vẽ (#full_menu) hoặc bản trang lưu trong sessionStorage. */
+function htmlMenu() {
+  const dom = document.querySelector('#full_menu');
+  if (dom && dom.querySelector('a[href*="link("]')) return dom.innerHTML;
+  const k = Object.keys(sessionStorage).find((x) => /^vi_get_menu_html_0_/.test(x));
+  if (!k) return '';
+  const raw = sessionStorage.getItem(k) || '';
+  try { const j = JSON.parse(raw); return typeof j === 'string' ? j : raw; } catch { return raw; }
+}
+
+function menuHeThong() {
+  const box = document.createElement('div');
+  box.innerHTML = htmlMenu();
+  const nhom = [];
+  for (const li of box.querySelectorAll(':scope > li, :scope > ul > li')) {
+    const a0 = li.querySelector(':scope > a');
+    const ten = tenMenu((li.querySelector(':scope > a .menu-item-parent') || a0 || {}).textContent);
+    const muc = [];
+    const duyet = (el, tien_to) => {
+      for (const c of el.querySelectorAll(':scope > ul > li')) {
+        const a = c.querySelector(':scope > a');
+        if (!a) continue;
+        const t = tenMenu(a.textContent);
+        const m = /link\("([^"]*)","([^"]*)","([^"]*)","[^"]*",\d+,\d+,"([^"]*)"\)/.exec(a.getAttribute('href') || '');
+        if (m) {
+          const [, id, config, bucket, param] = m;
+          const ma = DA_PHIEN_DICH[id];
+          const hop = ma && HOP.find((h) => h.ma === ma);
+          muc.push(hop ? { ma, ten: tien_to ? `${tien_to}: ${t}` : t, loai: hop.loai }
+            : { ma: id, ten: tien_to ? `${tien_to}: ${t}` : t, loai: 'khac', goc: urlGoc(`IyLlCc5f5w5fCES.=${config}&CBAkTA9f5o..=${id}${param}${bucket}`) });
+        } else duyet(c, t);
+      }
+    };
+    if (/link\(/.test((a0 && a0.getAttribute('href')) || '')) duyet({ querySelectorAll: () => [li] }, '');
+    else duyet(li, '');
+    if (muc.length) nhom.push({ ten, muc });
+  }
+  return nhom;
+}
+
+/** Các luồng "Tạo văn bản" của hệ thống (chưa phiên dịch form) ⇒ mục mở đúng form tạo của hệ thống. */
+function taoHeThong() {
+  const k = Object.keys(sessionStorage).find((x) => /^vi_get_menu_top_tao_van_ban_/.test(x));
+  const raw = k ? sessionStorage.getItem(k) || '' : '';
+  return raw.split('|').filter(Boolean).map((it) => it.split(',')).filter((b) => b.length >= 6).map((b) => ({
+    ma: `tao_${b[0]}_${b[4].split(':')[0]}`.replace(/[^A-Za-z0-9_.:|-]/g, '_').slice(0, 200), ten: tenMenu(b[1]), loai: 'di',
+    goc: urlGoc(`IyLlCc5f5w5fCES.=${b[5]}&CBAkTA9f5o..=${b[0]}&6yXl=${b[2]}&4BLw6B9k=${b[3]}&DFHl4yAvDx9a5B5fCcbw6B9k3yba=${b[4]}&5ELj3zP1DES.=${b[6] || ''}`),
+  }));
+}
+
 /** Các hộp: hàm phân trang + bộ lọc (tìm kiếm đặt vào khoá `tim`). */
 const HOP = [
   { ma: 'den_ngoai', ten: 'Đến từ ngoài đơn vị', loai: 'den', fn: 'qlvb.van_ban_den.getVanBanDenPaging', loc: { ...LOC_DEN, vbnoibo: '2' }, tim: 'trich_yeu' },
@@ -75,11 +134,24 @@ function dong(r) {
 /** Dòng của lần xem danh sách gần nhất (chi tiết tạm lấy từ đây cho tới khi làm hàm chi tiết). */
 const nho = new Map();
 
-vala.action('vb_thong_tin', { mo_ta: 'Giao diện Văn bản: tên hệ thống, người đăng nhập, các hộp' }, async () => ({
-  he_thong: 'Văn bản Hà Nội',
-  nguoi_dung: await vala.dwr('DataRemoting.getJValue', vala.dwr.expr('qlvb.vanban_di.act_activiti.getUserLogin')),
-  hop: HOP.map(({ ma, ten, loai }) => ({ ma, ten, loai })),
-}));
+vala.action('vb_thong_tin', { mo_ta: 'Giao diện Văn bản: tên hệ thống, người đăng nhập, menu đủ như hệ thống' }, async () => {
+  const nguoi_dung = await vala.dwr('DataRemoting.getJValue', vala.dwr.expr('qlvb.vanban_di.act_activiti.getUserLogin'));
+  let menu = menuHeThong();
+  // Chưa đọc được menu của trang ⇒ ít nhất các hộp đã phiên dịch.
+  if (!menu.some((n) => n.muc.some((m) => !m.goc))) menu = [{ ten: 'Văn bản', muc: HOP.map(({ ma, ten, loai }) => ({ ma, ten, loai })) }, ...menu];
+  const tao = taoHeThong();
+  if (tao.length) menu.unshift({ ten: 'Tạo văn bản', muc: tao });
+  return { he_thong: 'Văn bản Hà Nội', nguoi_dung, menu, tao: [] };
+});
+
+vala.action('vb_dem', { mo_ta: 'Giao diện Văn bản: số văn bản các hộp đã phiên dịch' }, async () => {
+  const out = {};
+  for (const h of HOP) {
+    const dem = await vala.dwr('NEORemoting.getRSet', vala.dwr.expr(h.fn, -1, 20, h.loc));
+    out[h.ma] = { tong: Number((Array.isArray(dem) && dem[0] && dem[0].nor) || 0) };
+  }
+  return out;
+});
 
 vala.action('vb_danh_sach', { mo_ta: 'Giao diện Văn bản: danh sách một hộp' }, async ({ hop, trang = 1, so_dong = 20, tim = '' }) => {
   const h = HOP.find((x) => x.ma === hop) || HOP[0];

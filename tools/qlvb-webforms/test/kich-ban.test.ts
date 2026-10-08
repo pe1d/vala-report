@@ -244,7 +244,9 @@ describe.skipIf(!up)('vala.webform trên WebForms thật', () => {
   describe('phiên dịch vb_* cho giao diện Văn bản chung (docs/van-ban-chung.md)', () => {
     it('vb_thong_tin + vb_danh_sach: hộp, phân trang, tìm, ngày ISO', async () => {
       const page = await dangNhap();
-      expect((await thaoTac(page, 'vb_thong_tin')).result).toMatchObject({ he_thong: 'QLVB Thử nghiệm', hop: expect.arrayContaining([{ ma: 'du_thao', ten: 'Dự thảo', loai: 'di' }]) });
+      expect((await thaoTac(page, 'vb_thong_tin')).result).toMatchObject({ he_thong: 'QLVB Thử nghiệm', tao: [{ ma: 'du_thao', ten: 'Dự thảo văn bản' }],
+        menu: [{ ten: 'Văn bản', muc: expect.arrayContaining([{ ma: 'du_thao', ten: 'Dự thảo', loai: 'di' }]) }] });
+      expect((await thaoTac(page, 'vb_dem')).result).toMatchObject({ tat_ca: { tong: 35 } });
       const r = (await thaoTac(page, 'vb_danh_sach', { hop: 'tat_ca', trang: 1 })).result;
       expect(r).toMatchObject({ tong: 35, so_trang: 4 });
       expect(r.dong).toHaveLength(10);
@@ -272,6 +274,18 @@ describe.skipIf(!up)('vala.webform trên WebForms thật', () => {
       const kt = await thaoTac(await dangNhap('chuyenvien'), 'vb_thuc_hien', { id: '5', thao_tac: 'ket_thuc', y_kien: 'Xong' });
       expect(kt).toEqual({ ok: true, result: { thong_bao: 'Đã kết thúc văn bản' } });
       expect((await xem(5)).tt).toBe('Đã kết thúc');
+    });
+    it('vb_mau_tao + vb_tao: form dự thảo theo khai báo, tạo có tệp ⇒ mã mới, chi tiết hiện tên tệp', async () => {
+      const page = await dangNhap('chuyenvien');
+      const mau = (await thaoTac(page, 'vb_mau_tao', { loai: 'du_thao' })).result;
+      expect(mau.truong.map((t: { ma: string }) => t.ma)).toEqual(['loai_van_ban', 'trich_yeu', 'noi_dung', 'tep']);
+      const loai = mau.truong[0].lua_chon.find((o: { ten: string }) => o.ten === 'Tờ trình').ma;
+      const r = await thaoTac(page, 'vb_tao', { loai: 'du_thao', loai_van_ban: loai, trich_yeu: 'V/v thử tạo từ Vala', noi_dung: 'Nội dung',
+        tep: [{ ten: 'to-trinh.txt', loai: 'text/plain', base64: Buffer.from('xin chào').toString('base64') }] });
+      expect(r).toMatchObject({ ok: true, result: { id: expect.stringMatching(/^\d+$/), thong_bao: 'Đã tạo dự thảo' } });
+      const ct = (await thaoTac(page, 'vb_chi_tiet', { id: r.result.id })).result;
+      expect(ct).toMatchObject({ trich_yeu: 'V/v thử tạo từ Vala', trang_thai: 'Dự thảo', tep: [{ ten: 'to-trinh.txt' }] });
+      expect((await xem(Number(r.result.id))).tt).toBe('Dự thảo');
     });
   });
 });

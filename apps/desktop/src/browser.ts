@@ -27,7 +27,7 @@ import { isPortalUrl, mapToUi, UI_ORIGIN, uiEvents, uiPortalUrl } from './ui-cac
 import { currentPrefs, prefsEvents, setPrefs } from './prefs';
 import { getSettings, setSettings } from './settings';
 import { cachedSources, events, statusOf, type SourceFull } from './sync';
-import { applySubsetOrder, openTarget, reordered, sidebarSections, tabStatus, type TabStatus } from './tabs-model';
+import { applySubsetOrder, openTarget, reordered, sidebarSections, siteOf, tabStatus, type TabStatus } from './tabs-model';
 import { vanBanKeys } from './vanban-model';
 import { pendingUpdate, promptInstall } from './updater';
 import { recordingKey } from './recorder';
@@ -599,10 +599,21 @@ export const vanbanTabOf = (wc: WebContents): { key: string; label: string; goc:
 /** Các trang giao diện Văn bản đang mở (báo đổi ngôn ngữ / sáng tối). */
 export const vanbanUis = (): WebContents[] => [...tabs.values()].map((t) => t.ui?.webContents).filter((w): w is WebContents => !!w && !w.isDestroyed());
 
-/** Chuyển giữa giao diện Văn bản và trang gốc của một ứng dụng văn bản. */
-export function setVanbanGoc(key: string, goc: boolean): void {
+/**
+ * Chuyển giữa giao diện Văn bản và trang gốc của một ứng dụng văn bản. `url` (mục menu chưa phiên dịch) ⇒ mở đúng trang
+ * đó — chỉ nhận địa chỉ cùng tên miền gốc với trang gốc đang mở (phiên dịch không đưa tab sang trang khác được).
+ */
+export function setVanbanGoc(key: string, goc: boolean, url?: string): void {
   const t = tabs.get(key);
   if (!t?.ui) return;
+  const wc = t.view?.webContents;
+  if (goc && url && wc && !wc.isDestroyed()) {
+    try {
+      const to = new URL(url);
+      const from = new URL(wc.getURL() || t.url);
+      if (/^https?:$/.test(to.protocol) && siteOf(to.hostname) === siteOf(from.hostname)) void wc.loadURL(to.toString());
+    } catch { /* địa chỉ hỏng ⇒ chỉ chuyển sang trang gốc */ }
+  }
   t.goc = goc;
   if (active === key) showTab(key); else pushState();
 }
