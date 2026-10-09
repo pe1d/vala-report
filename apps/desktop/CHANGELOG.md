@@ -5,12 +5,14 @@ dùng đọc: ngắn, nói lợi ích, không dùng từ kỹ thuật. Mục nà
 sau khi cập nhật và ở Cài đặt → Giới thiệu. Đóng gói (`pnpm package*`, `scripts/package-win.sh`) dừng nếu bản đang build
 chưa có mục ở đây (src/release-notes.ts, scripts/release-notes.cjs).
 
-## 0.4.1
+## 0.4.2
 
 ### vi
+- Đăng xuất rồi đăng nhập lại bằng SSO: các ứng dụng có trang đăng nhập riêng (như Vala) tự vào bằng phiên SSO, không phải bấm "Đăng nhập bằng SSO" nữa.
 - Ubuntu: khi cập nhật, hộp hỏi mật khẩu quản trị hiện lời nhắn dễ hiểu "Vala Desktop cần quyền quản trị để cài bản cập nhật mới" thay vì một dòng lệnh kỹ thuật (áp dụng từ lần cập nhật sau bản này).
 
 ### en
+- After signing out and back in with SSO, apps with their own sign-in page (such as Vala) sign in with your SSO session by themselves — no need to click "Sign in with SSO" anymore.
 - Ubuntu: when updating, the administrator password prompt now shows a clear message, "Vala Desktop needs administrator permission to install its new version", instead of a technical command line (from the update after this version).
 
 ## 0.4.0

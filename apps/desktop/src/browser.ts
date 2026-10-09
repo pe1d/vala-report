@@ -19,6 +19,7 @@ import { app, BrowserWindow, ipcMain, nativeTheme, screen, shell, WebContentsVie
 import { APP_NAME, ICON, IS_DEV } from './channel';
 import { messages, normLang } from './i18n';
 import { attachAutofill } from './autofill';
+import { attachSsoAuto } from './sso-auto';
 import { attachPackages, injectAll, listActions, packageEvents, packages } from './scripts';
 import { downloadAction, downloadEvents, downloadsState } from './downloads';
 import { recordActions, recordAppVisit } from './local-data';
@@ -468,6 +469,8 @@ function createView(t: Tab): WebContentsView {
   attachPackages(wc);
   // Trang đăng nhập của hệ thống nguồn có mật khẩu đã lưu ⇒ tự đăng nhập (autofill.ts, T08).
   attachAutofill(wc);
+  // Trang đăng nhập riêng của ứng dụng có nút "Đăng nhập bằng SSO" ⇒ app đã có phiên SSO thì bấm hộ (sso-auto.ts).
+  attachSsoAuto(wc);
   // Tab Báo cáo chạy bản giao diện trong máy: trang của cổng trên máy chủ (vd SSO đăng nhập xong chuyển về
   // https://<máy chủ>/#token…) ⇒ mở cùng đường dẫn trong bản trong máy, giữ nguyên query và #.
   if (t.key === 'portal') {
