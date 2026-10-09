@@ -58,7 +58,7 @@ interface ValaTabsApi {
   collapse(): Promise<void>;
   peek(on: boolean): Promise<void>;
   onPeekSlide(cb: (open: boolean) => void): void;
-  overlay(kind: 'profile' | 'apps' | 'search' | 'more' | 'downloads', r: { x: number; y: number; w: number; h: number }): Promise<void>;
+  overlay(kind: 'profile' | 'search' | 'more' | 'downloads', r: { x: number; y: number; w: number; h: number }): Promise<void>;
   onOpenDownloads(cb: () => void): void;
   win(cmd: 'minimize' | 'maximize' | 'close'): Promise<void>;
   onOpenSearch(cb: () => void): void;
@@ -187,7 +187,7 @@ interface ValaTabsApi {
     setIf(n.close, 'aria-label', s.t.close);
   }
 
-  /** Nút "Thêm" (⋯) cuối nhóm Ứng dụng: khung các ứng dụng chưa ghim, ngay bên phải nút. */
+  /** Nút "Thêm" (⋯) cuối nhóm Ứng dụng: khung Tất cả ứng dụng (ghim + chưa ghim, trạng thái đăng nhập) bên phải thanh. */
   const moreEl = document.createElement('button');
   moreEl.type = 'button';
   moreEl.className = 'side-item text-slate-500 dark:text-slate-400';
@@ -328,7 +328,6 @@ interface ValaTabsApi {
     // Thu gọn: ảnh đại diện vẫn ở hàng cuối (đúng chỗ như lúc mở rộng), nút ⊞ lên trên nó.
     $('me').classList.toggle('flex-col-reverse', c);
     $('me').classList.toggle('items-start', c);
-    $('apps-grid').classList.toggle('ml-1', c);
     // Xếp cột thì flex-1 (cơ sở 0) đè chiều cao h-12 của nút hồ sơ ⇒ ảnh đại diện lệch so với lúc mở rộng.
     $('profile').classList.toggle('flex-1', !c);
     display($('profile-text'), !c);
@@ -401,8 +400,6 @@ interface ValaTabsApi {
     setText($('profile-sub'), [s.profile?.email ?? '', s.dev ? 'DEV' : ''].filter(Boolean).join(' · '));
     setIf($('profile'), 'title', s.profile ? `${s.profile.name} — ${s.profile.email}` : s.t.signIn);
     setIf($('profile'), 'aria-label', `${s.t.account}: ${name}`);
-    setIf($('apps-grid'), 'title', s.t.allApps);
-    setIf($('apps-grid'), 'aria-label', s.t.allApps);
     // Bản dev: viền cam quanh ảnh đại diện (thấy được cả khi thu gọn).
     $('avatar').classList.toggle('ring-2', s.dev);
     $('avatar').classList.toggle('ring-orange-500', s.dev);
@@ -438,7 +435,6 @@ interface ValaTabsApi {
   $('header').addEventListener('dblclick', (e) => { if (!(e.target as Element).closest('button')) void api.win('maximize'); });
   // Thu gọn mà chưa đăng nhập: bấm ô ảnh đại diện ⇒ đăng nhập.
   $('profile').addEventListener('click', () => void api.overlay('profile', rect($('profile'))));
-  $('apps-grid').addEventListener('click', () => void api.overlay('apps', rect($('apps-grid'))));
   $('sign-in').addEventListener('click', () => void api.signIn());
   $('update').addEventListener('click', () => void api.installUpdate());
 

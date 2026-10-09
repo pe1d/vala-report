@@ -4,9 +4,10 @@
  * đồng bộ, cập nhật, đăng xuất, thoát), khung ⊞ Tất cả ứng dụng (mở / ghim) hoặc ô tìm kiếm của header (Ctrl+K — đè đúng
  * chỗ ô tìm kiếm, kết quả xổ xuống). Dựng DOM bằng textContent (tiêu đề trang đã xem là chữ của trang web bất kỳ).
  */
-interface OverlayApp { key: string; label: string; favicon: string | null; pinned: boolean; status: 'ok' | 'warn' | 'off' | null }
+type LoginTone = 'ok' | 'warn' | 'off' | 'none';
+interface OverlayApp { key: string; label: string; favicon: string | null; pinned: boolean; status: 'ok' | 'warn' | 'off' | null; login: { tone: LoginTone; text: string } }
 interface OverlayState {
-  kind: 'profile' | 'apps' | 'search' | 'password' | 'more' | 'context' | 'downloads';
+  kind: 'profile' | 'search' | 'password' | 'more' | 'context' | 'downloads';
   anchor: { x: number; y: number; w: number; h: number };
   collapsed: boolean;
   lang: 'vi' | 'en';
@@ -133,42 +134,82 @@ interface ValaOverlayApi {
     return out;
   }
 
-  const DOT: Record<string, string> = { ok: 'bg-emerald-500', warn: 'bg-amber-500', off: 'bg-slate-400' };
 
   /** Biểu tượng ứng dụng: favicon dùng được, không thì chữ cái đầu trong ô màu. */
-  function appIcon(a: OverlayApp): HTMLElement {
-    const box = el('span', 'flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-blue-600 text-[11px] font-semibold text-white dark:bg-blue-500', (a.label.trim()[0] ?? '•').toUpperCase());
+  /**
+   * Nút "Thêm" cuối nhóm Ứng dụng: khung TẤT CẢ ỨNG DỤNG, rộng (người dùng 09/10/2026 — bỏ nút ⊞ cạnh tài khoản): nhóm Đã
+   * ghim / Chưa ghim, mỗi ứng dụng một thẻ có trạng thái đăng nhập (browser.ts appLogin), lọc nhanh "chưa đăng nhập".
+   */
+  const TONE_DOT: Record<LoginTone, string> = { ok: 'bg-emerald-500', warn: 'bg-amber-500', off: 'bg-slate-400', none: 'bg-slate-300 dark:bg-slate-600' };
+  const TONE_TEXT: Record<LoginTone, string> = {
+    ok: 'text-emerald-700 dark:text-emerald-400', warn: 'text-amber-700 dark:text-amber-400',
+    off: 'text-slate-500 dark:text-slate-400', none: 'text-slate-400 dark:text-slate-500',
+  };
+  const notSignedIn = (a: OverlayApp) => a.login.tone === 'warn' || a.login.tone === 'off';
+  /** Đang lọc "chỉ chưa đăng nhập" (mỗi lần mở khung bắt đầu lại từ "tất cả"). */
+  let onlyNot = false;
+
+  function appCard(a: OverlayApp, s: OverlayState): HTMLElement {
+    const t = s.t;
+    const card = el('div', 'group flex items-center gap-2 rounded-xl border border-slate-200 py-2 pl-3 pr-1.5 hover:border-blue-300 hover:bg-blue-50/50 dark:border-slate-700 dark:hover:border-blue-500/60 dark:hover:bg-slate-700/60');
+    const open = el('button', 'flex min-w-0 flex-1 items-center gap-3 text-left');
+    open.type = 'button';
+    const box = el('span', 'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-600 text-sm font-semibold text-white dark:bg-blue-500', (a.label.trim()[0] ?? '•').toUpperCase());
     if (a.favicon) {
-      const img = el('img', 'h-5 w-5');
+      const img = el('img', 'h-6 w-6');
       img.alt = '';
-      img.addEventListener('load', () => { if (img.naturalWidth > 1) { box.className = 'flex h-6 w-6 shrink-0 items-center justify-center'; box.replaceChildren(img); } });
+      img.addEventListener('load', () => { if (img.naturalWidth > 1) { box.className = 'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 dark:bg-slate-700'; box.replaceChildren(img); } });
       img.src = a.favicon;
     }
-    return box;
+    const text = el('span', 'min-w-0 flex-1');
+    text.append(el('span', 'block truncate text-[13px] font-medium', a.label));
+    const st = el('span', `mt-0.5 flex items-center gap-1.5 text-[11px] ${TONE_TEXT[a.login.tone]}`);
+    st.append(el('span', `h-1.5 w-1.5 shrink-0 rounded-full ${TONE_DOT[a.login.tone]}`), el('span', 'truncate', a.login.text));
+    text.append(st);
+    open.append(box, text);
+    open.title = `${a.label} — ${a.login.text}`;
+    open.addEventListener('click', () => void api.openApp(a.key));
+    const pin = el('button', `flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${a.pinned ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400 opacity-0 group-hover:opacity-100 focus:opacity-100'} hover:bg-slate-200 dark:hover:bg-slate-600`);
+    pin.type = 'button';
+    pin.title = a.pinned ? t.unpin : t.pin;
+    pin.setAttribute('aria-label', `${pin.title}: ${a.label}`);
+    pin.setAttribute('aria-pressed', String(a.pinned));
+    pin.append(icon('pin', 'h-4 w-4'));
+    pin.addEventListener('click', () => void api.pin(a.key, !a.pinned).then(render));
+    card.append(open, pin);
+    return card;
   }
 
-  /** Nút "Thêm" cuối nhóm Ứng dụng (như Lark): ứng dụng chưa ghim — bấm mở, 📌 ghim lên thanh bên. */
   function morePanel(s: OverlayState): HTMLElement[] {
     const t = s.t;
-    const out: HTMLElement[] = [el('div', 'px-2.5 pb-0.5 pt-1 text-sm font-semibold', t.moreTitle), el('div', 'px-2.5 pb-1.5 text-xs text-slate-500 dark:text-slate-400', t.moreHint)];
-    const list = s.apps.filter((a) => !a.pinned);
-    if (!list.length) out.push(el('div', 'px-2.5 py-2 text-xs text-slate-500 dark:text-slate-400', t.moreEmpty));
-    for (const a of list) {
-      const row = el('div', 'group flex items-center gap-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700');
-      const open = el('button', 'flex min-w-0 flex-1 items-center gap-2.5 px-2.5 py-1.5 text-left');
-      open.type = 'button';
-      open.append(appIcon(a), el('span', 'min-w-0 flex-1 truncate', a.label));
-      if (a.status) open.append(el('span', `h-2 w-2 shrink-0 rounded-full ${DOT[a.status]}`));
-      open.addEventListener('click', () => void api.openApp(a.key));
-      const pin = el('button', 'mr-1 flex h-6 w-6 shrink-0 items-center justify-center rounded text-slate-400 hover:bg-slate-200 hover:text-blue-600 dark:hover:bg-slate-600 dark:hover:text-blue-400');
-      pin.type = 'button';
-      pin.title = t.pin;
-      pin.setAttribute('aria-label', `${t.pin}: ${a.label}`);
-      pin.append(icon('pin', 'h-3.5 w-3.5'));
-      pin.addEventListener('click', () => void api.pin(a.key, true).then(render));
-      row.append(open, pin);
-      out.push(row);
+    const head = el('div', 'flex items-start gap-3 px-3 pb-1 pt-2');
+    const titles = el('div', 'min-w-0 flex-1');
+    titles.append(el('div', 'text-base font-semibold', t.moreTitle), el('div', 'mt-0.5 text-xs text-slate-500 dark:text-slate-400', t.moreHint));
+    head.append(titles);
+    const nNot = s.apps.filter(notSignedIn).length;
+    if (!nNot) onlyNot = false;
+    if (nNot) {
+      const f = el('button', `shrink-0 rounded-full border px-3 py-1 text-xs font-medium ${onlyNot
+        ? 'border-amber-400 bg-amber-50 text-amber-800 dark:border-amber-600 dark:bg-amber-950 dark:text-amber-300'
+        : 'border-slate-200 text-amber-700 hover:bg-amber-50 dark:border-slate-600 dark:text-amber-400 dark:hover:bg-slate-700'}`,
+        onlyNot ? t.showAll : `${nNot} ${t.notSignedIn}`);
+      f.type = 'button';
+      f.title = onlyNot ? t.showAll : t.onlyNotSignedIn;
+      f.setAttribute('aria-pressed', String(onlyNot));
+      f.addEventListener('click', () => { onlyNot = !onlyNot; load(); });
+      head.append(f);
     }
+    const out: HTMLElement[] = [head];
+    if (!s.apps.length) { out.push(el('div', 'px-3 pb-3 pt-2 text-sm text-amber-700 dark:text-amber-400', t.noApps)); return out; }
+    const list = onlyNot ? s.apps.filter(notSignedIn) : s.apps;
+    for (const [title, items] of [[t.groupPinned, list.filter((a) => a.pinned)], [t.groupOther, list.filter((a) => !a.pinned)]] as const) {
+      if (!items.length) continue;
+      out.push(el('div', 'px-3 pb-1.5 pt-3 text-[11px] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500', `${title} · ${items.length}`));
+      const grid = el('div', 'grid grid-cols-[repeat(auto-fill,minmax(210px,1fr))] gap-1.5 px-1.5');
+      for (const a of items) grid.append(appCard(a, s));
+      out.push(grid);
+    }
+    out.push(el('div', 'h-1.5'));
     return out;
   }
 
@@ -247,39 +288,6 @@ interface ValaOverlayApi {
     }
     return out;
   }
-  function appsPanel(s: OverlayState): HTMLElement[] {
-    const t = s.t;
-    const out: HTMLElement[] = [el('div', 'px-2.5 pb-0.5 pt-1 text-sm font-semibold', t.allApps), el('div', 'px-2.5 pb-2 text-xs text-slate-500 dark:text-slate-400', t.allAppsHint)];
-    if (s.apps.length <= 2 && !s.profile) out.push(el('div', 'px-2.5 pb-2 text-xs text-amber-700 dark:text-amber-400', t.noApps));
-    const grid = el('div', 'grid grid-cols-2 gap-1');
-    for (const a of s.apps) {
-      const card = el('div', 'group relative flex items-center gap-2 rounded-lg border border-transparent px-2 py-2 hover:border-slate-200 hover:bg-slate-50 dark:hover:border-slate-600 dark:hover:bg-slate-700');
-      const open = el('button', 'flex min-w-0 flex-1 items-center gap-2 text-left');
-      open.type = 'button';
-      const box = el('span', 'flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-blue-600 text-[11px] font-semibold text-white dark:bg-blue-500', (a.label.trim()[0] ?? '•').toUpperCase());
-      if (a.favicon) {
-        const img = el('img', 'h-5 w-5');
-        img.alt = '';
-        img.addEventListener('load', () => { if (img.naturalWidth > 1) { box.className = 'flex h-6 w-6 shrink-0 items-center justify-center'; box.replaceChildren(img); } });
-        img.src = a.favicon;
-      }
-      open.append(box, el('span', 'min-w-0 flex-1 truncate', a.label));
-      if (a.status) open.append(el('span', `h-2 w-2 shrink-0 rounded-full ${DOT[a.status]}`));
-      open.addEventListener('click', () => void api.openApp(a.key));
-      const pin = el('button', `flex h-6 w-6 shrink-0 items-center justify-center rounded ${a.pinned ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400 opacity-0 group-hover:opacity-100'} hover:bg-slate-200 dark:hover:bg-slate-600`);
-      pin.type = 'button';
-      pin.title = a.pinned ? t.unpin : t.pin;
-      pin.setAttribute('aria-label', pin.title);
-      pin.setAttribute('aria-pressed', String(a.pinned));
-      pin.append(icon('pin', 'h-3.5 w-3.5'));
-      pin.addEventListener('click', () => void api.pin(a.key, !a.pinned).then(render));
-      card.append(open, pin);
-      grid.append(card);
-    }
-    out.push(grid);
-    return out;
-  }
-
   // ---- ô tìm kiếm (Ctrl+K) ----
   const SECTION: Record<OverlaySection['kind'], string> = { recent: 'secRecent', chats: 'secChats', apps: 'secApps', actions: 'secActions' };
   let searchSeq = 0;
@@ -472,23 +480,38 @@ interface ValaOverlayApi {
       panel.style.maxHeight = `${Math.max(160, window.innerHeight - s.anchor.y - s.anchor.h - 20)}px`;
       return;
     }
-    if (s.kind === 'context' || s.kind === 'more') {
-      // Menu chuột phải: tại con trỏ; "Thêm": bên phải nút. Lật / dời cho khỏi tràn mép cửa sổ.
-      panel.replaceChildren(...(s.kind === 'context' ? contextPanel(s) : morePanel(s)));
-      const w = s.kind === 'context' ? 248 : 288;
+    if (s.kind === 'more') {
+      // Tất cả ứng dụng: khung rộng bên phải thanh bên — rộng tối đa 720px, cao gần hết cửa sổ (cuộn), canh không tràn mép.
+      panel.replaceChildren(...morePanel(s));
+      const left = Math.min(s.anchor.x + s.anchor.w + 12, window.innerWidth - 320);
+      const w = Math.max(300, Math.min(720, window.innerWidth - left - 12));
+      panel.style.width = `${w}px`;
+      panel.style.left = `${Math.max(8, left)}px`;
+      panel.style.bottom = '';
+      panel.style.maxHeight = `${window.innerHeight - 24}px`;
+      panel.style.top = '12px';
+      const h = panel.offsetHeight;
+      // Đặt ngang nút "Thêm" nếu đủ chỗ, không thì đẩy lên cho vừa cửa sổ.
+      panel.style.top = `${Math.max(12, Math.min(s.anchor.y - 8, window.innerHeight - 12 - h))}px`;
+      return;
+    }
+    if (s.kind === 'context') {
+      // Menu chuột phải: tại con trỏ. Lật / dời cho khỏi tràn mép cửa sổ.
+      panel.replaceChildren(...contextPanel(s));
+      const w = 248;
       panel.style.width = `${w}px`;
       panel.style.bottom = '';
-      const x = s.kind === 'context' ? s.anchor.x : s.anchor.x + s.anchor.w + 16;
+      const x = s.anchor.x;
       panel.style.left = `${Math.max(8, Math.min(window.innerWidth - w - 8, x))}px`;
       panel.style.top = `${s.anchor.y}px`;
       const h = panel.offsetHeight;
       if (s.anchor.y + h > window.innerHeight - 8) {
-        panel.style.top = `${Math.max(8, s.kind === 'context' ? s.anchor.y - h : window.innerHeight - 8 - h)}px`;
+        panel.style.top = `${Math.max(8, s.anchor.y - h)}px`;
       }
       return;
     }
-    panel.replaceChildren(...(s.kind === 'profile' ? profileMenu(s) : appsPanel(s)));
-    panel.style.width = s.kind === 'profile' ? '320px' : '360px';
+    panel.replaceChildren(...profileMenu(s));
+    panel.style.width = '320px';
     // Neo: thanh mở rộng ⇒ ngay trên nút (căn trái thanh); thu gọn ⇒ bên phải thanh, đáy ngang nút.
     const left = s.collapsed ? s.anchor.x + s.anchor.w + 8 : Math.max(8, s.anchor.x - 4);
     panel.style.left = `${left}px`;
@@ -498,7 +521,7 @@ interface ValaOverlayApi {
 
   const load = () => void api.state().then(render);
   backdrop.addEventListener('mousedown', () => { if (backdrop.dataset.modal !== 'true') void api.close(); });
-  api.onOpen(load);
+  api.onOpen(() => { onlyNot = false; load(); });
   api.onRefresh(load);
   load();
 })();

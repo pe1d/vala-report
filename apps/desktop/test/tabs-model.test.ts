@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applySubsetOrder, catalogPinned, openTarget, reordered, siteOf, sidebarSections, tabStatus } from '../src/tabs-model';
+import { applySubsetOrder, catalogPinned, cookieMatchesHost, isLoginPage, openTarget, reordered, siteOf, sidebarSections, tabStatus, webLoginTone } from '../src/tabs-model';
 
 describe('openTarget (link mở cửa sổ mới)', () => {
   it('tên miền đơn vị khai "mở trong Vala Desktop" (gồm tên miền con) ⇒ tab trong app dù khác tên miền gốc', () => {
@@ -94,5 +94,28 @@ describe('kéo thả đổi thứ tự trên thanh dọc', () => {
   it('applySubsetOrder: giữ chỗ của mục ngoài nhóm (ứng dụng ghim đang mở vẫn nằm trong danh sách mở)', () => {
     expect(applySubsetOrder(['web:vala', 'x', 'portal', 'y', 'z'], ['z', 'x', 'y'])).toEqual(['web:vala', 'z', 'portal', 'x', 'y']);
     expect(applySubsetOrder(['a', 'b'], [])).toEqual(['a', 'b']);
+  });
+});
+
+describe('khung Ứng dụng — trạng thái đăng nhập trang web', () => {
+  const sso = ['iam.bkav.com'];
+  it('isLoginPage', () => {
+    expect(isLoginPage('https://valabeta.bkav.com/login', sso)).toBe(true);
+    expect(isLoginPage('https://egov.bkav.com/Account/LoginSSO?ReturnUrl=%2f', sso)).toBe(true);
+    expect(isLoginPage('https://iam.bkav.com/authenticationendpoint/login.do', sso)).toBe(true);
+    expect(isLoginPage('https://cong.vn/dang-nhap', sso)).toBe(true);
+    expect(isLoginPage('https://valabeta.bkav.com/messenger?standalone=3', sso)).toBe(false);
+    expect(isLoginPage('https://blog.vn/bai-viet/cach-login-nhanh', sso)).toBe(false);
+  });
+  it('cookieMatchesHost', () => {
+    expect(cookieMatchesHost('.bkav.com', 'valabeta.bkav.com')).toBe(true);
+    expect(cookieMatchesHost('valabeta.bkav.com', 'valabeta.bkav.com')).toBe(true);
+    expect(cookieMatchesHost('iam.bkav.com', 'valabeta.bkav.com')).toBe(false);
+  });
+  it('webLoginTone', () => {
+    expect(webLoginTone({ openUrl: 'https://valabeta.bkav.com/newfeed', ssoHosts: sso, hasCookies: true })).toBe('ok');
+    expect(webLoginTone({ openUrl: 'https://valabeta.bkav.com/login', ssoHosts: sso, hasCookies: true })).toBe('warn');
+    expect(webLoginTone({ openUrl: null, ssoHosts: sso, hasCookies: false })).toBe('off');
+    expect(webLoginTone({ openUrl: null, ssoHosts: sso, hasCookies: true })).toBe('none');
   });
 });

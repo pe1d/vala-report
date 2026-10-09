@@ -76,3 +76,33 @@ export function applySubsetOrder(all: readonly string[], sub: readonly string[])
   let i = 0;
   return all.map((k) => (inSub.has(k) ? sub[i++]! : k));
 }
+
+/** Trạng thái đăng nhập của một ứng dụng trong khung Ứng dụng: ok (đã đăng nhập / đã kết nối), warn (cần đăng nhập),
+ *  off (chưa đăng nhập / chưa kết nối), none (chưa mở — chưa biết). */
+export type AppLoginTone = 'ok' | 'warn' | 'off' | 'none';
+
+/** Trang đang hiện là trang đăng nhập: trang của IdP SSO đơn vị, hoặc đường dẫn kiểu đăng nhập (login, dang-nhap, signin…). */
+export function isLoginPage(url: string, ssoHosts: readonly string[]): boolean {
+  let u: URL;
+  try { u = new URL(url); } catch { return false; }
+  const host = u.hostname.toLowerCase();
+  if (ssoHosts.some((h) => h.toLowerCase().replace(/:\d+$/, '') === host)) return true;
+  // Đoạn đường dẫn BẮT ĐẦU bằng từ khoá (/login, /LoginSSO, /dang-nhap, /login.do) — không bắt "/bai-viet/cach-login".
+  return /(^|\/)(log-?in|sign-?in|dang-?nhap|signon|sso|checklogin|authenticationendpoint)/i.test(u.pathname + u.hash);
+}
+
+/** Cookie `domain` (có thể có dấu chấm đầu) áp cho `host` không — theo quy tắc khớp tên miền của cookie. */
+export const cookieMatchesHost = (domain: string, host: string): boolean => {
+  const d = domain.replace(/^\./, '').toLowerCase();
+  const h = host.toLowerCase();
+  return h === d || h.endsWith(`.${d}`);
+};
+
+/**
+ * Trạng thái đăng nhập của một trang web (không phải hệ thống nguồn): đang mở ⇒ theo trang đang hiện; chưa mở ⇒ không có
+ * cookie nào của trang ⇒ chắc chắn chưa đăng nhập, có cookie ⇒ chưa biết (chỉ biết khi mở).
+ */
+export function webLoginTone(o: { openUrl: string | null; ssoHosts: readonly string[]; hasCookies: boolean }): AppLoginTone {
+  if (o.openUrl && /^https?:/.test(o.openUrl)) return isLoginPage(o.openUrl, o.ssoHosts) ? 'warn' : 'ok';
+  return o.hasCookies ? 'none' : 'off';
+}

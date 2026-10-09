@@ -15,7 +15,7 @@
  * trang khác không gọi được gì.
  */
 import { join } from 'node:path';
-import { app, BrowserWindow, ipcMain, nativeTheme, screen, shell, WebContentsView, type HandlerDetails, type Input, type IpcMainInvokeEvent, type Menu, type WebContents } from 'electron';
+import { app, BrowserWindow, ipcMain, nativeTheme, screen, session, shell, WebContentsView, type HandlerDetails, type Input, type IpcMainInvokeEvent, type Menu, type WebContents } from 'electron';
 import { APP_NAME, ICON, IS_DEV } from './channel';
 import { messages, normLang } from './i18n';
 import { attachAutofill } from './autofill';
@@ -29,7 +29,8 @@ import { isPortalUrl, mapToUi, UI_ORIGIN, uiEvents, uiPortalUrl } from './ui-cac
 import { currentPrefs, prefsEvents, setPrefs } from './prefs';
 import { getSettings, setSettings } from './settings';
 import { cachedSources, events, statusOf, type SourceFull } from './sync';
-import { applySubsetOrder, openTarget, reordered, sidebarSections, siteOf, tabStatus, type TabStatus } from './tabs-model';
+import { applySubsetOrder, cookieMatchesHost, openTarget, reordered, sidebarSections, siteOf, tabStatus, webLoginTone, type AppLoginTone, type TabStatus } from './tabs-model';
+import { ssoHosts } from './sso-session';
 import { vanBanKeys } from './vanban-model';
 import { pendingUpdate, promptInstall } from './updater';
 import { recordingKey } from './recorder';
@@ -37,7 +38,7 @@ import { closeLoginSso, layoutSso } from './login-page';
 
 const M = messages({
   home: 'Vala', reports: 'Báo cáo', newTab: 'Trang', assistant: 'Trợ lý AI',
-  appsSection: 'Ứng dụng', openSection: 'Đang mở', allApps: 'Tất cả ứng dụng', more: 'Thêm', moreTitle: 'Ứng dụng chưa ghim',
+  appsSection: 'Ứng dụng', openSection: 'Đang mở', more: 'Thêm', moreTitle: 'Tất cả ứng dụng',
   back: 'Quay lại (Alt+←)', forward: 'Tiến tới (Alt+→)', reload: 'Tải lại (F5)', collapse: 'Thu gọn thanh bên', expand: 'Mở rộng thanh bên',
   search: 'Tìm kiếm', minimize: 'Thu nhỏ', maximize: 'Phóng to', restore: 'Thu về', closeWindow: 'Đóng (ẩn xuống khay)',
   close: 'Đóng tab (Ctrl+W)', menu: 'Hệ thống nguồn',
@@ -49,7 +50,7 @@ const M = messages({
   status: { ok: 'Đã kết nối', warn: 'Cần đăng nhập lại', off: 'Chưa kết nối' } as Record<TabStatus, string>,
 }, {
   home: 'Vala', reports: 'Reports', newTab: 'Page', assistant: 'AI assistant',
-  appsSection: 'Apps', openSection: 'Open', allApps: 'All apps', more: 'More', moreTitle: 'Unpinned apps',
+  appsSection: 'Apps', openSection: 'Open', more: 'More', moreTitle: 'All apps',
   back: 'Back (Alt+←)', forward: 'Forward (Alt+→)', reload: 'Reload (F5)', collapse: 'Collapse sidebar', expand: 'Expand sidebar',
   search: 'Search', minimize: 'Minimize', maximize: 'Maximize', restore: 'Restore', closeWindow: 'Close (hide to tray)',
   close: 'Close tab (Ctrl+W)', menu: 'Source systems',
@@ -918,7 +919,8 @@ function pushState(): void {
     apps: sec.apps.map((k) => ({ ...itemOf(k, labels.get(k), t, false), fixed: k === defKey })),
     open: sec.open.filter((k) => tabs.has(k)).map((k) => itemOf(k, labels.get(k), t, !tabs.get(k)!.pinned)),
     // Nút "Thêm" cuối nhóm Ứng dụng (như Lark): mở nhanh ứng dụng chưa ghim.
-    more: appDefs().filter((a) => !sec.apps.includes(a.key)).length,
+    // Nút "Thêm" cuối nhóm Ứng dụng: khung Tất cả ứng dụng (ghim + chưa ghim, trạng thái đăng nhập) — có ứng dụng là hiện.
+    more: appDefs().length,
     nav: { back: !!h?.canGoBack(), forward: !!h?.canGoForward(), reload: canReload() },
     // Nút Tải xuống trên header: hiện khi có lịch sử; đang tải ⇒ phần trăm.
     downloads: (() => { const d = downloadsState(); return { has: d.list.length > 0, dang_tai: d.dang_tai, phan_tram: d.phan_tram }; })(),
@@ -1000,7 +1002,7 @@ function registerIpc(): void {
   });
   ipcMain.handle('tabs:overlay', (e, a: { kind?: unknown; x?: unknown; y?: unknown; w?: unknown; h?: unknown }) => {
     own(e);
-    if (a?.kind !== 'profile' && a?.kind !== 'apps' && a?.kind !== 'search' && a?.kind !== 'more' && a?.kind !== 'downloads') return;
+    if (a?.kind !== 'profile' && a?.kind !== 'search' && a?.kind !== 'more' && a?.kind !== 'downloads') return;
     const n = (v: unknown) => Math.round(Number(v) || 0);
     const o = offset(e);
     // Mở từ bản xem nhanh ⇒ neo như thanh mở rộng; bản xem nhanh nhường chỗ cho khung nổi.
@@ -1033,7 +1035,7 @@ function registerIpc(): void {
 // ---- khung nổi (menu hồ sơ, khung ⊞ Tất cả ứng dụng): lớp trong suốt trên cùng, chỉ hiện khi mở ----
 let overlay: WebContentsView | null = null;
 let overlayOpen = false;
-type OverlayKind = 'profile' | 'apps' | 'search' | 'password' | 'more' | 'context' | 'downloads';
+type OverlayKind = 'profile' | 'search' | 'password' | 'more' | 'context' | 'downloads';
 let overlayKind: OverlayKind = 'profile';
 let overlayAnchor = { x: 0, y: 0, w: 0, h: 0 };
 /** Khung nổi mở từ bản xem nhanh (thanh hiện đầy đủ) ⇒ neo như thanh mở rộng dù cài đặt đang thu gọn. */
@@ -1084,6 +1086,32 @@ export function changePassword(): void {
   } else if (acc?.sso_password_url) openTab(acc.sso_password_url);
 }
 
+/** Tên miền đang có cookie trong app — trang chưa mở mà không có cookie nào ⇒ chắc chắn chưa đăng nhập. */
+let cookieDomains: string[] = [];
+async function refreshCookieDomains(): Promise<void> {
+  const list = await session.defaultSession.cookies.get({}).catch(() => []);
+  cookieDomains = [...new Set(list.map((c) => c.domain ?? '').filter(Boolean))];
+}
+
+/** Trạng thái đăng nhập của một ứng dụng cho khung Tất cả ứng dụng (chữ theo ngôn ngữ). */
+function appLogin(a: AppDef, t: (typeof O)['vi']): { tone: AppLoginTone; text: string } {
+  const src = sourceOf(a.key);
+  if (src) { const st = tabStatus(statusOf(src.code)?.result, src.state); return { tone: st, text: t.loginSrc[st] }; }
+  if (a.key === 'portal') return { tone: signedIn() ? 'ok' : 'off', text: t.loginWeb[signedIn() ? 'ok' : 'off'] };
+  const wc = tabs.get(a.key)?.view?.webContents;
+  const openUrl = wc && !wc.isDestroyed() ? wc.getURL() : null;
+  let host = '';
+  try { host = new URL(a.url).hostname; } catch { /* chưa có địa chỉ */ }
+  // Chưa mở mà một tab khác CÙNG MÁY đang đăng nhập (vd Tin nhắn / Danh bạ cùng valabeta.bkav.com với Vala) ⇒ cùng phiên.
+  const sameHost = !openUrl && !!host && [...tabs.values()].some((o) => {
+    const w = o.view?.webContents;
+    if (!w || w.isDestroyed()) return false;
+    try { return new URL(w.getURL()).hostname === host && webLoginTone({ openUrl: w.getURL(), ssoHosts: ssoHosts(), hasCookies: true }) === 'ok'; } catch { return false; }
+  });
+  const tone = sameHost ? 'ok' : webLoginTone({ openUrl, ssoHosts: ssoHosts(), hasCookies: !!host && cookieDomains.some((d) => cookieMatchesHost(d, host)) });
+  return { tone, text: t.loginWeb[tone] };
+}
+
 function openOverlay(kind: OverlayKind, anchor: { x: number; y: number; w: number; h: number }, expanded = false): void {
   if (!win || win.isDestroyed()) return;
   // Mở từ bản xem nhanh ⇒ thanh đầy đủ ở yên bên dưới khung nổi (không co lại làm khung lơ lửng); mở nơi khác ⇒ thôi xem nhanh.
@@ -1092,6 +1120,8 @@ function openOverlay(kind: OverlayKind, anchor: { x: number; y: number; w: numbe
   overlayKind = kind;
   overlayExpanded = expanded;
   overlayAnchor = anchor;
+  // Khung Tất cả ứng dụng: làm mới danh sách tên miền có cookie (trạng thái "chưa đăng nhập" của trang chưa mở) rồi vẽ lại.
+  if (kind === 'more') void refreshCookieDomains().then(() => { if (overlayOpen && overlayKind === 'more' && !v.webContents.isDestroyed()) v.webContents.send('overlay:refresh'); });
   win.contentView.addChildView(v);          // thêm lại ⇒ lên trên cùng
   overlayOpen = true;
   layout();
@@ -1170,7 +1200,7 @@ function overlayState() {
     apps: appDefs().map((a) => {
       const src = sourceOf(a.key);
       return { key: a.key, label: a.label, favicon: tabs.get(a.key)?.favicon ?? a.icon, pinned: pinned.has(a.key),
-        status: src ? tabStatus(statusOf(src.code)?.result, src.state) : null };
+        status: src ? tabStatus(statusOf(src.code)?.result, src.state) : null, login: appLogin(a, t) };
     }),
   };
 }
@@ -1222,13 +1252,16 @@ const O = messages({
   currentPassword: 'Mật khẩu hiện tại', newPassword: 'Mật khẩu mới — ít nhất 8 ký tự, có cả chữ và số', confirmPassword: 'Nhập lại mật khẩu mới',
   passwordMismatch: 'Hai lần nhập mật khẩu mới chưa khớp.', passwordWeak: 'Mật khẩu mới cần ít nhất 8 ký tự, có cả chữ và số.',
   passwordWrong: 'Mật khẩu hiện tại không đúng.', passwordFailed: 'Không đổi được mật khẩu. Kiểm tra kết nối rồi thử lại.', passwordSave: 'Đổi mật khẩu', passwordSaving: 'Đang đổi…', cancel: 'Huỷ',
-  passwordChanged: 'Đã đổi mật khẩu. Lần đăng nhập sau dùng mật khẩu mới.', done: 'Xong', allApps: 'Tất cả ứng dụng', allAppsHint: 'Bấm để mở. Ghim để luôn hiện trên thanh bên.',
+  passwordChanged: 'Đã đổi mật khẩu. Lần đăng nhập sau dùng mật khẩu mới.', done: 'Xong',
   searchPlaceholder: 'Tìm ứng dụng, thao tác, hội thoại…', secRecent: 'Ứng dụng gần đây', secChats: 'Hội thoại gần đây',
   secApps: 'Ứng dụng', secActions: 'Thao tác', secChatsFound: 'Hội thoại', noResults: 'Không tìm thấy kết quả',
   searchEmpty: 'Chưa có lịch sử. Các ứng dụng bạn mở và hội thoại với Trợ lý AI sẽ hiện ở đây.',
   clearHistory: 'Xoá lịch sử', searchHint: '↑ ↓ chọn · Enter mở · Esc đóng',
   pin: 'Ghim lên thanh bên', unpin: 'Bỏ ghim', noApps: 'Đơn vị chưa khai ứng dụng nào. Liên hệ quản trị của đơn vị.',
-  moreTitle: 'Ứng dụng chưa ghim', moreHint: 'Bấm để mở, ghim để luôn hiện trên thanh bên.', moreEmpty: 'Mọi ứng dụng đều đã được ghim.',
+  moreTitle: 'Tất cả ứng dụng', moreHint: 'Bấm để mở. Ghim để luôn hiện trên thanh bên.', groupPinned: 'Đã ghim', groupOther: 'Chưa ghim',
+  notSignedIn: 'chưa đăng nhập', onlyNotSignedIn: 'Chỉ hiện chưa đăng nhập', showAll: 'Hiện tất cả',
+  loginSrc: { ok: 'Đã kết nối', warn: 'Cần đăng nhập lại', off: 'Chưa kết nối' } as Record<TabStatus, string>,
+  loginWeb: { ok: 'Đã đăng nhập', warn: 'Chưa đăng nhập', off: 'Chưa đăng nhập', none: 'Chưa mở' } as Record<AppLoginTone, string>,
   dlTitle: 'Tải xuống', dlEmpty: 'Chưa tải tệp nào.', dlOpen: 'Mở', dlFolder: 'Mở thư mục', dlCancel: 'Huỷ', dlRemove: 'Xoá khỏi danh sách',
   dlClear: 'Xoá lịch sử', dlPaused: 'Tạm dừng', dlDone: 'Đã tải', dlGone: 'Tệp đã bị xoá hoặc chuyển đi', dlCancelled: 'Đã huỷ', dlFailed: 'Lỗi — tải lại từ trang gốc', dlHint: 'Tệp lưu ở thư mục Tải về. Lịch sử chỉ ở máy này, đăng xuất là xoá.',
   ctxPin: 'Ghim lên thanh bên', ctxUnpin: 'Bỏ ghim khỏi thanh bên', ctxClose: 'Đóng tab', ctxOpen: 'Mở',
@@ -1240,13 +1273,16 @@ const O = messages({
   currentPassword: 'Current password', newPassword: 'New password: at least 8 characters, with both letters and numbers', confirmPassword: 'Confirm new password',
   passwordMismatch: "The new passwords don't match.", passwordWeak: 'The new password needs at least 8 characters, with both letters and numbers.',
   passwordWrong: 'Current password is incorrect.', passwordFailed: "Couldn't change the password. Check your connection and try again.", passwordSave: 'Change password', passwordSaving: 'Changing…', cancel: 'Cancel',
-  passwordChanged: 'Password changed. Use the new password next time you sign in.', done: 'Done', allApps: 'All apps', allAppsHint: 'Click to open. Pin to keep it on the sidebar.',
+  passwordChanged: 'Password changed. Use the new password next time you sign in.', done: 'Done',
   searchPlaceholder: 'Search apps, actions, conversations…', secRecent: 'Recent apps', secChats: 'Recent conversations',
   secApps: 'Apps', secActions: 'Actions', secChatsFound: 'Conversations', noResults: 'No results',
   searchEmpty: 'No history yet. Apps you open and conversations with the AI assistant will show up here.',
   clearHistory: 'Clear history', searchHint: '↑ ↓ select · Enter open · Esc close',
   pin: 'Pin to sidebar', unpin: 'Unpin', noApps: "Your organization hasn't set up any apps yet. Contact your administrator.",
-  moreTitle: 'Unpinned apps', moreHint: 'Click to open. Pin to keep it on the sidebar.', moreEmpty: 'All apps are pinned.',
+  moreTitle: 'All apps', moreHint: 'Click to open. Pin to keep it on the sidebar.', groupPinned: 'Pinned', groupOther: 'Not pinned',
+  notSignedIn: 'not signed in', onlyNotSignedIn: 'Show only not signed in', showAll: 'Show all',
+  loginSrc: { ok: 'Connected', warn: 'Needs signing in again', off: 'Not connected' } as Record<TabStatus, string>,
+  loginWeb: { ok: 'Signed in', warn: 'Not signed in', off: 'Not signed in', none: 'Not opened yet' } as Record<AppLoginTone, string>,
   dlTitle: 'Downloads', dlEmpty: 'No downloads yet.', dlOpen: 'Open', dlFolder: 'Show in folder', dlCancel: 'Cancel', dlRemove: 'Remove from list',
   dlClear: 'Clear history', dlPaused: 'Paused', dlDone: 'Downloaded', dlGone: 'File was deleted or moved', dlCancelled: 'Cancelled', dlFailed: 'Failed — download again from the original page', dlHint: 'Files are saved to your Downloads folder. History stays on this computer and is cleared when you sign out.',
   ctxPin: 'Pin to sidebar', ctxUnpin: 'Unpin from sidebar', ctxClose: 'Close tab', ctxOpen: 'Open',
