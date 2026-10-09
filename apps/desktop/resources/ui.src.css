@@ -1,7 +1,8 @@
 @tailwind base;
 
 @layer base {
-  html.dark { color-scheme: dark; }
+  /* KHÔNG đặt color-scheme: dark ở đây — Chromium sẽ tô nền tối đặc lên trang có nền trong suốt (khung nổi, thanh xem
+     nhanh, cột Trợ lý bo góc) ⇒ mất góc bo / che app. */
 
   /* Thanh cuộn chung của app (người dùng 09/10/2026: thanh cuộn mặc định to, sáng, có mũi tên — lệch giao diện tối):
      mảnh, bo tròn, nền trong suốt, không mũi tên; theo sáng / tối. Dùng ::-webkit-scrollbar (bo tròn được) — KHÔNG đặt

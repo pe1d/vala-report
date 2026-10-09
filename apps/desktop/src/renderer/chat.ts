@@ -415,6 +415,10 @@ interface ChatPanelState { mode: 'cot' | 'noi'; context: { key: string; label: s
   if (PANEL) {
     // Khung bo góc trên nền trong suốt (view nền trong suốt); lề gọn cho cột hẹp.
     document.documentElement.style.background = 'transparent';
+    // Nền của <body> được CSS tô lên cả khung trang (khi <html> không có nền) ⇒ góc bo không trong suốt. Chuyển nền vào
+    // khối bên trong; <body> chỉ giữ viền + bo góc + cắt tràn ⇒ góc ngoài trong suốt (thấy nền app phía sau).
+    document.body.classList.remove('bg-white', 'dark:bg-slate-950');
+    (document.body.firstElementChild as HTMLElement).classList.add('bg-white', 'dark:bg-slate-950');
     document.body.classList.add('rounded-xl', 'border', 'border-slate-200', 'dark:border-slate-800');
     $('head').className = 'flex h-11 shrink-0 select-none items-center gap-2 border-b border-slate-200 px-3 dark:border-slate-800';
     $('new-chat').className = 'rounded-lg px-2 py-1 text-xs text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800';

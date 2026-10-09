@@ -318,6 +318,8 @@ function ensureAiFloat(): BrowserWindow {
     resizable: false, skipTaskbar: true, show: false, title: M[getSettings().lang].assistant, icon: ICON,
   });
   f.on('closed', () => { if (aiFloat === f) aiFloat = null; });
+  // Trang gốc của cửa sổ (dưới view Trợ lý) nạp trang trống ⇒ luôn ở trạng thái sẵn sàng (công cụ gỡ lỗi / CDP không chờ mãi).
+  void f.webContents.loadURL('about:blank');
   aiFloat = f;
   return f;
 }
