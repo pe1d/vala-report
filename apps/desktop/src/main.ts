@@ -11,6 +11,7 @@ import { registerSettingsPage } from './settings-page';
 import { registerRecordingPage } from './recording-page';
 import { registerVanbanPage } from './vanban-page';
 import { offerPin } from './pin';
+import { checkAdminAlerts } from './admin-alert';
 import { initErrorReport, refreshCrashIdentity, startCrashReporter } from './error-report';
 import { registerChatPage } from './chat-page';
 import { registerLoginPage } from './login-page';
@@ -48,11 +49,15 @@ function refreshAll() {
 /** Danh mục ứng dụng của đơn vị (quản trị đơn vị khai trên cổng) ⇒ thanh ứng dụng; ứng dụng mặc định nạp sẵn ở nền. */
 const refreshCatalog = () => refreshApps().then(() => { refreshAll(); preloadDefaultApp(); });
 
+/** Quản trị đơn vị: phiên dịch đang lỗi / trang gốc đổi ⇒ thông báo, bấm ⇒ Quản trị → Kịch bản Desktop (admin-alert.ts). */
+const adminAlerts = () => void checkAdminAlerts(() => openAdminTab('kich-ban'));
+
 function startSync() {
   void syncAll().then(refreshAll, refreshAll);
   void refreshPackages();
   void refreshCatalog();
-  if (!syncTimer) syncTimer = setInterval(() => { void syncAll(); void refreshCatalog(); void refreshPackages(); void refreshUi(); }, SYNC_INTERVAL_MS);
+  setTimeout(adminAlerts, 60_000);
+  if (!syncTimer) syncTimer = setInterval(() => { void syncAll(); void refreshCatalog(); void refreshPackages(); void refreshUi(); adminAlerts(); }, SYNC_INTERVAL_MS);
 }
 
 /**

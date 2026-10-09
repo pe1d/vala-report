@@ -287,5 +287,15 @@ describe.skipIf(!up)('vala.webform trên WebForms thật', () => {
       expect(ct).toMatchObject({ trich_yeu: 'V/v thử tạo từ Vala', trang_thai: 'Dự thảo', tep: [{ ten: 'to-trinh.txt' }] });
       expect((await xem(Number(r.result.id))).tt).toBe('Dự thảo');
     });
+    it('giám sát: trang danh sách đủ phụ thuộc + có dấu vân tay; trang khác bỏ qua', async () => {
+      const page = await dangNhap();
+      await page.goto(`${BASE}/VanBan.aspx`);
+      await thaoTac(page, 'vb_thong_tin');
+      const h = await page.evaluate(() => (window as any).__vala.health());
+      expect(h.qlvb_thu).toMatchObject({ thieu: [], phien_ban: expect.stringContaining('ddlTrangThai') });
+      await page.goto(`${BASE}/ChiTiet.aspx?id=1`);
+      await thaoTac(page, 'vb_thong_tin');
+      expect((await page.evaluate(() => (window as any).__vala.health())).qlvb_thu).toEqual({ bo_qua: true });
+    });
   });
 });

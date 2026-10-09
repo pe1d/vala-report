@@ -15,6 +15,7 @@ import { join } from 'node:path';
 import { app, net, type WebContents, type WebFrameMain } from 'electron';
 import { getSettings } from './settings';
 import { reportError } from './error-report';
+import { checkFrameHealth } from './package-health';
 import { matchesUrl, verifyPackage, type SignedFields } from './scripts-verify';
 
 export interface DesktopPackage extends SignedFields {
@@ -101,8 +102,10 @@ async function injectFrame(frame: WebFrameMain | null | undefined) {
     for (const [k, v] of Object.entries(r ?? {})) {
       if (v.ok) continue;
       console.warn(`[kich-ban] ${k} lỗi trên ${new URL(frame.url).host}: ${v.error}`);
-      reportError('kich_ban', `Gói ${k} lỗi khi nạp: ${v.error ?? ''}`, undefined, { goi: k, trang: new URL(frame.url).origin });
+      reportError('kich_ban', `Gói ${k} lỗi khi nạp: ${v.error ?? ''}`, undefined, { goi: k, kieu: 'loi_nap', trang: new URL(frame.url).origin });
     }
+    // Trang chính: kiểm phụ thuộc của các gói vào trang gốc (package-health.ts).
+    if (!frame.parent) checkFrameHealth(frame);
   } catch (e) {
     console.warn(`[kich-ban] không chèn được vào ${frame.url}: ${(e as Error).message}`);
   }

@@ -24,6 +24,14 @@ function chon(options, giaTri, ten) {
   return o.value;
 }
 
+// Giám sát (docs/van-ban-chung.md): trang danh sách phải có các ô phiên dịch dùng; dấu vân tay = tên các trường của form
+// (WebForms không có số phiên bản — đổi trường là đổi giao diện).
+vala.phu_thuoc({
+  khi: () => /\/VanBan\.aspx$/i.test(location.pathname),
+  chon: [id$('gvVanBan'), id$('ddlTrangThai'), id$('txtTuKhoa'), id$('btnTim'), id$('lblTong')],
+  phien_ban: () => [...(document.forms[0]?.elements ?? [])].map((e) => e.name).filter((n) => n && !n.startsWith('__')).sort().join(' '),
+});
+
 const COT = { 'Mã': 'id', 'Số ký hiệu': 'so_ky_hieu', 'Trích yếu': 'trich_yeu', 'Loại': 'loai', 'Trạng thái': 'trang_thai', 'Ngày tạo': 'ngay_tao', 'Người đang xử lý': 'nguoi_xu_ly' };
 const dong = (r) => Object.fromEntries(Object.entries(r).map(([k, v]) => [COT[k] ?? k, k === 'Mã' ? Number(v) : v]));
 

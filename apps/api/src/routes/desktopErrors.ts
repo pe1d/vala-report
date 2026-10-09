@@ -15,6 +15,8 @@ import type { ApiDeps } from '../deps.js';
 const MAX_DUMP = 5 * 1024 * 1024;
 
 async function luu(deps: ApiDeps, e: LoiGui, ai: { tenant: string | null; user: number | null; device: number | null }, dump?: Buffer): Promise<number> {
+  // Lỗi kịch bản gom riêng theo đơn vị (mã gói chỉ có nghĩa trong một đơn vị — tình trạng gói ở packageHealth).
+  const dau = e.loai === 'kich_ban' ? fingerprint({ ...e, thong_bao: `${ai.tenant ?? ''}|${e.thong_bao}` }) : fingerprint(e);
   const r = await withCore(deps.writer, (t) => t.one<{ id: number }>(
     `INSERT INTO core.desktop_errors (dau_van, loai, phien_ban, he_dieu_hanh, thong_bao, stack, ngu_canh, tenant, user_id, device_id, so_lan, dump, dump_bytes)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
@@ -23,10 +25,31 @@ async function luu(deps: ApiDeps, e: LoiGui, ai: { tenant: string | null; user: 
        tenant = EXCLUDED.tenant, user_id = EXCLUDED.user_id, device_id = EXCLUDED.device_id,
        dump = COALESCE(EXCLUDED.dump, core.desktop_errors.dump), dump_bytes = COALESCE(EXCLUDED.dump_bytes, core.desktop_errors.dump_bytes)
      RETURNING id`,
-    [fingerprint(e), e.loai, e.phien_ban, e.he_dieu_hanh, e.thong_bao, e.stack, e.ngu_canh, ai.tenant, ai.user, ai.device, e.so_lan,
+    [dau, e.loai, e.phien_ban, e.he_dieu_hanh, e.thong_bao, e.stack, e.ngu_canh, ai.tenant, ai.user, ai.device, e.so_lan,
      dump ?? null, dump ? dump.length : null]));
   return r.id;
 }
+
+/**
+ * Tình trạng các gói kịch bản (phiên dịch) của một đơn vị, từ lỗi `kich_ban` Desktop gửi về trong 7 ngày: `loi` (thao tác
+ * lỗi / thiếu phụ thuộc / nạp lỗi) hoặc `doi` (trang gốc chỉ đổi phiên bản — nên kiểm). Gói không có ⇒ tốt.
+ */
+export interface PackageHealth { muc: 'loi' | 'doi'; thong_bao: string; lan_cuoi: Date; so_lan: number }
+export async function packageHealth(deps: ApiDeps, tenant: string): Promise<Record<string, PackageHealth>> {
+  const rows = await withCore(deps.writer, (t) => t.any<{ goi: string; loi: boolean; thong_bao: string; lan_cuoi: Date; so_lan: number }>(
+    `SELECT ngu_canh->>'goi' AS goi,
+            bool_or(COALESCE(ngu_canh->>'kieu', 'loi_nap') <> 'doi_phien_ban') AS loi,
+            (array_agg(thong_bao ORDER BY (COALESCE(ngu_canh->>'kieu', '') = 'doi_phien_ban'), lan_cuoi DESC))[1] AS thong_bao,
+            max(lan_cuoi) AS lan_cuoi, sum(so_lan)::int AS so_lan
+       FROM core.desktop_errors
+      WHERE loai = 'kich_ban' AND tenant = $1 AND ngu_canh ? 'goi' AND lan_cuoi > now() - interval '7 days'
+      GROUP BY 1`, [tenant]));
+  return Object.fromEntries(rows.map((r) => [r.goi, { muc: r.loi ? 'loi' : 'doi', thong_bao: r.thong_bao, lan_cuoi: r.lan_cuoi, so_lan: r.so_lan }]));
+}
+
+/** Quản trị đã kiểm / sửa gói ⇒ xoá cảnh báo của gói đó (lỗi mới sẽ tạo cảnh báo mới). */
+export const clearPackageHealth = (deps: ApiDeps, tenant: string, goi: string) => withCore(deps.writer, (t) => t.none(
+  `DELETE FROM core.desktop_errors WHERE loai = 'kich_ban' AND tenant = $1 AND ngu_canh->>'goi' = $2`, [tenant, goi]));
 
 /** /ext/desktop/errors — đăng ký trong extensionRoutes (đã xác thực token thiết bị). */
 export const desktopErrorExtRoutes = (deps: ApiDeps): FastifyPluginAsync => async (app) => {
@@ -41,6 +64,15 @@ export const desktopErrorExtRoutes = (deps: ApiDeps): FastifyPluginAsync => asyn
       if (e) { await luu(deps, e, ai); n++; }
     }
     return { nhan: n };
+  });
+
+  /** Quản trị đơn vị: các gói đang lỗi / trang gốc đổi ⇒ Vala Desktop báo (admin-alert.ts). Người dùng thường ⇒ rỗng. */
+  app.get('/ext/desktop/package-health', async (req) => {
+    if (!req.user.is_ops_admin) return { goi: [] };
+    const h = await packageHealth(deps, currentTenant());
+    const ten = await withTenant(deps.writer, (t) => t.any<{ code: string; ten: string }>('SELECT code, ten FROM desktop_packages'));
+    const byCode = new Map(ten.map((x) => [x.code, x.ten]));
+    return { goi: Object.entries(h).map(([code, x]) => ({ code, ten: byCode.get(code) ?? code, ...x })) };
   });
 };
 

@@ -583,6 +583,35 @@
   dwr.expr = dwrExpr;
   dwr.value = dwrValue;
 
+  /*
+   * Phụ thuộc vào trang gốc (giám sát phiên dịch — docs/van-ban-chung.md): gói khai những gì nó dựa vào để Vala Desktop
+   * kiểm mỗi lần trang tải và báo quản trị khi trang gốc đổi (thiếu hàm / phần tử, đổi phiên bản) — trước khi người dùng
+   * gặp lỗi. vala.phu_thuoc({ khi: () => đúng trang cần kiểm, ham: ['NEORemoting.getRSet'], chon: ['#form1'],
+   * phien_ban: () => chuỗi đặc trưng cho bản build của trang gốc }).
+   */
+  var phuThuoc = new Map();   // mã gói ⇒ khai báo
+  function phu_thuoc(spec) { if (current) phuThuoc.set(current.code, spec || {}); }
+  function coDuongDan(path) {
+    var o = window;
+    var parts = String(path).split('.');
+    for (var i = 0; i < parts.length; i++) { if (o == null) return false; o = o[parts[i]]; }
+    return o != null;
+  }
+  async function health() {
+    var out = {};
+    for (var entry of phuThuoc) {
+      var code = entry[0], spec = entry[1];
+      try {
+        if (spec.khi && !(await spec.khi())) { out[code] = { bo_qua: true }; continue; }
+        var thieu = (spec.ham || []).filter(function (x) { return !coDuongDan(x); })
+          .concat((spec.chon || []).filter(function (x) { try { return !document.querySelector(x); } catch (_) { return true; } }));
+        var pb = spec.phien_ban ? String(await spec.phien_ban()).slice(0, 300) : null;
+        out[code] = { thieu: thieu, phien_ban: pb };
+      } catch (e) { out[code] = { loi: String(e && e.message || e).slice(0, 300) }; }
+    }
+    return out;
+  }
+
   /** Khai báo thao tác có tên: vala.action(ten, fn) hoặc vala.action(ten, { mo_ta, params }, fn). */
   function action(name, meta, fn) {
     if (typeof meta === 'function') { fn = meta; meta = {}; }
@@ -592,7 +621,7 @@
 
   var vala = Object.freeze({
     sleep: sleep, $: $, $$: $$, waitFor: waitFor, click: click, fill: fill, read: read, table: table, form: form,
-    request: request, css: css, log: log, action: action, webform: webform, dwr: dwr,
+    request: request, css: css, log: log, action: action, webform: webform, dwr: dwr, phu_thuoc: phu_thuoc,
   });
 
   Object.defineProperty(window, '__vala', {
@@ -629,6 +658,8 @@
           return out;
         }
       },
+      /** Kết quả kiểm phụ thuộc của các gói: { mã gói: { thieu, phien_ban } | { bo_qua } | { loi } }. */
+      health: health,
       loaded: function () { return Object.fromEntries(loaded); },
       logs: function () { return logs.slice(); },
     }),

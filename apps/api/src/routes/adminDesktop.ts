@@ -5,7 +5,8 @@
  */
 import { Script } from 'node:vm';
 import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
-import { isValidMatch, keyFingerprint, L, langOf, Problem, withTenant, type AuthMethod, type SignedFields, type Tx } from '@vala/core';
+import { currentTenant, isValidMatch, keyFingerprint, L, langOf, Problem, withTenant, type AuthMethod, type SignedFields, type Tx } from '@vala/core';
+import { clearPackageHealth, packageHealth } from './desktopErrors.js';
 import { audit } from '../audit.js';
 import type { ApiDeps } from '../deps.js';
 
@@ -74,7 +75,15 @@ export const adminDesktopRoutes = (deps: ApiDeps): FastifyPluginAsync => async (
               u.ho_ten AS updated_by, length(p.css) AS css_bytes, length(p.script) AS script_bytes
          FROM desktop_packages p LEFT JOIN source_systems ss ON ss.code = p.source_system
          LEFT JOIN app_users u ON u.id = p.updated_by ORDER BY p.code`));
-    return { key_fingerprint: keyFingerprint(deps.packageSigner.publicKey), packages };
+    // Tình trạng từng gói (lỗi / trang gốc đổi) từ báo lỗi của Vala Desktop (routes/desktopErrors.ts).
+    const health = await packageHealth(deps, currentTenant());
+    return { key_fingerprint: keyFingerprint(deps.packageSigner.publicKey), packages: packages.map((p: { code: string }) => ({ ...p, suc_khoe: health[p.code] ?? null })) };
+  });
+
+  app.post<{ Params: { code: string } }>('/admin/desktop-packages/:code/suc-khoe/da-kiem', async (req, reply) => {
+    await clearPackageHealth(deps, currentTenant(), req.params.code);
+    await withTenant(deps.writer, (t) => audit(t, req, 'source_change', { type: 'desktop_package', id: req.params.code }, { op: 'clear_health' }));
+    return reply.status(204).send();
   });
 
   app.get<{ Params: { code: string } }>('/admin/desktop-packages/:code', async (req) => withTenant(deps.writer, async (t) => {

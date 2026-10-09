@@ -17,6 +17,9 @@ const M = messages({
   add: 'Thêm gói', empty: 'Chưa có gói kịch bản nào. Bấm “Thêm gói” để viết kịch bản cho một hệ thống nguồn.',
   search: 'Tìm theo tên, mã, hệ thống, địa chỉ…', unit: 'gói',
   thPackage: 'Gói', thSystem: 'Hệ thống', thMatches: 'Áp dụng cho trang', thVersion: 'Phiên bản', thUpdated: 'Cập nhật',
+  thHealth: 'Tình trạng', healthOk: 'Tốt', healthChanged: 'Trang gốc đổi', healthBroken: 'Đang lỗi',
+  healthTimes: (n: number, at: string) => `${n} lần, gần nhất ${at}`, healthChecked: 'Đã kiểm',
+  healthHint: 'Vala Desktop tự kiểm trang gốc mỗi lần mở: thiếu hàm / phần tử phiên dịch dựa vào, trang gốc đổi phiên bản, thao tác lỗi. Sửa xong (hoặc kiểm thấy không sao) bấm Đã kiểm.',
   disabled: 'Đang tắt', noSystem: '—', edit: 'Sửa', turnOff: 'Tắt', turnOn: 'Bật',
   toggled: (on: boolean, code: string) => on ? `Đã bật ${code}. Vala Desktop nhận gói ở lần kiểm kế tiếp (tối đa 15 phút, hoặc khi mở lại ứng dụng).` : `Đã tắt ${code}. Trang mở sau lần kiểm kế tiếp sẽ không còn chạy gói này.`,
   saved: (ten: string, v: number) => `Đã lưu “${ten}” — bản ${v}. Vala Desktop tải bản mới ở lần kiểm kế tiếp (tối đa 15 phút); trang đang mở nhận ngay khi tải xong.`,
@@ -61,6 +64,9 @@ const M = messages({
   add: 'Add package', empty: 'No script packages yet. Click “Add package” to write scripts for a source system.',
   search: 'Search by name, code, system, address…', unit: 'packages',
   thPackage: 'Package', thSystem: 'System', thMatches: 'Applies to pages', thVersion: 'Version', thUpdated: 'Updated',
+  thHealth: 'Health', healthOk: 'OK', healthChanged: 'Original site changed', healthBroken: 'Failing',
+  healthTimes: (n: number, at: string) => `${n} times, last ${at}`, healthChecked: 'Checked',
+  healthHint: "Vala Desktop checks the original site every time it opens: missing functions / elements the translator relies on, a new site version, failing actions. When fixed (or checked and fine), click Checked.",
   disabled: 'Disabled', noSystem: '—', edit: 'Edit', turnOff: 'Disable', turnOn: 'Enable',
   toggled: (on: boolean, code: string) => on ? `${code} enabled. Vala Desktop picks it up at its next check (within 15 minutes, or when the app reopens).` : `${code} disabled. Pages opened after the next check no longer run it.`,
   saved: (ten: string, v: number) => `Saved “${ten}” — version ${v}. Vala Desktop downloads it at its next check (within 15 minutes); open pages get it as soon as it downloads.`,
@@ -100,6 +106,8 @@ const M = messages({
 interface PackageRow {
   code: string; ten: string; mo_ta: string | null; source_system: string | null; source_ten: string | null; matches: string[];
   version: number; is_enabled: boolean; updated_at: string; updated_by: string | null; css_bytes: number; script_bytes: number;
+  /** Tình trạng từ báo lỗi của Vala Desktop (7 ngày): null ⇒ tốt. */
+  suc_khoe: { muc: 'loi' | 'doi'; thong_bao: string; lan_cuoi: string; so_lan: number } | null;
 }
 interface PackageList { key_fingerprint: string; packages: PackageRow[] }
 interface Version { version: number; ghi_chu: string | null; created_at: string; created_by: string | null; bytes: number }
@@ -144,6 +152,9 @@ export function AdminDesktopScriptsPage() {
   const [note, setNote] = useState<{ tone: 'ok' | 'err' | 'info'; text: string } | null>(null);
   const [editing, setEditing] = useState<string | 'new' | null>(null);
 
+  const checked = async (p: PackageRow) => {
+    try { await api.post(`/admin/desktop-packages/${p.code}/suc-khoe/da-kiem`); list.reload(); } catch (e) { setNote({ tone: 'err', text: ERR(e) }); }
+  };
   const toggle = async (p: PackageRow) => {
     try {
       await api.patch(`/admin/desktop-packages/${p.code}`, { is_enabled: !p.is_enabled });
@@ -178,7 +189,7 @@ export function AdminDesktopScriptsPage() {
       {!!d?.packages.length && !tv.total && <NoMatch q={tv.q} onClear={() => tv.setQ('')} />}
       {!!tv.total && (<>
         <Table>
-          <thead><tr><Th>{t.thPackage}</Th><Th>{t.thSystem}</Th><Th>{t.thMatches}</Th><Th num>{t.thVersion}</Th><Th>{t.thUpdated}</Th><Th /></tr></thead>
+          <thead><tr><Th>{t.thPackage}</Th><Th>{t.thSystem}</Th><Th>{t.thMatches}</Th><Th num>{t.thVersion}</Th><Th>{t.thHealth}</Th><Th>{t.thUpdated}</Th><Th /></tr></thead>
           <tbody>
             {tv.rows.map((p) => (
               <tr key={p.code}>
@@ -187,6 +198,16 @@ export function AdminDesktopScriptsPage() {
                 <Td>{p.source_ten ?? t.noSystem}</Td>
                 <Td><div className="max-w-xs space-y-0.5 font-mono text-xs">{p.matches.map((m) => <div key={m} className="truncate" title={m}>{m}</div>)}</div></Td>
                 <Td num>v{p.version}</Td>
+                <Td>
+                  {!p.suc_khoe ? <Badge tone="ok">{t.healthOk}</Badge> : (
+                    <div className="max-w-xs" title={t.healthHint}>
+                      <Badge tone={p.suc_khoe.muc === 'loi' ? 'err' : 'warn'}>{p.suc_khoe.muc === 'loi' ? t.healthBroken : t.healthChanged}</Badge>
+                      <div className="mt-1 line-clamp-2 text-xs">{p.suc_khoe.thong_bao}</div>
+                      <Muted className="text-xs">{t.healthTimes(p.suc_khoe.so_lan, fmtDateTime(p.suc_khoe.lan_cuoi))}</Muted>
+                      <div className="mt-1"><button type="button" className="text-xs text-blue-700 hover:underline dark:text-blue-400" onClick={() => void checked(p)}>{t.healthChecked}</button></div>
+                    </div>
+                  )}
+                </Td>
                 <Td><div className="text-sm">{fmtDateTime(p.updated_at)}</div>{p.updated_by && <Muted className="text-xs">{p.updated_by}</Muted>}</Td>
                 <Td>
                   <div className="flex justify-end gap-1.5">

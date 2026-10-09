@@ -10,6 +10,16 @@
 // (sf_get_detail_doc), tệp (getFileAttachLst + /qlvbdh/viewfile), tạo văn bản đi (addNew — qua chính form của hệ thống).
 // Văn bản ĐẾN chưa có dữ liệu thật ⇒ tên trường của dòng văn bản đến (pick(...)) còn là dự đoán theo mã trang.
 
+// Giám sát: trang chính sau đăng nhập phải có các hàm phiên dịch dựa vào; dấu vân tay phiên bản = các tệp JS có tham số
+// phiên bản (dwr/engine.js?version=1…) — đổi ⇒ báo quản trị kiểm phiên dịch (docs/van-ban-chung.md).
+vala.phu_thuoc({
+  khi: () => !!document.querySelector('#full_menu'),
+  ham: ['NEORemoting.getRSet', 'DataRemoting.getValue', 'DataRemoting.getJValue', 'DataRemoting.getDoc', 'newVanBanMenuTop', 'get_menu_top_tao_van_ban', 'link', 'csrf_token'],
+  phien_ban: () => [...document.scripts].map((s) => s.src).filter((u) => u && u.includes('?')).map((u) => u.replace(location.origin, '')).sort().join(' '),
+});
+/** Trang gốc thiếu thứ phiên dịch cần ⇒ lỗi mã trang_goc_doi (Vala Desktop báo quản trị). */
+const trangGocDoi = (thieu) => { const e = new Error(`Trang gốc đã đổi, thiếu: ${thieu.join(', ')}`); e.code = 'trang_goc_doi'; return e; };
+
 /** Bộ lọc đúng như trang gốc gửi (máy chủ đọc đủ các khoá) — chỉ đổi khoá cần. */
 const LOC_DEN = {
   ma_dinh_danh: '', trich_yeu: '', kho: 'VAN_BAN_DEN_CA_NHAN', type: '', vbchidao: '', param_menu_congvan_dendi: '', vanbannoibo: '',
@@ -283,6 +293,9 @@ async function moFormTao(loai) {
   window.newVanBanMenuTop(b[0], b[2], b[3], b[4], b[5], b[6]);
   await vala.waitFor(() => { const t = $id('TRICH_YEU'); return t && t.offsetParent ? t : null; }, { timeout: 25000 });
   await vala.sleep(1500);   // form còn nạp danh mục (người ký, đơn vị…)
+  const thieu = ['TRICH_YEU', 'fileUpload', 'PsLLAtbOPA9rRwPt', 'DONVI_SOANTHAO', 'chk_van_ban_tdnv'].filter((id) => !$id(id))
+    .concat(['vbdi_savedoc', 'vbdi_getFileList'].filter((f) => typeof window[f] !== 'function'));
+  if (thieu.length) throw trangGocDoi(thieu);
   return l;
 }
 

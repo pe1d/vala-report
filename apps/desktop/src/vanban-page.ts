@@ -9,6 +9,9 @@ import { app, BrowserWindow, dialog, ipcMain, shell, type IpcMainInvokeEvent, ty
 import { setVanbanGoc, vanbanTabOf, vanbanUis } from './browser';
 import { currentPrefs, prefsEvents } from './prefs';
 import { listActions, runAction } from './scripts';
+import { reportError } from './error-report';
+import { originOf } from './error-report-model';
+import { actionFailureWorthReporting } from './package-health-model';
 import { cleanChiTiet, cleanDanhSach, cleanDem, cleanMauTao, cleanThongTin, isVbAction, MAX_FILES_B64 } from './vanban-model';
 
 /** Chờ trang gốc tải xong và phiên dịch nạp xong (có vb_thong_tin) — trang đăng nhập cũng có (thao tác báo het_phien). */
@@ -78,7 +81,14 @@ export function registerVanbanPage(): void {
     if (!args) return { ok: false, error: 'Dữ liệu gửi quá lớn' };
     if (!t.goc || !(await ready(t.goc))) return { ok: false, code: 'chua_san_sang', error: 'Trang gốc chưa sẵn sàng' };
     const r = await runAction(t.goc, a.name, args, 90_000) as { ok: boolean; result?: unknown; error?: string; code?: string };
-    if (!r.ok) return { ok: false, error: r.error ?? '', code: r.code };
+    if (!r.ok) {
+      // Lỗi không phải hết phiên / nghiệp vụ ⇒ có thể trang gốc đã đổi ⇒ báo quản trị (gói nào khai thao tác này).
+      if (actionFailureWorthReporting(r.code)) {
+        const pkg = (await listActions(t.goc).catch(() => [])).find((x) => x.name === a.name)?.pkg ?? '?';
+        reportError('kich_ban', `Gói ${pkg}: ${a.name} lỗi: ${r.error ?? ''}`, undefined, { goi: pkg, kieu: 'loi_thao_tac', thao_tac: a.name, trang: originOf(t.goc.getURL()) });
+      }
+      return { ok: false, error: r.error ?? '', code: r.code };
+    }
     if (a.name === 'vb_tep') return saveFile(e.sender, r.result, args.mo === true);
     const clean = CLEAN[a.name];
     return { ok: true, result: clean ? clean(r.result) : cleanSent(r.result) };
