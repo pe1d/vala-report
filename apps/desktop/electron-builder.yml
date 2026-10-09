@@ -2,6 +2,11 @@
 #   VALA_HOME_URL=https://vala.donvi.gov.vn/ VALA_URL=https://baocao.donvi.gov.vn pnpm package
 appId: com.bkav.vala.desktop
 productName: Vala Desktop
+# Tên gói npm là "@vala/desktop" ⇒ electron-builder đặt tên gói app của file cài mini "@valadesktop-<v>-x64.nsis.7z".
+# Đặt lại "vala-desktop" (người dùng 09/10/2026). Chỉ đổi tên gói app + thư mục đệm cập nhật; thư mục cài, thư mục dữ liệu
+# (theo productName), mã gỡ cài đặt (theo appId) và tên gói .deb (vala-desktop) giữ nguyên ⇒ máy cũ vẫn tự cập nhật.
+extraMetadata:
+  name: vala-desktop
 artifactName: vala-desktop-${version}-${os}-${arch}.${ext}
 directories:
   output: release
