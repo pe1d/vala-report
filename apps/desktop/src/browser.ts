@@ -333,6 +333,7 @@ function aiDragStart(kind: 'move' | 'resize' | 'width'): void {
   const start = screen.getCursorScreenPoint();
   const b0 = aiView.getBounds();
   const w0 = aiPrefs().w;
+  let ticks = 0;
   aiDrag = {
     until: Date.now() + 60_000,
     timer: setInterval(() => {
@@ -340,14 +341,20 @@ function aiDragStart(kind: 'move' | 'resize' | 'width'): void {
       const p = screen.getCursorScreenPoint();
       const dx = p.x - start.x;
       const dy = p.y - start.y;
-      if (kind === 'width') { aiLive = { ...aiLive, w: Math.round(Math.min(720, Math.max(320, w0 - dx / zoomFactor()))) }; layout(); return; }
+      if (kind === 'width') {
+        aiLive = { ...aiLive, w: Math.round(Math.min(720, Math.max(320, w0 - dx / zoomFactor()))) };
+        layout();
+        // Nền khung trang theo độ rộng cột (thưa nhịp: trạng thái thanh bên khá nặng).
+        if (++ticks % 3 === 0) pushState();
+        return;
+      }
       aiLive = { ...aiLive, rect: kind === 'move' ? { ...b0, x: b0.x + dx, y: b0.y + dy } : { ...b0, width: Math.max(280, b0.width + dx), height: Math.max(240, b0.height + dy) } };
       aiView.setBounds(aiBounds());
     }, 16),
   };
 }
 function aiDragEnd(): void {
-  if (aiDrag) { clearInterval(aiDrag.timer); aiDrag = null; }
+  if (aiDrag) { clearInterval(aiDrag.timer); aiDrag = null; pushState(); }
   if (Object.keys(aiLive).length) { const live = aiLive; aiLive = {}; saveAi({ ...live, ...(live.rect ? { rect: aiView?.getBounds() ?? live.rect } : {}) }); }
 }
 
@@ -1152,7 +1159,8 @@ function pushState(): void {
     // Nút Tải xuống trên header: hiện khi có lịch sử; đang tải ⇒ phần trăm.
     downloads: (() => { const d = downloadsState(); return { has: d.list.length > 0, dang_tai: d.dang_tai, phan_tram: d.phan_tram, su_kien: d.su_kien }; })(),
     // Trợ lý AI (icon ✦ góc phải header): đang mở?
-    ai: { open: aiOpen },
+    // cot: chỗ cột Trợ lý chiếm bên phải (đơn vị CSS) ⇒ nền khung trang (tabs.html #card) chừa ra, không lộ nền trắng.
+    ai: { open: aiOpen, cot: aiOpen && signedIn() && aiPrefs().mode === 'cot' ? aiPrefs().w + 8 : 0 },
     // Chuông thông báo trên header: số chưa đọc (chờ xử lý).
     thongBao: (() => { const d = notificationsState().dem; return { chua_doc: d.chua_doc, cho: d.cho_xu_ly }; })(),
     // Ứng dụng văn bản đang xem ⇒ nút chuyển Giao diện Vala / Trang gốc trên header.
@@ -1218,7 +1226,7 @@ function registerIpc(): void {
   ipcMain.handle('chat:panel-cmd', (e, a: { act?: unknown; kind?: unknown }) => {
     if (!isAiPanel(e.sender)) throw new Error('forbidden');
     if (a?.act === 'state') return { mode: aiPrefs().mode, context: aiContext() };
-    if (a?.act === 'mode') { saveAi({ mode: aiPrefs().mode === 'cot' ? 'noi' : 'cot' }); layout(); raiseChrome(); pushAiContext(); }
+    if (a?.act === 'mode') { saveAi({ mode: aiPrefs().mode === 'cot' ? 'noi' : 'cot' }); layout(); raiseChrome(); pushState(); }
     else if (a?.act === 'full') { toggleAiPanel(false); activate(CHAT); }
     else if (a?.act === 'close') toggleAiPanel(false);
     else if (a?.act === 'drag-start' && (a.kind === 'move' || a.kind === 'resize' || a.kind === 'width')) aiDragStart(a.kind);
