@@ -5,6 +5,28 @@ dùng đọc: ngắn, nói lợi ích, không dùng từ kỹ thuật. Mục nà
 sau khi cập nhật và ở Cài đặt → Giới thiệu. Đóng gói (`pnpm package*`, `scripts/package-win.sh`) dừng nếu bản đang build
 chưa có mục ở đây (src/release-notes.ts, scripts/release-notes.cjs).
 
+## 0.5.0
+
+### vi
+- Trợ lý AI ngay góc phải trên cùng: mở thành cột bên phải trang đang xem (trang tự co lại), hoặc thả nổi thành cửa sổ riêng kéo đi đâu cũng được, kể cả ra ngoài ứng dụng. Trợ lý biết bạn đang xem ứng dụng nào.
+- Trung tâm thông báo: chuông trên cùng báo số thông báo chưa đọc; xem nhanh, lọc theo ứng dụng, bấm để mở đúng chỗ trong ứng dụng, đánh dấu đã xử lý hoặc xoá. Trang Trung tâm thông báo để xử lý hàng loạt.
+- Cỡ chữ theo tài khoản (Cài đặt → Giao diện, menu tài khoản hoặc Ctrl + = / − / 0): phóng to cả ứng dụng, đăng nhập máy khác vẫn giữ.
+- Biểu tượng ứng dụng thống nhất một kiểu; thanh bên chữ và biểu tượng to, rõ hơn.
+- Khung "Tất cả ứng dụng" (nút Thêm) rộng hơn, cho biết ứng dụng nào chưa đăng nhập.
+- Tải tệp: khung Tải xuống tự mở để chọn Tải về hoặc Lưu thành…; nút tải trên cùng có vòng tiến độ; tab mở ra chỉ để tải tự đóng.
+- Tự lưu mật khẩu khi đăng nhập (tắt được ở Cài đặt).
+- Thanh cuộn gọn, hợp giao diện tối.
+
+### en
+- AI assistant in the top-right corner: opens as a column beside the current page (the page shrinks to fit), or floats as a separate window you can drag anywhere, even outside the app. The assistant knows which app you are viewing.
+- Notification center: the bell at the top shows unread notifications; preview, filter by app, click to open the right place in the app, mark as done or remove. A full Notification center page for handling many at once.
+- Text size per account (Settings → Appearance, the account menu, or Ctrl + = / − / 0): zooms the whole app and follows you to other computers.
+- App icons share one consistent style; the sidebar has larger, clearer text and icons.
+- The "All apps" panel (More button) is larger and shows which apps you are not signed in to.
+- Downloads: the Downloads panel opens so you choose Download or Save as…; the download button at the top shows a progress ring; tabs opened only to download close by themselves.
+- Passwords are saved automatically when you sign in (can be turned off in Settings).
+- Slimmer scrollbars that fit the dark theme.
+
 ## 0.4.2
 
 ### vi
