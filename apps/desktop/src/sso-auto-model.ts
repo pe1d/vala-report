@@ -32,6 +32,26 @@ export function shouldAutoSso(o: AutoSsoInput): boolean {
   return o.now - o.lastClick >= RETRY_MS;
 }
 
+/** Bấm SSO xong đợi tối đa chừng này để ứng dụng đăng nhập xong rồi đưa tab về đúng trang của nó. */
+export const RETURN_MS = 2 * 60_000;
+
+/** Trang đăng nhập / bước trung gian của luồng đăng nhập (chưa xong — đừng chuyển trang lúc này). */
+const LOGIN_STEP = /log-?in|sign-?in|dang-?nhap|callback|oauth|sso|auth|token/i;
+
+/**
+ * Sau khi tự đăng nhập SSO, ứng dụng thường về trang chung (vd Vala ⇒ checkLogin ⇒ /start ⇒ bảng tin) chứ không về trang
+ * của tab (Tin nhắn ⇒ /messenger). `cho`: chưa xong đăng nhập (trang đăng nhập / IdP / callback có mã) hoặc đang ở máy
+ * khác; `xong`: đã đúng trang; `chuyen`: đăng nhập xong nhưng sai trang ⇒ chuyển tới `url`.
+ */
+export function returnStep(current: string, home: string): { kind: 'cho' } | { kind: 'xong' } | { kind: 'chuyen'; url: string } {
+  let c: URL, h: URL;
+  try { c = new URL(current); h = new URL(home); } catch { return { kind: 'xong' }; }
+  if (c.host !== h.host || !/^https?:$/.test(c.protocol)) return { kind: 'cho' };
+  if (LOGIN_STEP.test(c.pathname) || c.searchParams.has('code') || c.searchParams.has('ticket')) return { kind: 'cho' };
+  if (c.pathname.replace(/\/+$/, '') === h.pathname.replace(/\/+$/, '') && c.search === h.search) return { kind: 'xong' };
+  return { kind: 'chuyen', url: h.toString() };
+}
+
 /**
  * Script trong trang: tìm nút SSO đang hiện (trang SPA vẽ muộn ⇒ theo dõi 10 giây), bấm một lần. Chỉ khi trang có dấu hiệu
  * là trang đăng nhập (đường dẫn / tiêu đề / chữ "đăng nhập", "login") — tránh bấm nhầm nút SSO ở trang thường.

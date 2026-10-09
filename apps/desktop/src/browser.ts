@@ -470,7 +470,7 @@ function createView(t: Tab): WebContentsView {
   // Trang đăng nhập của hệ thống nguồn có mật khẩu đã lưu ⇒ tự đăng nhập (autofill.ts, T08).
   attachAutofill(wc);
   // Trang đăng nhập riêng của ứng dụng có nút "Đăng nhập bằng SSO" ⇒ app đã có phiên SSO thì bấm hộ (sso-auto.ts).
-  attachSsoAuto(wc);
+  attachSsoAuto(wc, () => homeUrl(t));
   // Tab Báo cáo chạy bản giao diện trong máy: trang của cổng trên máy chủ (vd SSO đăng nhập xong chuyển về
   // https://<máy chủ>/#token…) ⇒ mở cùng đường dẫn trong bản trong máy, giữ nguyên query và #.
   if (t.key === 'portal') {
@@ -810,6 +810,24 @@ const visibleKeys = () => { const sec = sections(); return [CHAT, ...sec.apps, .
 /** Trang web đang xem (nút ◀ ▶ ⟳) — trang cục bộ, giao diện Văn bản ⇒ không có. */
 const activeWc = () => { const t = active && !LOCAL[active] ? tabs.get(active) : undefined; return t && face(t) === t.view ? t.view?.webContents : undefined; };
 
+/** Địa chỉ gốc của tab: trang của ứng dụng lúc mở tab (Tin nhắn ⇒ /messenger…), không phải trang đang đứng. */
+const homeUrl = (t: Tab): string | null => (/^https?:/.test(t.url) ? t.url : null);
+
+/**
+ * Tải lại (nút trên header / F5 / Ctrl+R) ⇒ đưa tab về TRANG GỐC của ứng dụng (người dùng 09/10/2026), không tải lại trang
+ * đang đứng (có thể là trang đăng nhập, trang lỗi, trang lạc). Tab Văn bản: trang gốc về địa chỉ gốc, giao diện Vala tải lại
+ * về màn hình đầu — giữ nguyên chế độ đang xem (Giao diện Vala / Trang gốc).
+ */
+function reloadActive(): void {
+  const t = active && !LOCAL[active] ? tabs.get(active) : undefined;
+  const wc = t?.view?.webContents;
+  if (!t || !wc || wc.isDestroyed()) return;
+  const home = homeUrl(t);
+  if (home) void wc.loadURL(home); else wc.reload();
+  if (t.ui && !t.goc && !t.ui.webContents.isDestroyed()) t.ui.webContents.reload();
+}
+const canReload = () => { const t = active && !LOCAL[active] ? tabs.get(active) : undefined; return !!t?.view && !t.view.webContents.isDestroyed(); };
+
 /** Bấm một mục: đã có tab ⇒ chọn; ứng dụng chưa mở ⇒ mở tab của nó. */
 export function activate(key: string): void {
   if (tabs.has(key)) { showTab(key); return; }
@@ -901,7 +919,7 @@ function pushState(): void {
     open: sec.open.filter((k) => tabs.has(k)).map((k) => itemOf(k, labels.get(k), t, !tabs.get(k)!.pinned)),
     // Nút "Thêm" cuối nhóm Ứng dụng (như Lark): mở nhanh ứng dụng chưa ghim.
     more: appDefs().filter((a) => !sec.apps.includes(a.key)).length,
-    nav: { back: !!h?.canGoBack(), forward: !!h?.canGoForward(), reload: !!wc },
+    nav: { back: !!h?.canGoBack(), forward: !!h?.canGoForward(), reload: canReload() },
     // Nút Tải xuống trên header: hiện khi có lịch sử; đang tải ⇒ phần trăm.
     downloads: (() => { const d = downloadsState(); return { has: d.list.length > 0, dang_tai: d.dang_tai, phan_tram: d.phan_tram }; })(),
     // Ứng dụng văn bản đang xem ⇒ nút chuyển Giao diện Vala / Trang gốc trên header.
@@ -938,7 +956,7 @@ function shortcut(input: Input): boolean {
     if (k) showTab(k);
     return true;
   }
-  if (key === 'F5' || (ctrl && key.toLowerCase() === 'r')) { activeWc()?.reload(); return true; }
+  if (key === 'F5' || (ctrl && key.toLowerCase() === 'r')) { reloadActive(); return true; }
   if (input.alt && key === 'ArrowLeft') { const h = activeWc()?.navigationHistory; if (h?.canGoBack()) h.goBack(); return true; }
   if (input.alt && key === 'ArrowRight') { const h = activeWc()?.navigationHistory; if (h?.canGoForward()) h.goForward(); return true; }
   return false;
@@ -958,11 +976,11 @@ function registerIpc(): void {
   ipcMain.handle('tabs:reorder', (e, a: { group?: unknown; keys?: unknown }) => { own(e); reorderGroup(a?.group, a?.keys); });
   ipcMain.handle('tabs:nav', (e, cmd: unknown) => {
     own(e);
+    if (cmd === 'reload') { reloadActive(); return; }
     const wc = activeWc();
     if (!wc || wc.isDestroyed()) return;
     if (cmd === 'back' && wc.navigationHistory.canGoBack()) wc.navigationHistory.goBack();
     else if (cmd === 'forward' && wc.navigationHistory.canGoForward()) wc.navigationHistory.goForward();
-    else if (cmd === 'reload') wc.reload();
   });
   ipcMain.handle('tabs:collapse', (e) => {
     own(e);

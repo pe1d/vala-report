@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isSsoButtonText, RETRY_MS, shouldAutoSso } from '../src/sso-auto-model';
+import { isSsoButtonText, RETRY_MS, returnStep, shouldAutoSso } from '../src/sso-auto-model';
 
 describe('isSsoButtonText', () => {
   it('nhận nút đăng nhập SSO thường gặp', () => {
@@ -24,5 +24,22 @@ describe('shouldAutoSso', () => {
   it('vừa bấm trên tab này ⇒ chờ', () => {
     expect(shouldAutoSso({ ...base, lastClick: base.now - 1000 })).toBe(false);
     expect(shouldAutoSso({ ...base, lastClick: base.now - RETRY_MS })).toBe(true);
+  });
+});
+
+describe('returnStep', () => {
+  const home = 'https://valabeta.bkav.com/messenger?standalone=3';
+  it('còn đang đăng nhập ⇒ chờ', () => {
+    expect(returnStep('https://valabeta.bkav.com/login', home).kind).toBe('cho');
+    expect(returnStep('https://valabeta.bkav.com/checkLogin?code=abc&ReturnURL=x', home).kind).toBe('cho');
+    expect(returnStep('https://iam.bkav.com/authenticationendpoint/login.do', home).kind).toBe('cho');
+  });
+  it('đăng nhập xong mà về trang chung ⇒ chuyển về trang của tab', () => {
+    expect(returnStep('https://valabeta.bkav.com/newfeed', home)).toEqual({ kind: 'chuyen', url: home });
+    expect(returnStep('https://valabeta.bkav.com/start', home)).toEqual({ kind: 'chuyen', url: home });
+  });
+  it('đã đúng trang ⇒ xong', () => {
+    expect(returnStep('https://valabeta.bkav.com/messenger/?standalone=3', home).kind).toBe('xong');
+    expect(returnStep('https://valabeta.bkav.com/messenger?standalone=3#t=1', home).kind).toBe('xong');
   });
 });
