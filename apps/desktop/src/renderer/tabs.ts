@@ -33,6 +33,8 @@ interface TabsState {
   /** Số ứng dụng chưa ghim ⇒ nút "Thêm" cuối nhóm Ứng dụng (mở nhanh, như Lark). */
   more: number;
   nav: { back: boolean; forward: boolean; reload: boolean };
+  /** Nút Tải xuống: có lịch sử ⇒ hiện; đang tải ⇒ phần trăm (null nếu chưa biết tổng). */
+  downloads: { has: boolean; dang_tai: number; phan_tram: number | null };
   /** Tab đang xem là ứng dụng văn bản ⇒ đang ở giao diện Vala hay trang gốc. */
   vanban: 'vala' | 'goc' | null;
   /** Cửa sổ đang phóng to (nút □ thành "Thu về"). */
@@ -56,7 +58,8 @@ interface ValaTabsApi {
   collapse(): Promise<void>;
   peek(on: boolean): Promise<void>;
   onPeekSlide(cb: (open: boolean) => void): void;
-  overlay(kind: 'profile' | 'apps' | 'search' | 'more', r: { x: number; y: number; w: number; h: number }): Promise<void>;
+  overlay(kind: 'profile' | 'apps' | 'search' | 'more' | 'downloads', r: { x: number; y: number; w: number; h: number }): Promise<void>;
+  onOpenDownloads(cb: () => void): void;
   win(cmd: 'minimize' | 'maximize' | 'close'): Promise<void>;
   onOpenSearch(cb: () => void): void;
   resized(): void;
@@ -352,6 +355,11 @@ interface ValaTabsApi {
       setIf(b, 'title', tip);
       setIf(b, 'aria-label', tip);
     }
+    // Nút Tải xuống: hiện khi có lịch sử; đang tải ⇒ phần trăm (chưa biết tổng ⇒ số tệp đang tải).
+    display($('dl'), s.signedIn && (s.downloads.has || s.downloads.dang_tai > 0));
+    setIf($('dl'), 'title', s.t.downloads);
+    setIf($('dl'), 'aria-label', s.t.downloads);
+    setText($('dl-pct'), s.downloads.dang_tai ? (s.downloads.phan_tram !== null ? `${s.downloads.phan_tram}%` : `${s.downloads.dang_tai}…`) : '');
     // Ứng dụng văn bản: nút chuyển Giao diện Vala / Trang gốc.
     display($('vb-toggle'), s.signedIn && !!s.vanban);
     setIf($('vb-toggle'), 'title', s.t.vbTitle);
@@ -413,6 +421,10 @@ interface ValaTabsApi {
   $('forward').addEventListener('click', () => void api.nav('forward'));
   $('reload').addEventListener('click', () => void api.nav('reload'));
   $('vb-vala').addEventListener('click', () => void api.vanban('vala'));
+  // Khung Tải xuống neo dưới nút (nút đang ẩn ⇒ dưới nút cửa sổ ─).
+  const openDownloads = () => void api.overlay('downloads', rect($('dl').style.display === 'none' ? $('win-min') : $('dl')));
+  $('dl').addEventListener('click', openDownloads);
+  api.onOpenDownloads(openDownloads);
   $('vb-goc').addEventListener('click', () => void api.vanban('goc'));
   $('collapse').addEventListener('click', () => void api.collapse());
   const openSearch = () => void api.overlay('search', rect($('search')));
@@ -436,6 +448,7 @@ interface ValaTabsApi {
   display($('dev-badge'), false);
   display($('win-restore-icon'), false);
   display($('vb-toggle'), false);
+  display($('dl'), false);
   api.onState(render);
   if (PEEK) {
     // Chỉ thanh dọc trên nền trong suốt; thanh có nền, viền, bóng đổ (đè lên trang web bên phải).

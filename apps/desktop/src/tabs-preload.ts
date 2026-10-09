@@ -14,6 +14,7 @@ contextBridge.exposeInMainWorld('valaTabs', {
   overlay: (kind: 'profile' | 'apps' | 'search', r: { x: number; y: number; w: number; h: number }) => ipcRenderer.invoke('tabs:overlay', { kind, ...r }),
   win: (cmd: 'minimize' | 'maximize' | 'close') => ipcRenderer.invoke('tabs:window', cmd),
   onOpenSearch: (cb: () => void) => { ipcRenderer.on('tabs:open-search', () => cb()); },
+  onOpenDownloads: (cb: () => void) => { ipcRenderer.on('tabs:open-downloads', () => cb()); },
   resized: () => ipcRenderer.send('tabs:resized'),
   installUpdate: () => ipcRenderer.invoke('tabs:install-update'),
   signIn: () => ipcRenderer.invoke('tabs:sign-in'),

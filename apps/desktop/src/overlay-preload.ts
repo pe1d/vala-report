@@ -13,5 +13,7 @@ contextBridge.exposeInMainWorld('valaOverlay', {
   clearHistory: () => ipcRenderer.invoke('overlay:clear-history'),
   contextRun: (id: string) => ipcRenderer.invoke('overlay:context-run', id),
   changePassword: (current: string, next: string) => ipcRenderer.invoke('overlay:change-password', { current, next }),
+  download: (id: string, act: string) => ipcRenderer.invoke('overlay:download', { id, act }),
   onOpen: (cb: () => void) => { ipcRenderer.on('overlay:open', () => cb()); },
+  onRefresh: (cb: () => void) => { ipcRenderer.on('overlay:refresh', () => cb()); },
 });

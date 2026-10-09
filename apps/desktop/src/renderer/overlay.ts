@@ -6,7 +6,7 @@
  */
 interface OverlayApp { key: string; label: string; favicon: string | null; pinned: boolean; status: 'ok' | 'warn' | 'off' | null }
 interface OverlayState {
-  kind: 'profile' | 'apps' | 'search' | 'password' | 'more' | 'context';
+  kind: 'profile' | 'apps' | 'search' | 'password' | 'more' | 'context' | 'downloads';
   anchor: { x: number; y: number; w: number; h: number };
   collapsed: boolean;
   lang: 'vi' | 'en';
@@ -21,7 +21,10 @@ interface OverlayState {
   apps: OverlayApp[];
   /** Menu chuột phải của một mục thanh dọc (kind 'context'). */
   context: { title: string; items: Array<{ id: string; label: string; enabled: boolean; checked?: boolean; sep?: boolean; icon?: string; hint?: string }> } | null;
+  /** Khung Tải xuống (downloads.ts): lịch sử mới nhất trước. */
+  downloads: { list: OverlayDownload[]; dang_tai: number; phan_tram: number | null } | null;
 }
+interface OverlayDownload { id: string; ten: string; duong_dan: string; tong: number; da_tai: number; trang_thai: 'dang_tai' | 'tam_dung' | 'xong' | 'huy' | 'loi'; luc: number; nguon: string; mat?: boolean }
 type OverlayItem = { kind: 'app' | 'action' | 'chat'; title: string; sub: string; ref: Record<string, string> };
 interface OverlaySection { kind: 'recent' | 'chats' | 'apps' | 'actions'; items: OverlayItem[] }
 interface ValaOverlayApi {
@@ -36,7 +39,9 @@ interface ValaOverlayApi {
   clearHistory(): Promise<OverlaySection[]>;
   contextRun(id: string): Promise<void>;
   changePassword(current: string, next: string): Promise<{ ok: boolean; type?: string; title?: string; detail?: string }>;
+  download(id: string, act: string): Promise<OverlayState>;
   onOpen(cb: () => void): void;
+  onRefresh(cb: () => void): void;
 }
 
 (() => {
@@ -164,6 +169,67 @@ interface ValaOverlayApi {
       row.append(open, pin);
       out.push(row);
     }
+    return out;
+  }
+
+  /** Khung Tải xuống: mỗi tệp một dòng (tên, tiến độ / trạng thái, dung lượng, nguồn, giờ) + Mở / Mở thư mục / Huỷ / Xoá. */
+  const size = (n: number) => (n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
+  function downloadsPanel(s: OverlayState): HTMLElement[] {
+    const t = s.t;
+    const d = s.downloads;
+    const head = el('div', 'flex items-center gap-2 px-2.5 pb-1 pt-1');
+    head.append(el('div', 'flex-1 text-sm font-semibold', t.dlTitle));
+    if (d?.list.some((x) => x.trang_thai !== 'dang_tai' && x.trang_thai !== 'tam_dung')) {
+      const clear = el('button', 'text-xs text-slate-500 hover:text-slate-800 hover:underline dark:text-slate-400 dark:hover:text-slate-100', t.dlClear);
+      clear.type = 'button';
+      clear.addEventListener('click', () => void api.download('', 'clear').then(render));
+      head.append(clear);
+    }
+    const out: HTMLElement[] = [head];
+    if (!d?.list.length) { out.push(el('div', 'px-2.5 py-3 text-xs text-slate-500 dark:text-slate-400', t.dlEmpty)); return out; }
+    const fmt = (ms: number) => { const d = new Date(ms); const p = (n: number) => String(n).padStart(2, '0'); return `${p(d.getHours())}:${p(d.getMinutes())} ${p(d.getDate())}/${p(d.getMonth() + 1)}`; };
+    for (const x of d.list) {
+      const co = x.trang_thai === 'xong' && !x.mat;
+      const row = el('div', 'group rounded-lg px-2.5 py-2 hover:bg-slate-100 dark:hover:bg-slate-700');
+      const top = el('div', 'flex items-center gap-2');
+      const name = el('button', `min-w-0 flex-1 truncate text-left text-[13px] font-medium${x.mat ? ' text-slate-400 line-through dark:text-slate-500' : ''}`, x.ten);
+      name.type = 'button';
+      name.title = x.duong_dan;
+      if (co) name.addEventListener('click', () => void api.download(x.id, 'open'));
+      top.append(name);
+      const act = (label: string, a: string) => {
+        const b = el('button', 'shrink-0 rounded px-1.5 py-0.5 text-[12px] text-blue-700 hover:bg-blue-50 dark:text-blue-300 dark:hover:bg-slate-600', label);
+        b.type = 'button';
+        b.addEventListener('click', () => void api.download(x.id, a).then(render));
+        return b;
+      };
+      if (co) top.append(act(t.dlOpen, 'open'), act(t.dlFolder, 'folder'));
+      if (x.trang_thai === 'dang_tai' || x.trang_thai === 'tam_dung') top.append(act(t.dlCancel, 'cancel'));
+      else {
+        const rm = el('button', 'flex h-5 w-5 shrink-0 items-center justify-center rounded text-slate-400 opacity-0 hover:bg-slate-200 group-hover:opacity-100 dark:hover:bg-slate-600');
+        rm.type = 'button';
+        rm.title = t.dlRemove;
+        rm.setAttribute('aria-label', `${t.dlRemove}: ${x.ten}`);
+        rm.textContent = '✕';
+        rm.addEventListener('click', () => void api.download(x.id, 'remove').then(render));
+        top.append(rm);
+      }
+      row.append(top);
+      if (x.trang_thai === 'dang_tai' || x.trang_thai === 'tam_dung') {
+        const bar = el('div', 'mt-1.5 h-1.5 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-600');
+        const fill = el('div', `h-full rounded-full ${x.tong > 0 ? 'bg-blue-600 dark:bg-blue-400' : 'w-1/3 animate-pulse bg-blue-400'}`);
+        if (x.tong > 0) fill.style.width = `${Math.min(100, Math.round((x.da_tai / x.tong) * 100))}%`;
+        bar.append(fill);
+        row.append(bar);
+      }
+      const st = x.trang_thai === 'dang_tai' ? `${size(x.da_tai)}${x.tong > 0 ? ` / ${size(x.tong)}` : ''}`
+        : x.trang_thai === 'tam_dung' ? t.dlPaused : x.trang_thai === 'xong' ? (x.mat ? t.dlGone : `${t.dlDone} · ${size(x.tong || x.da_tai)}`)
+        : x.trang_thai === 'huy' ? t.dlCancelled : t.dlFailed;
+      row.append(el('div', `mt-1 truncate text-[11px] ${x.trang_thai === 'loi' ? 'text-red-600 dark:text-red-400' : 'text-slate-500 dark:text-slate-400'}`,
+        [st, x.nguon, fmt(x.luc)].filter(Boolean).join(' · ')));
+      out.push(row);
+    }
+    out.push(el('div', 'px-2.5 pb-1 pt-2 text-[11px] text-slate-400 dark:text-slate-500', t.dlHint));
     return out;
   }
 
@@ -362,6 +428,7 @@ interface ValaOverlayApi {
   function render(s: OverlayState) {
     document.documentElement.lang = s.lang;
     applyTheme();
+    panel.style.maxHeight = '';   // chỉ khung Tải xuống đặt chiều cao tối đa riêng
     // Khung đổi mật khẩu là hộp thoại: nền mờ, bấm ra ngoài KHÔNG đóng (tránh mất chữ đang gõ) — Esc / Huỷ để đóng.
     backdrop.className = s.kind === 'password' ? 'fixed inset-0 bg-black/30' : 'fixed inset-0';
     backdrop.dataset.modal = String(s.kind === 'password');
@@ -394,6 +461,17 @@ interface ValaOverlayApi {
     }
     panel.classList.add('p-1.5', 'overflow-y-auto');
     panel.classList.remove('overflow-hidden');
+    if (s.kind === 'downloads') {
+      // Ngay dưới nút Tải xuống, mép phải thẳng mép phải nút; cao tối đa gần hết cửa sổ (cuộn).
+      panel.replaceChildren(...downloadsPanel(s));
+      const w = Math.min(window.innerWidth - 16, 400);
+      panel.style.width = `${w}px`;
+      panel.style.left = `${Math.max(8, Math.min(window.innerWidth - w - 8, s.anchor.x + s.anchor.w - w))}px`;
+      panel.style.top = `${s.anchor.y + s.anchor.h + 6}px`;
+      panel.style.bottom = '';
+      panel.style.maxHeight = `${Math.max(160, window.innerHeight - s.anchor.y - s.anchor.h - 20)}px`;
+      return;
+    }
     if (s.kind === 'context' || s.kind === 'more') {
       // Menu chuột phải: tại con trỏ; "Thêm": bên phải nút. Lật / dời cho khỏi tràn mép cửa sổ.
       panel.replaceChildren(...(s.kind === 'context' ? contextPanel(s) : morePanel(s)));
@@ -421,5 +499,6 @@ interface ValaOverlayApi {
   const load = () => void api.state().then(render);
   backdrop.addEventListener('mousedown', () => { if (backdrop.dataset.modal !== 'true') void api.close(); });
   api.onOpen(load);
+  api.onRefresh(load);
   load();
 })();

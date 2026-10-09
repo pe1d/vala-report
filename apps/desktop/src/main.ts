@@ -12,6 +12,7 @@ import { registerRecordingPage } from './recording-page';
 import { registerVanbanPage } from './vanban-page';
 import { offerPin } from './pin';
 import { checkAdminAlerts } from './admin-alert';
+import { clearDownloads, initDownloads } from './downloads';
 import { initErrorReport, refreshCrashIdentity, startCrashReporter } from './error-report';
 import { registerChatPage } from './chat-page';
 import { registerLoginPage } from './login-page';
@@ -74,7 +75,7 @@ async function signOut() {
 // Đăng nhập cổng ở tab Báo cáo ⇒ cổng cấp token thiết bị qua cầu nối (account.ts) ⇒ bắt đầu giữ/gửi phiên.
 accountEvents.on('login', () => { refreshAll(); startSync(); });
 // Đăng xuất ⇒ xoá cả lịch sử trang, hội thoại Trợ lý, danh mục thao tác trên máy (có dữ liệu của các hệ thống nguồn).
-accountEvents.on('logout', () => { forgetPackages(); lockCredentials(); clearLocalData(); clearApps(); refreshAll(); refreshCrashIdentity(); });
+accountEvents.on('logout', () => { forgetPackages(); lockCredentials(); clearLocalData(); clearApps(); clearDownloads(); refreshAll(); refreshCrashIdentity(); });
 accountEvents.on('login', refreshCrashIdentity);
 appsEvents.on('changed', refreshAll);
 // Đổi ngôn ngữ / sáng-tối ở bất kỳ đâu ⇒ menu, khay, thanh dọc theo (browser.ts tự báo cổng).
@@ -102,6 +103,7 @@ if (!app.requestSingleInstanceLock()) {
     // Tự khởi động cùng máy — chỉ ở bản đã cài (bản dev chạy bằng binary electron chung). Linux không có
     // setLoginItemSettings ⇒ tự ghi mục autostart (linux.ts).
     initErrorReport();
+    initDownloads();
     applyAutostart();
     applyTheme();
     setNotifyReveal(revealWindow);

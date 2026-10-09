@@ -10,6 +10,8 @@ import { setVanbanGoc, vanbanTabOf, vanbanUis } from './browser';
 import { currentPrefs, prefsEvents } from './prefs';
 import { listActions, runAction } from './scripts';
 import { reportError } from './error-report';
+import { expectDownload, recordSaved } from './downloads';
+import { siteOf } from './tabs-model';
 import { originOf } from './error-report-model';
 import { actionFailureWorthReporting } from './package-health-model';
 import { cleanChiTiet, cleanDanhSach, cleanDem, cleanMauTao, cleanThongTin, isVbAction, MAX_FILES_B64 } from './vanban-model';
@@ -48,7 +50,7 @@ const cleanSent = (v: unknown) => {
  * Tệp đính kèm (vb_tep ⇒ { ten, base64 }): `mo` ⇒ ghi vào thư mục tạm của app rồi mở bằng ứng dụng mặc định của máy;
  * không thì hỏi chỗ lưu (mặc định thư mục Tải về).
  */
-async function saveFile(sender: WebContents, r: unknown, mo: boolean): Promise<{ ok: boolean; error?: string; saved?: string }> {
+async function saveFile(sender: WebContents, r: unknown, mo: boolean, nguon: string): Promise<{ ok: boolean; error?: string; saved?: string }> {
   const o = r && typeof r === 'object' ? (r as Record<string, unknown>) : {};
   if (typeof o.base64 !== 'string' || typeof o.ten !== 'string') return { ok: false, error: 'Phiên dịch không trả tệp' };
   const name = o.ten.replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_').slice(0, 200) || 'tep';
@@ -64,7 +66,9 @@ async function saveFile(sender: WebContents, r: unknown, mo: boolean): Promise<{
   const opts = { defaultPath: join(app.getPath('downloads'), name) };
   const res = win ? await dialog.showSaveDialog(win, opts) : await dialog.showSaveDialog(opts);
   if (res.canceled || !res.filePath) return { ok: false, error: '' };
-  writeFileSync(res.filePath, Buffer.from(o.base64, 'base64'));
+  const buf = Buffer.from(o.base64, 'base64');
+  writeFileSync(res.filePath, buf);
+  recordSaved(res.filePath, nguon.replace(/^https?:\/\//, ''), buf.length);
   return { ok: true, saved: res.filePath };
 }
 
@@ -89,7 +93,20 @@ export function registerVanbanPage(): void {
       }
       return { ok: false, error: r.error ?? '', code: r.code };
     }
-    if (a.name === 'vb_tep') return saveFile(e.sender, r.result, args.mo === true);
+    if (a.name === 'vb_tep') {
+      // Phiên dịch trả địa chỉ tải (cùng hệ thống) ⇒ tải bằng phiên của trang gốc qua trình quản lý tải (tiến độ, lịch sử,
+      // không dồn cả tệp vào bộ nhớ); còn dạng cũ { base64 } ⇒ lưu như trước.
+      const o = r.result && typeof r.result === 'object' ? (r.result as Record<string, unknown>) : {};
+      if (typeof o.url === 'string') {
+        let url: URL;
+        try { url = new URL(o.url, t.goc.getURL()); } catch { return { ok: false, error: 'Địa chỉ tải không hợp lệ' }; }
+        if (!/^https?:$/.test(url.protocol) || siteOf(url.hostname) !== siteOf(new URL(t.goc.getURL()).hostname)) return { ok: false, error: 'Địa chỉ tải không thuộc hệ thống' };
+        expectDownload(url.toString(), { ten: typeof o.ten === 'string' ? o.ten : undefined, mo: args.mo === true });
+        t.goc.downloadURL(url.toString());
+        return { ok: true, dang_tai: true };
+      }
+      return saveFile(e.sender, r.result, args.mo === true, originOf(t.goc.getURL()));
+    }
     const clean = CLEAN[a.name];
     return { ok: true, result: clean ? clean(r.result) : cleanSent(r.result) };
   });

@@ -41,7 +41,7 @@ gốc để đăng nhập. Thao tác không bắt buộc (`vb_dem`, `vb_tep`, `v
 | `vb_dem` | — | `{ <mã mục>: { tong, chua_doc?, qua_han? } }` |
 | `vb_danh_sach` | `{ hop, trang = 1, so_dong = 20, tim?, loc? }` | `{ tong, so_trang, dong: [Dong] }` |
 | `vb_chi_tiet` | `{ id }` | `Dong` + `{ noi_dung?, noi_nhan?, tep: [{ id?, ten, kich_thuoc? }], qua_trinh: [{ luc, nguoi, viec }], thao_tac: [ThaoTac] }` |
-| `vb_tep` | `{ id, tep }` | `{ ten, mime, base64 }` (tệp không có `id` ⇒ chỉ hiện tên) |
+| `vb_tep` | `{ id, tep }` | `{ url, ten }` — địa chỉ tải cùng hệ thống (khuyên dùng: Desktop tải bằng phiên của trang qua trình quản lý tải — tiến độ, lịch sử, không dồn tệp vào bộ nhớ) hoặc `{ ten, mime, base64 }` (tệp không có `id` ⇒ chỉ hiện tên) |
 | `vb_thuc_hien` | `{ id, thao_tac, ...giá trị form }` | `{ thong_bao? }` |
 | `vb_mau_tao` | `{ loai }` | `{ ten, truong: [Truong] }` — form tạo một loại văn bản |
 | `vb_tao` | `{ loai, ...giá trị form }` | `{ id?, thong_bao? }` — có `id` ⇒ giao diện mở văn bản vừa tạo |
@@ -53,6 +53,14 @@ gốc để đăng nhập. Thao tác không bắt buộc (`vb_dem`, `vb_tep`, `v
   giá trị gửi: chữ, mảng mã (`chon` + `nhieu`), ngày `YYYY-MM-DD`, tệp `[{ ten, loai, base64 }]` (tối đa ~25 MB mỗi lần).
 - `ThaoTac` = `{ ma, ten, xac_nhan?, truong: [Truong] }` — giao diện vẽ form rồi gọi `vb_thuc_hien`. Thao tác đổi dữ liệu
   thật (chuyển, kết thúc, phát hành…) nên có `xac_nhan` (câu hỏi xác nhận trước khi gửi).
+
+## Giám sát phiên dịch
+
+Phiên dịch nên khai những gì nó dựa vào trang gốc: `vala.phu_thuoc({ khi, ham, chon, phien_ban })` (bộ hàm kịch bản).
+Vala Desktop kiểm mỗi lần trang gốc tải: thiếu hàm / phần tử, dấu vân tay `phien_ban` khác lần trước, hoặc thao tác `vb_*`
+lỗi (không phải hết phiên / lỗi nghiệp vụ) ⇒ báo về máy chủ. Quản trị → Kịch bản Desktop có cột **Tình trạng** (Đang lỗi /
+Trang gốc đổi, 7 ngày), quản trị đơn vị đang mở Desktop nhận thông báo; sửa xong bấm **Đã kiểm**. Thao tác phát hiện trang
+gốc đổi giữa chừng (vd thiếu ô form) nên ném lỗi mã `trang_goc_doi`.
 
 ## Viết phiên dịch
 

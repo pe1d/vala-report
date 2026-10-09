@@ -20,6 +20,7 @@ import { APP_NAME, ICON, IS_DEV } from './channel';
 import { messages, normLang } from './i18n';
 import { attachAutofill } from './autofill';
 import { attachPackages, injectAll, listActions, packageEvents, packages } from './scripts';
+import { downloadAction, downloadEvents, downloadsState } from './downloads';
 import { recordActions, recordAppVisit } from './local-data';
 import { portalApi } from './account';
 import { appByKey, appKey, canAdmin, catalog, insideDomains, pinnedKeys as catalogPinnedKeys, setAppPinned, setPinnedOrder } from './apps';
@@ -40,7 +41,7 @@ const M = messages({
   search: 'Tìm kiếm', minimize: 'Thu nhỏ', maximize: 'Phóng to', restore: 'Thu về', closeWindow: 'Đóng (ẩn xuống khay)',
   close: 'Đóng tab (Ctrl+W)', menu: 'Hệ thống nguồn',
   signIn: 'Đăng nhập', signInTitle: 'Đăng nhập Vala Desktop', account: 'Tài khoản', admin: 'Quản trị',
-  lightMode: 'Chế độ sáng', darkMode: 'Chế độ tối', recording: 'đang ghi thao tác',
+  lightMode: 'Chế độ sáng', darkMode: 'Chế độ tối', recording: 'đang ghi thao tác', downloads: 'Tải xuống (Ctrl+J)',
   vbVala: 'Giao diện Vala', vbGoc: 'Trang gốc', vbTitle: 'Chuyển giữa giao diện Văn bản của Vala và trang gốc của hệ thống',
   updateTitle: 'Cài bản mới: ứng dụng đóng lại, cài xong tự mở lại',
   updateLabel: (v: string) => `Đã có bản ${v} — Cập nhật`,
@@ -52,7 +53,7 @@ const M = messages({
   search: 'Search', minimize: 'Minimize', maximize: 'Maximize', restore: 'Restore', closeWindow: 'Close (hide to tray)',
   close: 'Close tab (Ctrl+W)', menu: 'Source systems',
   signIn: 'Sign in', signInTitle: 'Sign in to Vala Desktop', account: 'Account', admin: 'Administration',
-  lightMode: 'Light mode', darkMode: 'Dark mode', recording: 'recording actions',
+  lightMode: 'Light mode', darkMode: 'Dark mode', recording: 'recording actions', downloads: 'Downloads (Ctrl+J)',
   vbVala: 'Vala view', vbGoc: 'Original page', vbTitle: "Switch between Vala's documents view and the system's original page",
   updateTitle: 'Install the new version: the app closes, installs and reopens',
   updateLabel: (v: string) => `Version ${v} available — Update`,
@@ -898,6 +899,8 @@ function pushState(): void {
     // Nút "Thêm" cuối nhóm Ứng dụng (như Lark): mở nhanh ứng dụng chưa ghim.
     more: appDefs().filter((a) => !sec.apps.includes(a.key)).length,
     nav: { back: !!h?.canGoBack(), forward: !!h?.canGoForward(), reload: !!wc },
+    // Nút Tải xuống trên header: hiện khi có lịch sử; đang tải ⇒ phần trăm.
+    downloads: (() => { const d = downloadsState(); return { has: d.list.length > 0, dang_tai: d.dang_tai, phan_tram: d.phan_tram }; })(),
     // Ứng dụng văn bản đang xem ⇒ nút chuyển Giao diện Vala / Trang gốc trên header.
     vanban: active && tabs.get(active)?.ui ? (tabs.get(active)!.goc ? 'goc' : 'vala') : null,
     maximized: win.isMaximized(),
@@ -920,6 +923,7 @@ function shortcut(input: Input): boolean {
   if (ctrl && key.toLowerCase() === 'w') { if (active) closeTab(active); return true; }
   if (ctrl && key === ',') { hooks.profileCommand('settings'); return true; }
   if (ctrl && key.toLowerCase() === 'k') { openSearch(); return true; }
+  if (ctrl && key.toLowerCase() === 'j') { openDownloads(); return true; }
   if (ctrl && key === 'Tab') {
     const i = active ? keys.indexOf(active) : 0;
     const next = keys[(i + (input.shift ? -1 : 1) + keys.length) % keys.length];
@@ -975,7 +979,7 @@ function registerIpc(): void {
   });
   ipcMain.handle('tabs:overlay', (e, a: { kind?: unknown; x?: unknown; y?: unknown; w?: unknown; h?: unknown }) => {
     own(e);
-    if (a?.kind !== 'profile' && a?.kind !== 'apps' && a?.kind !== 'search' && a?.kind !== 'more') return;
+    if (a?.kind !== 'profile' && a?.kind !== 'apps' && a?.kind !== 'search' && a?.kind !== 'more' && a?.kind !== 'downloads') return;
     const n = (v: unknown) => Math.round(Number(v) || 0);
     const o = offset(e);
     // Mở từ bản xem nhanh ⇒ neo như thanh mở rộng; bản xem nhanh nhường chỗ cho khung nổi.
@@ -1008,7 +1012,7 @@ function registerIpc(): void {
 // ---- khung nổi (menu hồ sơ, khung ⊞ Tất cả ứng dụng): lớp trong suốt trên cùng, chỉ hiện khi mở ----
 let overlay: WebContentsView | null = null;
 let overlayOpen = false;
-type OverlayKind = 'profile' | 'apps' | 'search' | 'password' | 'more' | 'context';
+type OverlayKind = 'profile' | 'apps' | 'search' | 'password' | 'more' | 'context' | 'downloads';
 let overlayKind: OverlayKind = 'profile';
 let overlayAnchor = { x: 0, y: 0, w: 0, h: 0 };
 /** Khung nổi mở từ bản xem nhanh (thanh hiện đầy đủ) ⇒ neo như thanh mở rộng dù cài đặt đang thu gọn. */
@@ -1036,6 +1040,13 @@ function openSearch(): void {
   if (!win || win.isDestroyed()) return;
   if (overlayOpen && overlayKind === 'search') { closeOverlay(); return; }
   win.webContents.send('tabs:open-search');
+}
+
+/** Khung Tải xuống (Ctrl+J / nút trên header): thanh dọc tự tính chỗ neo dưới nút rồi gọi tabs:overlay. */
+function openDownloads(): void {
+  if (!win || win.isDestroyed()) return;
+  if (overlayOpen && overlayKind === 'downloads') { closeOverlay(); return; }
+  win.webContents.send('tabs:open-downloads');
 }
 
 export const isOverlayContents = (wc: WebContents): boolean => !!overlay && overlay.webContents === wc;
@@ -1130,6 +1141,7 @@ function overlayState() {
     kind: overlayKind, anchor: overlayAnchor, collapsed: !!s.sidebarCollapsed && !overlayExpanded, lang: s.lang, theme: s.theme, dev: IS_DEV,
     isAdmin: canAdmin(),
     context: overlayKind === 'context' ? contextMenu : null,
+    downloads: overlayKind === 'downloads' ? downloadsState() : null,
     t: { ...plain, version: version(app.getVersion()), installUpdate: up ? installUpdate(up.version) : '' },
     profile: s.deviceToken && name ? { name, email: s.user?.email ?? '', initials: initialsOf(name) } : null,
     // Đổi mật khẩu: có mật khẩu Vala ⇒ form ngay trong app; chỉ SSO ⇒ trang đổi mật khẩu của SSO đơn vị (nếu có).
@@ -1146,6 +1158,13 @@ function registerOverlayIpc(): void {
   const own = (e: IpcMainInvokeEvent) => { if (!overlay || e.sender !== overlay.webContents) throw new Error('forbidden'); };
   const COMMANDS: ProfileCommand[] = ['settings', 'admin', 'passwords', 'change-password', 'sync', 'check-update', 'sign-out', 'quit'];
   ipcMain.handle('overlay:state', (e) => { own(e); return overlayState(); });
+  ipcMain.handle('overlay:download', (e, a: { id?: unknown; act?: unknown }) => {
+    own(e);
+    const acts = ['open', 'folder', 'cancel', 'remove', 'clear'] as const;
+    const act = acts.find((x) => x === a?.act);
+    if (act && typeof a?.id === 'string') downloadAction(a.id, act);
+    return overlayState();
+  });
   ipcMain.handle('overlay:close', (e) => { own(e); closeOverlay(); });
   ipcMain.handle('overlay:command', (e, cmd: unknown) => {
     own(e);
@@ -1189,6 +1208,8 @@ const O = messages({
   clearHistory: 'Xoá lịch sử', searchHint: '↑ ↓ chọn · Enter mở · Esc đóng',
   pin: 'Ghim lên thanh bên', unpin: 'Bỏ ghim', noApps: 'Đơn vị chưa khai ứng dụng nào. Liên hệ quản trị của đơn vị.',
   moreTitle: 'Ứng dụng chưa ghim', moreHint: 'Bấm để mở, ghim để luôn hiện trên thanh bên.', moreEmpty: 'Mọi ứng dụng đều đã được ghim.',
+  dlTitle: 'Tải xuống', dlEmpty: 'Chưa tải tệp nào.', dlOpen: 'Mở', dlFolder: 'Mở thư mục', dlCancel: 'Huỷ', dlRemove: 'Xoá khỏi danh sách',
+  dlClear: 'Xoá lịch sử', dlPaused: 'Tạm dừng', dlDone: 'Đã tải', dlGone: 'Tệp đã bị xoá hoặc chuyển đi', dlCancelled: 'Đã huỷ', dlFailed: 'Lỗi — tải lại từ trang gốc', dlHint: 'Tệp lưu ở thư mục Tải về. Lịch sử chỉ ở máy này, đăng xuất là xoá.',
   ctxPin: 'Ghim lên thanh bên', ctxUnpin: 'Bỏ ghim khỏi thanh bên', ctxClose: 'Đóng tab', ctxOpen: 'Mở',
   version: (v: string) => `Phiên bản ${v}`, installUpdate: (v: string) => `Cập nhật lên bản ${v}`,
 }, {
@@ -1205,6 +1226,8 @@ const O = messages({
   clearHistory: 'Clear history', searchHint: '↑ ↓ select · Enter open · Esc close',
   pin: 'Pin to sidebar', unpin: 'Unpin', noApps: "Your organization hasn't set up any apps yet. Contact your administrator.",
   moreTitle: 'Unpinned apps', moreHint: 'Click to open. Pin to keep it on the sidebar.', moreEmpty: 'All apps are pinned.',
+  dlTitle: 'Downloads', dlEmpty: 'No downloads yet.', dlOpen: 'Open', dlFolder: 'Show in folder', dlCancel: 'Cancel', dlRemove: 'Remove from list',
+  dlClear: 'Clear history', dlPaused: 'Paused', dlDone: 'Downloaded', dlGone: 'File was deleted or moved', dlCancelled: 'Cancelled', dlFailed: 'Failed — download again from the original page', dlHint: 'Files are saved to your Downloads folder. History stays on this computer and is cleared when you sign out.',
   ctxPin: 'Pin to sidebar', ctxUnpin: 'Unpin from sidebar', ctxClose: 'Close tab', ctxOpen: 'Open',
   version: (v: string) => `Version ${v}`, installUpdate: (v: string) => `Update to version ${v}`,
 });
@@ -1232,6 +1255,11 @@ export function initBrowser(h: BrowserHooks): void {
   });
   registerIpc();
   registerOverlayIpc();
+  // Tiến độ tải đổi ⇒ nút trên header; khung Tải xuống đang mở ⇒ vẽ lại.
+  downloadEvents.on('changed', () => {
+    pushState();
+    if (overlay && overlayOpen && overlayKind === 'downloads' && !overlay.webContents.isDestroyed()) overlay.webContents.send('overlay:refresh');
+  });
   events.on('status', refreshBrowser);
   packageEvents.on('changed', () => {
     for (const t of tabs.values()) if (t.view) injectAll(t.view.webContents);

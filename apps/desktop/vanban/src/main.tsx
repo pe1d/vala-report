@@ -35,6 +35,7 @@ const M = messages({
   fSo: 'Số ký hiệu', fCoQuan: 'Cơ quan ban hành', fNgay: 'Ngày', fHan: 'Hạn xử lý', fTrangThai: 'Trạng thái', fNguoi: 'Người xử lý',
   fLoai: 'Loại văn bản', fDoKhan: 'Độ khẩn', fNoiNhan: 'Nơi nhận', more: 'Thông tin khác',
   content: 'Nội dung', files: 'Tệp đính kèm', history: 'Quá trình xử lý', save: 'Tải về', open: 'Mở', saved: (p: string) => `Đã lưu ${p}`,
+  downloading: 'Đang tải — xem tiến độ ở nút Tải xuống trên cùng (Ctrl+J).',
   overdue: (n: number) => `Quá hạn ${n} ngày`, dueToday: 'Hạn hôm nay', dueIn: (n: number) => `Còn ${n} ngày`, unread: 'Chưa đọc',
   cancel: 'Huỷ', confirm: 'Xác nhận', required: (f: string) => `Chưa điền ${f}`, tooBig: (f: string) => `${f}: tệp quá lớn (tối đa 25 MB mỗi lần gửi)`,
   filter: 'Lọc', none: 'Chưa chọn', all: 'Tất cả',
@@ -51,6 +52,7 @@ const M = messages({
   fSo: 'Number', fCoQuan: 'Issued by', fNgay: 'Date', fHan: 'Due', fTrangThai: 'Status', fNguoi: 'Handled by',
   fLoai: 'Type', fDoKhan: 'Urgency', fNoiNhan: 'Recipients', more: 'Other details',
   content: 'Content', files: 'Attachments', history: 'Processing history', save: 'Download', open: 'Open', saved: (p: string) => `Saved ${p}`,
+  downloading: 'Downloading — see progress on the Downloads button at the top (Ctrl+J).',
   overdue: (n: number) => `${n} days overdue`, dueToday: 'Due today', dueIn: (n: number) => `${n} days left`, unread: 'Unread',
   cancel: 'Cancel', confirm: 'Confirm', required: (f: string) => `${f} is required`, tooBig: (f: string) => `${f}: files too large (25 MB per send)`,
   filter: 'Filter', none: 'Nothing selected', all: 'All',
@@ -307,8 +309,8 @@ function Detail({ id, system, onClose, onChanged, flash, t, lang }: { id: string
   const load = useCallback(() => { setErr(null); setCt(null); call<ChiTiet>('vb_chi_tiet', { id }).then(setCt, setErr); }, [id]);
   useEffect(() => { setNote(flash); load(); }, [load, flash]);
   const file = async (tep: string, mo: boolean) => {
-    const r = await bridge.run<never>('vb_tep', { id, tep, mo }) as { ok: boolean; error?: string; saved?: string };
-    setNote(r.ok ? (r.saved ? t.saved(r.saved) : '') : r.error ? `${t.failed}: ${r.error}` : '');
+    const r = await bridge.run<never>('vb_tep', { id, tep, mo }) as { ok: boolean; error?: string; saved?: string; dang_tai?: boolean };
+    setNote(r.ok ? (r.dang_tai ? t.downloading : r.saved ? t.saved(r.saved) : '') : r.error ? `${t.failed}: ${r.error}` : '');
   };
   const h = ct && !finished(ct.trang_thai) ? due(ct.han_xu_ly, t) : null;
   return (

@@ -255,19 +255,11 @@ vala.action('vb_chi_tiet', { mo_ta: 'Giao diện Văn bản: chi tiết, tệp, 
   };
 });
 
-vala.action('vb_tep', { mo_ta: 'Giao diện Văn bản: nội dung một tệp đính kèm' }, async ({ tep }) => {
+vala.action('vb_tep', { mo_ta: 'Giao diện Văn bản: địa chỉ tải một tệp đính kèm (Vala Desktop tải qua trình quản lý tải)' }, async ({ tep }) => {
   const ma = String(tep || '');
   if (!/^[A-Za-z0-9+/=_-]{4,200}$/.test(ma)) throw new Error('Mã tệp không hợp lệ');
-  // viewfile nhận mã tệp đã mã hoá base64 và trả thẳng nội dung tệp (nhị phân) ⇒ đọc bytes rồi tự mã hoá base64.
-  const res = await fetch(`/qlvbdh/viewfile?file=${encodeURIComponent(btoa(ma))}&TFbm5O..=dmI~&version=1`, { credentials: 'include' });
-  const bytes = new Uint8Array(await res.arrayBuffer());
-  if (!res.ok || !bytes.length || /^\s*</.test(new TextDecoder().decode(bytes.slice(0, 64)))) throw new Error('Hệ thống không trả tệp');
-  let bin = '';
-  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
-  const base64 = btoa(bin);
-  const ten = tenTep.get(ma) || 'tep';
-  const mime = /\.pdf$/i.test(ten) ? 'application/pdf' : /\.docx?$/i.test(ten) ? 'application/msword' : 'application/octet-stream';
-  return { ten, mime, base64 };
+  // viewfile nhận mã tệp đã mã hoá base64 và trả thẳng nội dung tệp ⇒ Desktop tải bằng phiên của trang (tiến độ, lịch sử).
+  return { url: `${location.origin}/qlvbdh/viewfile?file=${encodeURIComponent(btoa(ma))}&TFbm5O..=dmI~&version=1`, ten: tenTep.get(ma) || 'tep' };
 });
 
 // ---- tạo văn bản đi: dùng chính form của hệ thống (hệ thống tự dựng ~90 trường của addNew như khi người dùng bấm) ----
