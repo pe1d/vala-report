@@ -25,6 +25,8 @@ export interface Settings {
   autostart?: boolean;
   /** Tự cài bản mới (tải ngầm, cài lúc rảnh / khi thoát rồi mở lại). Không đặt ⇒ bật (người dùng chốt 08/10/2026). */
   autoUpdate?: boolean;
+  /** Tự lưu mật khẩu khi người dùng đăng nhập một hệ thống / SSO (autofill.ts), không hỏi. Không đặt ⇒ bật (09/10/2026). */
+  autoSavePasswords?: boolean;
   /** Tự gửi báo lỗi / crash về máy chủ Vala (error-report.ts). Không đặt ⇒ bật. */
   errorReport?: boolean;
   /** Đã ghim / đã hướng dẫn ghim vào thanh tác vụ (dock) lần đầu mở bản cài (pin.ts) — chỉ làm một lần. */

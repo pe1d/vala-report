@@ -8,12 +8,13 @@
  *     ({ username, password }), không thì tự tìm ô tên đăng nhập + mật khẩu, điền rồi bấm đăng nhập.
  *   - Đăng nhập tự động lỗi (form đăng nhập lại hiện trong 90 giây) ⇒ dừng tự đăng nhập hệ thống đó cho tới khi người dùng
  *     lưu mật khẩu mới — không thử lại liên tục (tránh khoá tài khoản nguồn). Thêm chặn cứng: tối đa 3 lần / giờ / nguồn.
- *   - Người dùng tự đăng nhập ⇒ hỏi "Lưu mật khẩu?" (như trình duyệt); preload chỉ gửi khi host là host đăng nhập của nguồn.
+ *   - Người dùng tự đăng nhập ⇒ tự lưu mật khẩu + báo (mặc định; tắt ở Cài đặt → Mật khẩu thì hỏi "Lưu mật khẩu?" như trình
+ *     duyệt); preload chỉ gửi khi host là host đăng nhập của nguồn. "Không bao giờ cho hệ thống này" vẫn được tôn trọng.
  *   - Phiên hết hạn ⇒ windows.ts gọi tryAutoRelogin: mở nền trang đăng nhập, phần trên tự điền, cookie mới tự gửi lên Vala.
  */
 import { BrowserWindow, dialog, ipcMain, type IpcMainInvokeEvent, type WebContents, type WebFrameMain } from 'electron';
 import { notify } from './notify';
-import { backgroundSourceTab, showSourceTab } from './browser';
+import { backgroundSourceTab, openSettingsTab, showSourceTab } from './browser';
 import { neverSave, sameAsSaved, saveCredential, savedCredential, secureStorageAvailable, setNeverSave, useCredential } from './credentials';
 import { messages } from './i18n';
 import { runAction } from './scripts';
@@ -27,16 +28,20 @@ const M = messages({
   saveMessage: (ten: string, user: string) => `Lưu mật khẩu ${ten} của tài khoản ${user} để Vala Desktop tự đăng nhập lại khi phiên hết hạn?`,
   saveDetail: 'Mật khẩu được mã hoá bằng kho mật khẩu của hệ điều hành trên máy này, chỉ dùng để đăng nhập đúng hệ thống đó trong Vala Desktop, không gửi lên máy chủ Vala. Xoá được trong Cài đặt.',
   save: 'Lưu', later: 'Lúc khác', never: 'Không bao giờ cho hệ thống này',
+  savedTitle: (ten: string) => `Đã lưu mật khẩu ${ten}`,
+  savedBody: (user: string) => `Tài khoản ${user}. Vala Desktop sẽ tự đăng nhập lại khi phiên hết hạn. Bấm để xem hoặc xoá trong Cài đặt.`,
   failedTitle: (ten: string) => `Không tự đăng nhập được ${ten}`,
-  failedBody: 'Mật khẩu đã lưu có thể đã đổi. Đăng nhập tay một lần — Vala Desktop sẽ hỏi lưu mật khẩu mới.',
+  failedBody: 'Mật khẩu đã lưu có thể đã đổi. Đăng nhập tay một lần — Vala Desktop sẽ lưu mật khẩu mới.',
   ssoName: (host: string) => `SSO của đơn vị (${host})`,
 }, {
   saveTitle: (ten: string) => `Save ${ten} password?`,
   saveMessage: (ten: string, user: string) => `Save the ${ten} password for ${user} so Vala Desktop can sign in again when the session expires?`,
   saveDetail: 'The password is encrypted with your operating system’s password store on this computer, used only to sign in to that system inside Vala Desktop, and never sent to the Vala server. You can delete it in Settings.',
   save: 'Save', later: 'Not now', never: 'Never for this system',
+  savedTitle: (ten: string) => `${ten} password saved`,
+  savedBody: (user: string) => `Account ${user}. Vala Desktop will sign in again when the session expires. Click to view or delete it in Settings.`,
   failedTitle: (ten: string) => `Could not sign in to ${ten} automatically`,
-  failedBody: 'The saved password may have changed. Sign in manually once — Vala Desktop will offer to save the new password.',
+  failedBody: 'The saved password may have changed. Sign in manually once — Vala Desktop will save the new password.',
   ssoName: (host: string) => `Organization SSO (${host})`,
 });
 const T = () => M[getSettings().lang];
@@ -202,6 +207,14 @@ async function offerSave(e: IpcMainInvokeEvent, username: unknown, password: unk
   // Trùng mật khẩu đã lưu (gồm cả cú bấm do chính phần tự điền) ⇒ không hỏi, KHÔNG xoá trạng thái lỗi / bộ đếm — nếu
   // xoá, mật khẩu sai sẽ bị thử lại liên tục (khoá tài khoản nguồn).
   if (!user || sameAsSaved(tg.key, user, password)) return;
+  // Tự lưu (mặc định — người dùng 09/10/2026): lưu luôn, báo một thông báo (bấm ⇒ Cài đặt → Mật khẩu để xem / xoá).
+  if (getSettings().autoSavePasswords !== false) {
+    if (saveCredential(tg.key, user, password)) {
+      clearFailure(tg.key);
+      notify(T().savedTitle(tg.ten), T().savedBody(user), () => openSettingsTab('mat-khau'));
+    }
+    return;
+  }
   asking.add(tg.key);
   try {
     const t = T();

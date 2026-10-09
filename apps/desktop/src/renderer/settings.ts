@@ -12,7 +12,7 @@ interface SettingsState {
   serverUrl: string;
   user: { ho_ten: string; email: string } | null;
   autostart: { enabled: boolean; supported: boolean };
-  options: { autoUpdate: boolean; errorReport: boolean };
+  options: { autoUpdate: boolean; errorReport: boolean; autoSavePasswords: boolean };
   update: { pending: string | null; canUpdate: boolean };
   whatsNew: { current: string[] | null; pending: string[] | null };
   passwords: { available: boolean; sources: PwRow[]; sites: PwRow[]; never: { code: string; ten: string }[] };
@@ -23,7 +23,7 @@ interface ValaSettingsApi {
   setLang(lang: string): Promise<SettingsState>;
   setTheme(theme: string): Promise<SettingsState>;
   setAutostart(on: boolean): Promise<SettingsState>;
-  setOption(key: 'autoUpdate' | 'errorReport', on: boolean): Promise<SettingsState>;
+  setOption(key: 'autoUpdate' | 'errorReport' | 'autoSavePasswords', on: boolean): Promise<SettingsState>;
   signIn(): Promise<void>;
   logout(): Promise<SettingsState>;
   openPortal(): Promise<void>;
@@ -144,6 +144,7 @@ interface ValaSettingsApi {
     $('autostart-dev').hidden = next.autostart.supported;
     $<HTMLInputElement>('auto-update').checked = next.options.autoUpdate;
     $<HTMLInputElement>('error-report').checked = next.options.errorReport;
+    $<HTMLInputElement>('auto-save').checked = next.options.autoSavePasswords;
 
     $('version').textContent = next.version;
     $('update-hint').textContent = next.update.canUpdate ? t.updateHint : t.noUpdate;
@@ -170,6 +171,7 @@ interface ValaSettingsApi {
   $<HTMLInputElement>('autostart').addEventListener('change', async (e) => render(await vala.setAutostart((e.target as HTMLInputElement).checked)));
   $<HTMLInputElement>('auto-update').addEventListener('change', async (e) => render(await vala.setOption('autoUpdate', (e.target as HTMLInputElement).checked)));
   $<HTMLInputElement>('error-report').addEventListener('change', async (e) => render(await vala.setOption('errorReport', (e.target as HTMLInputElement).checked)));
+  $<HTMLInputElement>('auto-save').addEventListener('change', async (e) => render(await vala.setOption('autoSavePasswords', (e.target as HTMLInputElement).checked)));
   $('sign-in').addEventListener('click', () => void vala.signIn());
   $('logout').addEventListener('click', async () => render(await vala.logout()));
   $('open-portal').addEventListener('click', () => void vala.openPortal());
