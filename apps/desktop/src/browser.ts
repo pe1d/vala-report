@@ -31,6 +31,7 @@ import { getSettings, setSettings } from './settings';
 import { cachedSources, events, statusOf, type SourceFull } from './sync';
 import { applySubsetOrder, cookieMatchesHost, openTarget, reordered, sidebarSections, siteOf, tabStatus, webLoginTone, type AppLoginTone, type TabStatus } from './tabs-model';
 import { ssoHosts } from './sso-session';
+import { siteIcon, siteIconEvents } from './site-icons';
 import { vanBanKeys } from './vanban-model';
 import { pendingUpdate, promptInstall } from './updater';
 import { recordingKey } from './recorder';
@@ -877,6 +878,18 @@ export function refreshBrowser(): void {
   pushState();
 }
 
+/**
+ * Biểu tượng phần mềm của một ứng dụng trong danh mục: quản trị khai ⇒ dùng; không ⇒ biểu tượng cố định của trang chủ ứng
+ * dụng (site-icons.ts: /favicon.ico…); không phải ứng dụng danh mục ⇒ null.
+ */
+function appIconOf(key: string): string | null {
+  if (!isAppKey(key)) return null;
+  const def = appByKey(key)?.icon;
+  if (def) return def;
+  const url = sourceOf(key)?.login_url ?? appDefs().find((a) => a.key === key)?.url ?? '';
+  return siteIcon(key === 'portal' ? getSettings().serverUrl : url);
+}
+
 function itemOf(key: string, label: string | undefined, t: (typeof M)['vi'], closable: boolean) {
   const tab = tabs.get(key);
   const wc = tab?.view?.webContents;
@@ -886,8 +899,8 @@ function itemOf(key: string, label: string | undefined, t: (typeof M)['vi'], clo
     key,
     label: key === ADMIN ? t.admin : label ?? src?.ten ?? (title || t.newTab),
     title: title || label || src?.ten || '',
-    // Favicon của trang; chưa có ⇒ biểu tượng quản trị khai trong danh mục.
-    favicon: tab?.favicon ?? appByKey(key)?.icon ?? null,
+    // Ứng dụng trong danh mục: biểu tượng PHẦN MỀM (appIconOf), không theo favicon động của trang; tab mở từ link: favicon trang.
+    favicon: appIconOf(key) ?? (isAppKey(key) ? null : tab?.favicon ?? null),
     status: src ? tabStatus(statusOf(src.code)?.result, src.state) : null,
     recording: key === recordingKey(),
     opened: !!tab?.view,
@@ -1199,7 +1212,7 @@ function overlayState() {
     account: s.deviceToken ? catalog().account ?? null : null,
     apps: appDefs().map((a) => {
       const src = sourceOf(a.key);
-      return { key: a.key, label: a.label, favicon: tabs.get(a.key)?.favicon ?? a.icon, pinned: pinned.has(a.key),
+      return { key: a.key, label: a.label, favicon: appIconOf(a.key), pinned: pinned.has(a.key),
         status: src ? tabStatus(statusOf(src.code)?.result, src.state) : null, login: appLogin(a, t) };
     }),
   };
@@ -1318,6 +1331,11 @@ export function initBrowser(h: BrowserHooks): void {
     if (overlay && overlayOpen && overlayKind === 'downloads' && !overlay.webContents.isDestroyed()) overlay.webContents.send('overlay:refresh');
   });
   events.on('status', refreshBrowser);
+  // Biểu tượng phần mềm của ứng dụng vừa lấy xong ⇒ thanh bên; khung Tất cả ứng dụng đang mở ⇒ vẽ lại.
+  siteIconEvents.on('changed', () => {
+    pushState();
+    if (overlay && overlayOpen && overlayKind === 'more' && !overlay.webContents.isDestroyed()) overlay.webContents.send('overlay:refresh');
+  });
   packageEvents.on('changed', () => {
     for (const t of tabs.values()) if (t.view) injectAll(t.view.webContents);
     // Gói phiên dịch văn bản vừa có / vừa gỡ ⇒ thêm / bỏ lớp giao diện Văn bản của tab đang xem.
