@@ -5,6 +5,14 @@ dùng đọc: ngắn, nói lợi ích, không dùng từ kỹ thuật. Mục nà
 sau khi cập nhật và ở Cài đặt → Giới thiệu. Đóng gói (`pnpm package*`, `scripts/package-win.sh`) dừng nếu bản đang build
 chưa có mục ở đây (src/release-notes.ts, scripts/release-notes.cjs).
 
+## 0.4.1
+
+### vi
+- Ubuntu: khi cập nhật, hộp hỏi mật khẩu quản trị hiện lời nhắn dễ hiểu "Vala Desktop cần quyền quản trị để cài bản cập nhật mới" thay vì một dòng lệnh kỹ thuật (áp dụng từ lần cập nhật sau bản này).
+
+### en
+- Ubuntu: when updating, the administrator password prompt now shows a clear message, "Vala Desktop needs administrator permission to install its new version", instead of a technical command line (from the update after this version).
+
 ## 0.4.0
 
 ### vi

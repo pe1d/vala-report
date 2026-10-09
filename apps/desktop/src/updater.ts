@@ -102,6 +102,29 @@ export const canUpdate = (): boolean => {
 };
 
 
+/**
+ * Ubuntu: electron-updater mặc định gọi `pkexec /bin/bash -c 'dpkg -i …'` ⇒ hộp xin mật khẩu hiện nguyên câu lệnh. Gói .deb
+ * (packaging/deb-after-install.sh) cài sẵn script cài cập nhật + chính sách polkit có lời nhắn song ngữ ⇒ gọi script đó.
+ * Máy cài từ bản cũ chưa có script ⇒ giữ cách mặc định.
+ */
+const DEB_HELPER = '/usr/lib/vala-desktop/cai-cap-nhat';
+function useDebHelper(): void {
+  if (process.platform !== 'linux' || !existsSync(DEB_HELPER)) return;
+  const u = autoUpdater as unknown as {
+    runCommandWithSudoIfNeeded?: (cmd: string[]) => unknown;
+    spawnSyncLog: (cmd: string, args: string[]) => unknown;
+  };
+  const original = u.runCommandWithSudoIfNeeded?.bind(u);
+  if (!original) return;
+  u.runCommandWithSudoIfNeeded = (cmd: string[]) => {
+    const deb = cmd[0] === 'dpkg' && cmd[1] === '-i' ? cmd[2] : null;
+    // Script tự xử lý phụ thuộc thiếu ⇒ bỏ bước "apt-get install -f" electron-updater gọi khi dpkg lỗi.
+    if (cmd[0] === 'apt-get' && cmd[1] === 'install' && cmd[2] === '-f') return '';
+    if (!deb || /'/.test(deb)) return original(cmd);
+    return u.spawnSyncLog('pkexec', ['--disable-internal-agent', DEB_HELPER, `'${deb}'`]);
+  };
+}
+
 function check() {
   autoUpdater.setFeedURL({ provider: 'generic', url: updateFeedUrl(getSettings().serverUrl) });
   autoUpdater.checkForUpdates().catch(() => { /* lỗi đã báo qua sự kiện 'error' */ });
@@ -113,6 +136,7 @@ export function initUpdater(onReady: () => void): void {
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = process.platform !== 'linux';
   autoUpdater.logger = { info: () => {}, debug: () => {}, warn: (m: unknown) => console.warn('[vala] update', m), error: (m: unknown) => console.warn('[vala] update', m) };
+  useDebHelper();
 
   autoUpdater.on('update-downloaded', (info) => {
     const notes = parseNotes(info.releaseNotes);

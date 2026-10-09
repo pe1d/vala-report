@@ -17,5 +17,7 @@ case "$1" in
             fi
             rm -f /etc/apparmor.d/vala-desktop
         fi
+        rm -rf /usr/lib/vala-desktop
+        rm -f /usr/share/polkit-1/actions/vn.bkav.vala-desktop.update.policy
         ;;
 esac
