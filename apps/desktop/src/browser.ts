@@ -173,7 +173,7 @@ const sourceOf = (key: string): SourceFull | null =>
  */
 function syncPinned(): void {
   // Đăng xuất ⇒ đóng cửa sổ Trợ lý AI (hội thoại của người trước).
-  if (!signedIn() && aiOpen) { aiOpen = false; if (aiView && win && !win.isDestroyed()) win.contentView.removeChildView(aiView); }
+  if (!signedIn() && aiOpen) { aiOpen = false; placeAi(); }
   const defs = pinnedDefs();
   const keep = new Set(defs.map((d) => d.key));
   const loaded = catalog().apps.length > 0;
@@ -205,6 +205,9 @@ function ensureWindow(): BrowserWindow {
   // Tiêu đề cửa sổ luôn là tên ứng dụng (bản dev: "Vala Desktop (dev)"), không theo tiêu đề trang thanh dọc.
   w.on('page-title-updated', (e) => e.preventDefault());
   w.once('ready-to-show', () => w.show());
+  // Cửa sổ nổi Trợ lý AI đi theo cửa sổ chính: ẩn / thu nhỏ thì ẩn, hiện lại thì hiện.
+  for (const ev of ['hide', 'minimize'] as const) w.on(ev as 'hide', () => { if (aiFloat && !aiFloat.isDestroyed()) aiFloat.hide(); });
+  for (const ev of ['show', 'restore'] as const) w.on(ev as 'show', () => { if (aiOpen && aiPrefs().mode === 'noi') placeAi(); });
   // Quay lại cửa sổ ⇒ làm mới thông báo (không chờ nhịp 1 phút).
   w.on('focus', () => void refreshNotifications());
   // Đóng cửa sổ chỉ ẩn xuống khay hệ thống (các tab, phiên vẫn giữ); "Thoát" mới đóng thật.
@@ -242,7 +245,7 @@ function raiseChrome(): void {
   if (!win || win.isDestroyed()) return;
   for (const c of corners) win.contentView.addChildView(c);
   // Trợ lý AI (cột / nổi) trên trang đang xem, dưới thanh xem nhanh và khung nổi.
-  if (aiView && aiOpen) win.contentView.addChildView(aiView);
+  if (aiView && aiOpen && aiPrefs().mode === 'cot') win.contentView.addChildView(aiView);
   if (peek && peekOpen) win.contentView.addChildView(peek);
   if (overlay && overlayOpen) win.contentView.addChildView(overlay);
 }
@@ -264,16 +267,28 @@ const aiPrefs = () => {
 function aiColumnW(): number {
   return aiOpen && signedIn() && aiPrefs().mode === 'cot' ? z(aiPrefs().w) + GAP() : 0;
 }
+/** Cột bên phải (trong cửa sổ chính). */
 function aiBounds(): Rect {
   const [width, height] = win!.getContentSize();
   const p = aiPrefs();
-  if (p.mode === 'cot') return { x: width! - GAP() - z(p.w), y: HEADER_H(), width: z(p.w), height: Math.max(0, height! - HEADER_H() - GAP()) };
-  // Nổi: vị trí đã nhớ (giữ trong cửa sổ), chưa có ⇒ góc dưới phải.
-  const w = Math.min(p.rect?.width ?? z(420), width! - 16);
-  const h = Math.min(p.rect?.height ?? Math.min(z(600), height! - HEADER_H() - 48), height! - HEADER_H() - 8);
-  const x = Math.min(Math.max(8, p.rect?.x ?? width! - w - 24), width! - w - 8);
-  const y = Math.min(Math.max(HEADER_H(), p.rect?.y ?? height! - h - 24), height! - h - 8);
-  return { x, y, width: Math.max(280, w), height: Math.max(240, h) };
+  return { x: width! - GAP() - z(p.w), y: HEADER_H(), width: z(p.w), height: Math.max(0, height! - HEADER_H() - GAP()) };
+}
+/** Lề trong suốt quanh cửa sổ nổi để vẽ bóng đổ (khớp chat.ts PANEL_PAD). */
+const AI_PAD = 14;
+/** Cửa sổ nổi (toạ độ màn hình): vị trí đã nhớ, chưa có ⇒ góc dưới phải của cửa sổ chính; giữ trong màn hình. */
+function aiFloatRect(): Rect {
+  const p = aiPrefs();
+  const m = win!.getBounds();
+  const w = Math.max(300, p.rect?.width ?? z(420) + 2 * AI_PAD);
+  const h = Math.max(260, p.rect?.height ?? Math.min(z(620), m.height - 80) + 2 * AI_PAD);
+  const x = p.rect?.x ?? m.x + m.width - w - 24;
+  const y = p.rect?.y ?? m.y + m.height - h - 24;
+  const area = screen.getDisplayMatching({ x, y, width: w, height: h }).workArea;
+  return {
+    x: Math.min(Math.max(area.x - w + 80, x), area.x + area.width - 80),
+    y: Math.min(Math.max(area.y, y), area.y + area.height - 60),
+    width: w, height: h,
+  };
 }
 const saveAi = (patch: Partial<{ mode: AiMode; w: number; rect: Rect | null }>) => setSettings({ aiPanel: { ...aiPrefs(), ...patch } });
 
@@ -292,21 +307,50 @@ function ensureAiView(): WebContentsView {
   return v;
 }
 
+/**
+ * Cửa sổ nổi: cửa sổ RIÊNG của hệ điều hành (không viền, nền trong suốt, bóng đổ) ⇒ kéo ra ngoài app được, không chìm trên
+ * nền trắng. Đi kèm cửa sổ chính (thu nhỏ / ẩn cùng). Trang Trợ lý (view) được chuyển qua lại giữa cột và cửa sổ nổi —
+ * không nạp lại, giữ hội thoại đang dở.
+ */
+let aiFloat: BrowserWindow | null = null;
+function ensureAiFloat(): BrowserWindow {
+  if (aiFloat && !aiFloat.isDestroyed()) return aiFloat;
+  const f = new BrowserWindow({
+    ...aiFloatRect(), parent: win ?? undefined, frame: false, transparent: true, backgroundColor: '#00000000', hasShadow: false,
+    resizable: false, skipTaskbar: true, show: false, title: M[getSettings().lang].assistant, icon: ICON,
+  });
+  f.on('closed', () => { if (aiFloat === f) aiFloat = null; });
+  aiFloat = f;
+  return f;
+}
+
+/** Đặt Trợ lý AI đúng chỗ theo trạng thái: đóng / cột trong cửa sổ chính / cửa sổ nổi riêng. */
+function placeAi(): void {
+  if (!win || win.isDestroyed()) return;
+  const v = aiOpen ? ensureAiView() : aiView;
+  if (!v) return;
+  const noi = aiOpen && aiPrefs().mode === 'noi';
+  const cot = aiOpen && !noi;
+  if (!cot) win.contentView.removeChildView(v);
+  if (!noi && aiFloat && !aiFloat.isDestroyed()) { aiFloat.contentView.removeChildView(v); aiFloat.hide(); }
+  if (cot) { win.contentView.addChildView(v); v.setBounds(aiBounds()); raiseChrome(); }
+  if (noi) {
+    const f = ensureAiFloat();
+    f.setBounds(aiFloatRect());
+    f.contentView.addChildView(v);
+    const b = f.getContentBounds();
+    v.setBounds({ x: 0, y: 0, width: b.width, height: b.height });
+    if (win.isVisible() && !win.isMinimized()) f.show();
+  }
+}
+
 /** Bật / tắt cửa sổ Trợ lý AI. */
 export function toggleAiPanel(open = !aiOpen): void {
   if (!win || win.isDestroyed() || !signedIn()) return;
   aiOpen = open;
-  if (open) {
-    const v = ensureAiView();
-    win.contentView.addChildView(v);
-    raiseChrome();
-    v.webContents.focus();
-    pushAiContext();
-  } else if (aiView) {
-    win.contentView.removeChildView(aiView);
-    const at = tabs.get(active ?? '');
-    if (at) face(at)?.webContents.focus();
-  }
+  placeAi();
+  if (open) { aiView?.webContents.focus(); pushAiContext(); }
+  else { const at = tabs.get(active ?? ''); if (at) face(at)?.webContents.focus(); }
   layout();
   pushState();
 }
@@ -331,7 +375,9 @@ function aiDragStart(kind: 'move' | 'resize' | 'width'): void {
   if (!win || !aiView) return;
   aiDragEnd();
   const start = screen.getCursorScreenPoint();
-  const b0 = aiView.getBounds();
+  const f = kind === 'width' ? null : aiFloat && !aiFloat.isDestroyed() ? aiFloat : null;
+  if (kind !== 'width' && !f) return;
+  const b0 = f ? f.getBounds() : aiView.getBounds();
   const w0 = aiPrefs().w;
   let ticks = 0;
   aiDrag = {
@@ -348,14 +394,17 @@ function aiDragStart(kind: 'move' | 'resize' | 'width'): void {
         if (++ticks % 3 === 0) pushState();
         return;
       }
-      aiLive = { ...aiLive, rect: kind === 'move' ? { ...b0, x: b0.x + dx, y: b0.y + dy } : { ...b0, width: Math.max(280, b0.width + dx), height: Math.max(240, b0.height + dy) } };
-      aiView.setBounds(aiBounds());
+      // Cửa sổ nổi: toạ độ màn hình — kéo ra ngoài cửa sổ app được.
+      const r = kind === 'move' ? { ...b0, x: b0.x + dx, y: b0.y + dy } : { ...b0, width: Math.max(300, b0.width + dx), height: Math.max(260, b0.height + dy) };
+      aiLive = { ...aiLive, rect: r };
+      f!.setBounds(r);
+      if (kind === 'resize') aiView.setBounds({ x: 0, y: 0, width: r.width, height: r.height });
     }, 16),
   };
 }
 function aiDragEnd(): void {
   if (aiDrag) { clearInterval(aiDrag.timer); aiDrag = null; pushState(); }
-  if (Object.keys(aiLive).length) { const live = aiLive; aiLive = {}; saveAi({ ...live, ...(live.rect ? { rect: aiView?.getBounds() ?? live.rect } : {}) }); }
+  if (Object.keys(aiLive).length) { const live = aiLive; aiLive = {}; saveAi(live); }
 }
 
 // ---- thanh dọc "xem nhanh" (như Edge): thanh đang thu gọn, rê chuột vào ⇒ thanh đầy đủ ĐÈ lên trang web, rời chuột ⇒ ẩn ----
@@ -438,7 +487,7 @@ function layout(): void {
   [[bounds.x, bounds.y], [right, bounds.y], [bounds.x, bottom], [right, bottom]].forEach(([x, y], i) => corners[i]?.setBounds({ x: x!, y: y!, width: r, height: r }));
   if (overlay && overlayOpen) overlay.setBounds({ x: 0, y: 0, width: width!, height: height! });
   if (peek && peekOpen) peek.setBounds(peekBounds());
-  if (aiView && aiOpen) aiView.setBounds(aiBounds());
+  if (aiView && aiOpen && aiPrefs().mode === 'cot') aiView.setBounds(aiBounds());
   layoutSso();
 }
 
@@ -1226,7 +1275,7 @@ function registerIpc(): void {
   ipcMain.handle('chat:panel-cmd', (e, a: { act?: unknown; kind?: unknown }) => {
     if (!isAiPanel(e.sender)) throw new Error('forbidden');
     if (a?.act === 'state') return { mode: aiPrefs().mode, context: aiContext() };
-    if (a?.act === 'mode') { saveAi({ mode: aiPrefs().mode === 'cot' ? 'noi' : 'cot' }); layout(); raiseChrome(); pushState(); }
+    if (a?.act === 'mode') { saveAi({ mode: aiPrefs().mode === 'cot' ? 'noi' : 'cot' }); placeAi(); layout(); pushState(); aiView?.webContents.focus(); }
     else if (a?.act === 'full') { toggleAiPanel(false); activate(CHAT); }
     else if (a?.act === 'close') toggleAiPanel(false);
     else if (a?.act === 'drag-start' && (a.kind === 'move' || a.kind === 'resize' || a.kind === 'width')) aiDragStart(a.kind);
