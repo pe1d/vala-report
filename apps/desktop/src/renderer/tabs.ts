@@ -37,6 +37,7 @@ interface TabsState {
   downloads: { has: boolean; dang_tai: number; phan_tram: number | null; su_kien: { so: number; loai: 'bat_dau' | 'xong' | 'loi'; ten: string } | null };
   /** Tab đang xem là ứng dụng văn bản ⇒ đang ở giao diện Vala hay trang gốc. */
   vanban: 'vala' | 'goc' | null;
+  xem: { ten: string } | null;
   /** Cửa sổ đang phóng to (nút □ thành "Thu về"). */
   maximized: boolean;
   /** Chưa đăng nhập ⇒ chỉ màn hình đăng nhập: ẩn thanh ứng dụng, ô tìm kiếm, nút điều hướng. */
@@ -55,6 +56,7 @@ interface ValaTabsApi {
   reorder(group: 'apps' | 'open', keys: string[]): Promise<void>;
   nav(cmd: 'back' | 'forward' | 'reload'): Promise<void>;
   vanban(mode: 'vala' | 'goc'): Promise<void>;
+  xem(act: 'luu' | 'luu_thanh' | 'mo_ngoai'): Promise<void>;
   collapse(): Promise<void>;
   peek(on: boolean): Promise<void>;
   onPeekSlide(cb: (open: boolean) => void): void;
@@ -361,6 +363,12 @@ interface ValaTabsApi {
     renderDownload(s);
     // Ứng dụng văn bản: nút chuyển Giao diện Vala / Trang gốc.
     display($('vb-toggle'), s.signedIn && !!s.vanban);
+    display($('xem-bar'), !!s.xem);
+    setText($('xem-badge'), s.t.xemBadge);
+    setIf($('xem-badge'), 'title', s.t.xemTitle);
+    setText($('xem-save'), s.t.xemSave);
+    setText($('xem-saveas'), s.t.xemSaveAs);
+    setText($('xem-open'), s.t.xemOpen);
     setIf($('vb-toggle'), 'title', s.t.vbTitle);
     for (const [id, mode, label] of [['vb-vala', 'vala', s.t.vbVala], ['vb-goc', 'goc', s.t.vbGoc]] as const) {
       const b = $(id);
@@ -418,6 +426,9 @@ interface ValaTabsApi {
   $('forward').addEventListener('click', () => void api.nav('forward'));
   $('reload').addEventListener('click', () => void api.nav('reload'));
   $('vb-vala').addEventListener('click', () => void api.vanban('vala'));
+  $('xem-save').addEventListener('click', () => void api.xem('luu'));
+  $('xem-saveas').addEventListener('click', () => void api.xem('luu_thanh'));
+  $('xem-open').addEventListener('click', () => void api.xem('mo_ngoai'));
   // Khung Tải xuống neo dưới nút (nút đang ẩn ⇒ dưới nút cửa sổ ─).
   /**
    * Nút Tải xuống trên header: vòng tiến độ quanh biểu tượng khi đang tải (không biết dung lượng ⇒ vòng quay), vừa bắt đầu
@@ -491,6 +502,7 @@ interface ValaTabsApi {
   display($('dev-badge'), false);
   display($('win-restore-icon'), false);
   display($('vb-toggle'), false);
+  display($('xem-bar'), false);
   display($('dl'), false);
   api.onState(render);
   if (PEEK) {

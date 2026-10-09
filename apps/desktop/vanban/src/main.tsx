@@ -36,7 +36,7 @@ const M = messages({
   fLoai: 'Loại văn bản', fDoKhan: 'Độ khẩn', fNoiNhan: 'Nơi nhận', more: 'Thông tin khác',
   content: 'Nội dung', files: 'Tệp đính kèm', history: 'Quá trình xử lý', save: 'Tải về', open: 'Mở', saved: (p: string) => `Đã lưu ${p}`,
   downloading: 'Đang tải — xem tiến độ ở nút Tải xuống trên cùng (Ctrl+J).',
-  preparing: 'Đang lấy tệp từ hệ thống…', opening: 'Đang mở…',
+  preparing: 'Đang lấy tệp từ hệ thống…', opening: 'Đang mở…', saveAs: 'Lưu thành…', previewOpened: 'Đã mở xem trước ở tab mới — bấm Tải về / Lưu thành… trên đầu trang để lưu.',
   fileFailed: 'Không tải được tệp này. Bấm thử lại; vẫn lỗi thì bấm "Trang gốc" để tải trên hệ thống.',
   overdue: (n: number) => `Quá hạn ${n} ngày`, dueToday: 'Hạn hôm nay', dueIn: (n: number) => `Còn ${n} ngày`, unread: 'Chưa đọc',
   cancel: 'Huỷ', confirm: 'Xác nhận', required: (f: string) => `Chưa điền ${f}`, tooBig: (f: string) => `${f}: tệp quá lớn (tối đa 25 MB mỗi lần gửi)`,
@@ -55,7 +55,7 @@ const M = messages({
   fLoai: 'Type', fDoKhan: 'Urgency', fNoiNhan: 'Recipients', more: 'Other details',
   content: 'Content', files: 'Attachments', history: 'Processing history', save: 'Download', open: 'Open', saved: (p: string) => `Saved ${p}`,
   downloading: 'Downloading — see progress on the Downloads button at the top (Ctrl+J).',
-  preparing: 'Getting the file from the system…', opening: 'Opening…',
+  preparing: 'Getting the file from the system…', opening: 'Opening…', saveAs: 'Save as…', previewOpened: 'Opened a preview in a new tab — click Download / Save as… at the top to save it.',
   fileFailed: 'Could not download this file. Try again; if it still fails, click "Original page" and download it there.',
   overdue: (n: number) => `${n} days overdue`, dueToday: 'Due today', dueIn: (n: number) => `${n} days left`, unread: 'Unread',
   cancel: 'Cancel', confirm: 'Confirm', required: (f: string) => `${f} is required`, tooBig: (f: string) => `${f}: files too large (25 MB per send)`,
@@ -314,14 +314,19 @@ function Detail({ id, system, onClose, onChanged, flash, t, lang }: { id: string
   useEffect(() => { setNote(flash); load(); }, [load, flash]);
   /** Trạng thái tải của từng tệp, hiện ngay dòng tệp đó: đang lấy (vòng xoay) / đã bắt đầu tải / đã lưu / lỗi. */
   const [fileSt, setFileSt] = useState<Record<string, { kind: 'busy' | 'ok' | 'err'; text: string; detail?: string }>>({});
-  const file = async (tep: string, mo: boolean) => {
+  /** cach: xem (PDF / ảnh — xem ngay trong app), mo (mở bằng ứng dụng của máy), tai (thư mục Tải về), luu_thanh (hỏi nơi lưu). */
+  const file = async (tep: string, cach: 'xem' | 'mo' | 'tai' | 'luu_thanh') => {
     if (fileSt[tep]?.kind === 'busy') return;
-    setFileSt((m) => ({ ...m, [tep]: { kind: 'busy', text: mo ? t.opening : t.preparing } }));
-    const r = await bridge.run<never>('vb_tep', { id, tep, mo }) as { ok: boolean; error?: string; saved?: string; dang_tai?: boolean };
+    setFileSt((m) => ({ ...m, [tep]: { kind: 'busy', text: cach === 'xem' || cach === 'mo' ? t.opening : t.preparing } }));
+    const r = await bridge.run<never>('vb_tep', { id, tep, cach, mo: cach === 'mo' }) as { ok: boolean; error?: string; saved?: string; dang_tai?: boolean; dang_xem?: boolean };
+    // Bấm Huỷ ở hộp chọn nơi lưu (lỗi rỗng) ⇒ không báo gì.
+    if (!r.ok && !r.error) { setFileSt((m) => { const n = { ...m }; delete n[tep]; return n; }); return; }
     setFileSt((m) => ({ ...m, [tep]: r.ok
-      ? { kind: 'ok', text: r.dang_tai ? t.downloading : r.saved ? t.saved(r.saved) : '' }
+      ? { kind: 'ok', text: r.dang_xem ? t.previewOpened : r.dang_tai ? t.downloading : r.saved ? t.saved(r.saved) : '' }
       : { kind: 'err', text: t.fileFailed, detail: r.error } }));
   };
+  /** PDF / ảnh ⇒ "Mở" xem ngay trong app; loại khác ⇒ mở bằng ứng dụng của máy (Word, Excel…). */
+  const viewable = (ten: string) => /\.(pdf|png|jpe?g|gif|webp|bmp)$/i.test(ten.trim());
   const h = ct && !finished(ct.trang_thai) ? due(ct.han_xu_ly, t) : null;
   return (
     <section className="flex h-full min-h-0 flex-col" aria-label={ct?.trich_yeu}>
@@ -380,8 +385,9 @@ function Detail({ id, system, onClose, onChanged, flash, t, lang }: { id: string
                           <span className="min-w-0 flex-1 truncate">{f.ten}</span>
                           {f.kich_thuoc && <span className="text-[12px] text-slate-500">{f.kich_thuoc}</span>}
                           {f.id && <>
-                            <button type="button" disabled={busy} onClick={() => void file(f.id!, true)} className="text-[13px] font-medium text-blue-700 hover:underline disabled:opacity-40 dark:text-blue-400">{t.open}</button>
-                            <button type="button" disabled={busy} onClick={() => void file(f.id!, false)} className="text-[13px] font-medium text-blue-700 hover:underline disabled:opacity-40 dark:text-blue-400">{t.save}</button>
+                            <button type="button" disabled={busy} onClick={() => void file(f.id!, viewable(f.ten) ? 'xem' : 'mo')} className="text-[13px] font-medium text-blue-700 hover:underline disabled:opacity-40 dark:text-blue-400">{t.open}</button>
+                            <button type="button" disabled={busy} onClick={() => void file(f.id!, 'tai')} className="text-[13px] font-medium text-blue-700 hover:underline disabled:opacity-40 dark:text-blue-400">{t.save}</button>
+                            <button type="button" disabled={busy} onClick={() => void file(f.id!, 'luu_thanh')} className="text-[13px] font-medium text-slate-600 hover:underline disabled:opacity-40 dark:text-slate-400">{t.saveAs}</button>
                           </>}
                         </div>
                         {st?.text && (

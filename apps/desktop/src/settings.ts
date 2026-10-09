@@ -27,6 +27,8 @@ export interface Settings {
   autoUpdate?: boolean;
   /** Tự lưu mật khẩu khi người dùng đăng nhập một hệ thống / SSO (autofill.ts), không hỏi. Không đặt ⇒ bật (09/10/2026). */
   autoSavePasswords?: boolean;
+  /** Hỏi nơi lưu mỗi lần tải tệp (downloads.ts). Không đặt ⇒ tắt: tải thẳng vào thư mục Tải về (09/10/2026). */
+  askDownloadPath?: boolean;
   /** Tự gửi báo lỗi / crash về máy chủ Vala (error-report.ts). Không đặt ⇒ bật. */
   errorReport?: boolean;
   /** Đã ghim / đã hướng dẫn ghim vào thanh tác vụ (dock) lần đầu mở bản cài (pin.ts) — chỉ làm một lần. */

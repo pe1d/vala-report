@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld('valaTabs', {
   activate: (key: string) => ipcRenderer.invoke('tabs:activate', key),
   close: (key: string) => ipcRenderer.invoke('tabs:close', key),
   vanban: (mode: 'vala' | 'goc') => ipcRenderer.invoke('tabs:vanban', mode),
+  xem: (act: 'luu' | 'luu_thanh' | 'mo_ngoai') => ipcRenderer.invoke('tabs:xem', act),
   reorder: (group: 'apps' | 'open', keys: string[]) => ipcRenderer.invoke('tabs:reorder', { group, keys }),
   nav: (cmd: 'back' | 'forward' | 'reload') => ipcRenderer.invoke('tabs:nav', cmd),
   collapse: () => ipcRenderer.invoke('tabs:collapse'),

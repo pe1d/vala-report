@@ -1,7 +1,7 @@
 /** Chữ hiển thị của tab Cài đặt (settings-page.ts). Bản tiếng Anh phải đủ khoá như tiếng Việt. */
 const vi = {
   title: 'Cài đặt',
-  navAccount: 'Tài khoản', navPasswords: 'Mật khẩu', navAppearance: 'Giao diện', navStartup: 'Khởi động & cập nhật', navAbout: 'Giới thiệu',
+  navAccount: 'Tài khoản', navPasswords: 'Mật khẩu', navAppearance: 'Giao diện', navStartup: 'Khởi động & cập nhật', navDownloads: 'Tải xuống', navAbout: 'Giới thiệu',
   accountHint: 'Tài khoản Vala Desktop của bạn: dùng để mở các ứng dụng của đơn vị, giữ phiên các hệ thống nguồn và gửi cho Vala lấy dữ liệu thay bạn.',
   notSignedIn: 'Chưa đăng nhập.', signIn: 'Đăng nhập', signedInAs: 'Đã đăng nhập', serverIs: 'Máy chủ',
   openPortal: 'Mở cổng báo cáo', logout: 'Đăng xuất',
@@ -20,6 +20,8 @@ const vi = {
   autostartDev: 'Bản dev không đăng ký chạy cùng hệ điều hành.',
   autoSaveLabel: 'Tự lưu mật khẩu',
   autoSaveHint: 'Đăng nhập một hệ thống hoặc SSO trong Vala Desktop là mật khẩu được lưu luôn (báo một thông báo), không hỏi. Tắt thì Vala Desktop hỏi trước mỗi lần lưu.',
+  askDownloadLabel: 'Hỏi nơi lưu mỗi lần tải',
+  askDownloadHint: 'Tắt (mặc định): tệp tải thẳng vào thư mục Tải về. Bật: mỗi lần tải Vala Desktop hỏi lưu vào đâu, đặt tên gì. Lúc nào cũng có thể bấm "Lưu thành…" cho riêng một tệp.',
   autoUpdateLabel: 'Tự động cập nhật',
   autoUpdateHint: 'Bản mới tải ngầm và tự cài khi bạn không dùng máy (cửa sổ ẩn xuống khay hoặc máy để không 10 phút), rồi mở lại. Tắt thì Vala Desktop chỉ báo có bản mới để bạn tự bấm Cập nhật. Trên Ubuntu luôn cần bạn bấm vì phải nhập mật khẩu quản trị.',
   errorReportLabel: 'Tự gửi báo lỗi cho Bkav',
@@ -30,7 +32,7 @@ const vi = {
 };
 const en: typeof vi = {
   title: 'Settings',
-  navAccount: 'Account', navPasswords: 'Passwords', navAppearance: 'Appearance', navStartup: 'Startup & updates', navAbout: 'About',
+  navAccount: 'Account', navPasswords: 'Passwords', navAppearance: 'Appearance', navStartup: 'Startup & updates', navDownloads: 'Downloads', navAbout: 'About',
   accountHint: 'Your Vala Desktop account: used to open your organization\'s apps, keep your source-system sessions and send them to Vala to fetch data for you.',
   notSignedIn: 'Not signed in.', signIn: 'Sign in', signedInAs: 'Signed in as', serverIs: 'Server',
   openPortal: 'Open reporting portal', logout: 'Sign out',
@@ -49,6 +51,8 @@ const en: typeof vi = {
   autostartDev: 'The dev build does not register to start with the operating system.',
   autoSaveLabel: 'Save passwords automatically',
   autoSaveHint: 'When you sign in to a system or SSO inside Vala Desktop, the password is saved right away (with a notification), without asking. Turned off, Vala Desktop asks before saving.',
+  askDownloadLabel: 'Ask where to save each download',
+  askDownloadHint: 'Off (default): files go straight to your Downloads folder. On: Vala Desktop asks where to save and what to name each file. You can always use "Save as…" for a single file.',
   autoUpdateLabel: 'Update automatically',
   autoUpdateHint: "New versions download in the background and install when you're not using the computer (window hidden to the tray or 10 minutes idle), then reopen. Turned off, Vala Desktop only tells you an update is ready so you click Update yourself. On Ubuntu you always click, because it needs an administrator password.",
   errorReportLabel: 'Send error reports to Bkav automatically',

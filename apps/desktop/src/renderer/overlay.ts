@@ -41,6 +41,7 @@ interface ValaOverlayApi {
   contextRun(id: string): Promise<void>;
   changePassword(current: string, next: string): Promise<{ ok: boolean; type?: string; title?: string; detail?: string }>;
   download(id: string, act: string): Promise<OverlayState>;
+  downloadSaveAs(id: string): Promise<void>;
   onOpen(cb: () => void): void;
   onRefresh(cb: () => void): void;
 }
@@ -244,7 +245,13 @@ interface ValaOverlayApi {
         b.addEventListener('click', () => void api.download(x.id, a).then(render));
         return b;
       };
-      if (co) top.append(act(t.dlOpen, 'open'), act(t.dlFolder, 'folder'));
+      if (co) {
+        const saveAs = el('button', 'shrink-0 rounded px-1.5 py-0.5 text-[12px] text-blue-700 hover:bg-blue-50 dark:text-blue-300 dark:hover:bg-slate-600', t.dlSaveAs);
+        saveAs.type = 'button';
+        saveAs.title = t.dlSaveAsTitle;
+        saveAs.addEventListener('click', () => void api.downloadSaveAs(x.id));
+        top.append(act(t.dlOpen, 'open'), act(t.dlFolder, 'folder'), saveAs);
+      }
       if (x.trang_thai === 'dang_tai' || x.trang_thai === 'tam_dung') top.append(act(t.dlCancel, 'cancel'));
       else {
         const rm = el('button', 'flex h-5 w-5 shrink-0 items-center justify-center rounded text-slate-400 opacity-0 hover:bg-slate-200 group-hover:opacity-100 dark:hover:bg-slate-600');
@@ -472,7 +479,7 @@ interface ValaOverlayApi {
     if (s.kind === 'downloads') {
       // Ngay dưới nút Tải xuống, mép phải thẳng mép phải nút; cao tối đa gần hết cửa sổ (cuộn).
       panel.replaceChildren(...downloadsPanel(s));
-      const w = Math.min(window.innerWidth - 16, 400);
+      const w = Math.min(window.innerWidth - 16, 440);
       panel.style.width = `${w}px`;
       panel.style.left = `${Math.max(8, Math.min(window.innerWidth - w - 8, s.anchor.x + s.anchor.w - w))}px`;
       panel.style.top = `${s.anchor.y + s.anchor.h + 6}px`;

@@ -5,9 +5,10 @@
  * Không lưu địa chỉ tải (có thể kèm token) — chỉ tên máy của trang.
  */
 import { EventEmitter } from 'node:events';
-import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
-import { app, session, shell, type DownloadItem } from 'electron';
+import { app, BrowserWindow, dialog, session, shell, type DownloadItem } from 'electron';
+import { getSettings } from './settings';
 import { addItem, overall, restore, safeName, uniqueName, type TaiVe } from './downloads-model';
 
 export const downloadEvents = new EventEmitter();
@@ -30,9 +31,14 @@ const changed = (now = false) => {
   if (!timer) timer = setTimeout(() => { timer = null; downloadEvents.emit('changed'); }, 300);
 };
 
-/** Lượt tải sắp bắt đầu do app gọi (giao diện Văn bản): đặt tên tệp / mở khi xong. Khớp theo địa chỉ, hết hạn sau 2 phút. */
-const pending = new Map<string, { ten?: string; mo?: boolean; het: number }>();
-export function expectDownload(url: string, o: { ten?: string; mo?: boolean }): void {
+/**
+ * Lượt tải sắp bắt đầu do app gọi (giao diện Văn bản): đặt tên tệp; `mo` ⇒ mở bằng ứng dụng của máy khi xong; `xem` ⇒ tải
+ * vào thư mục tạm rồi xem ngay trong app (PDF / ảnh — 'xem'), không vào lịch sử; `hoi` ⇒ hỏi nơi lưu ("Lưu thành…").
+ * Khớp theo địa chỉ, hết hạn sau 2 phút.
+ */
+export interface DownloadOpts { ten?: string; mo?: boolean; xem?: boolean; hoi?: boolean }
+const pending = new Map<string, DownloadOpts & { het: number }>();
+export function expectDownload(url: string, o: DownloadOpts): void {
   pending.set(url, { ...o, het: Date.now() + 120_000 });
 }
 function takePending(item: DownloadItem) {
@@ -46,15 +52,37 @@ function takePending(item: DownloadItem) {
 }
 const hostOf = (u: string) => { try { return new URL(u).host; } catch { return ''; } };
 
+/** Thư mục tạm của tệp xem trước (xoá khi mở app / đăng xuất). */
+export const previewDir = () => join(app.getPath('temp'), 'vala-xem');
+const uniqueIn = (dir: string, ten: string) => {
+  let names: Set<string>;
+  try { names = new Set(readdirSync(dir)); } catch { names = new Set(); }
+  return join(dir, uniqueName(names, safeName(ten)));
+};
+/** Cửa sổ chính (gốc cho hộp chọn nơi lưu). */
+const mainWin = () => BrowserWindow.getAllWindows().find((w) => !w.isDestroyed() && w.isVisible()) ?? BrowserWindow.getAllWindows()[0];
+
 export function initDownloads(): void {
+  try { rmSync(previewDir(), { recursive: true, force: true }); } catch { /* đang dùng */ }
   session.defaultSession.on('will-download', (_e, item, wc) => {
     const p = takePending(item);
+    // Xem trước: tải vào thư mục tạm, xong ⇒ browser.ts mở tab xem (Tải về / Lưu thành… trên header). Không vào lịch sử.
+    if (p?.xem) {
+      mkdirSync(previewDir(), { recursive: true });
+      const path = uniqueIn(previewDir(), p.ten || item.getFilename() || 'tep');
+      item.setSavePath(path);
+      item.once('done', (_ev, state) => downloadEvents.emit(state === 'completed' ? 'xem' : 'xem-loi', { path, ten: p.ten || item.getFilename(), nguon: hostOf(item.getURL()) }));
+      return;
+    }
     const dir = app.getPath('downloads');
     let names: Set<string>;
     try { names = new Set(readdirSync(dir)); } catch { names = new Set(); }
-    const ten = uniqueName(names, safeName(p?.ten || item.getFilename() || 'tep'));
-    const duong_dan = join(dir, ten);
-    item.setSavePath(duong_dan);
+    let ten = uniqueName(names, safeName(p?.ten || item.getFilename() || 'tep'));
+    let duong_dan = join(dir, ten);
+    // "Lưu thành…" (lần bấm này) hoặc Cài đặt "Hỏi nơi lưu mỗi lần tải" ⇒ hộp chọn nơi lưu của hệ điều hành.
+    const hoi = p?.hoi || getSettings().askDownloadPath === true;
+    if (hoi) item.setSaveDialogOptions({ defaultPath: duong_dan });
+    else item.setSavePath(duong_dan);
     const id = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
     const it: TaiVe = { id, ten, duong_dan, tong: item.getTotalBytes(), da_tai: 0, trang_thai: 'dang_tai', luc: Date.now(), nguon: hostOf(wc && !wc.isDestroyed() ? wc.getURL() : item.getURL()) };
     list = addItem(load(), it);
@@ -64,6 +92,8 @@ export function initDownloads(): void {
     // Trang mở ra CHỈ để tải (link mở tab / cửa sổ mới, chưa hiện trang nào) ⇒ browser.ts đóng nó, về lại tab cũ.
     if (wc && !wc.isDestroyed()) downloadEvents.emit('started', wc);
     item.on('updated', (_ev, state) => {
+      // Vừa chọn nơi lưu trong hộp thoại ⇒ cập nhật tên / đường dẫn thật.
+      if (hoi && item.getSavePath() && item.getSavePath() !== it.duong_dan) { duong_dan = it.duong_dan = item.getSavePath(); ten = it.ten = basename(duong_dan); }
       it.da_tai = item.getReceivedBytes();
       it.tong = item.getTotalBytes();
       it.trang_thai = state === 'interrupted' ? 'loi' : item.isPaused() ? 'tam_dung' : 'dang_tai';
@@ -71,6 +101,9 @@ export function initDownloads(): void {
     });
     item.once('done', (_ev, state) => {
       items.delete(id);
+      if (hoi && item.getSavePath()) { duong_dan = it.duong_dan = item.getSavePath(); ten = it.ten = basename(duong_dan); }
+      // Bấm Huỷ ở hộp chọn nơi lưu ⇒ coi như chưa tải: bỏ khỏi danh sách, không báo gì.
+      if (state === 'cancelled' && hoi && !item.getReceivedBytes()) { list = load().filter((x) => x.id !== id); save(); changed(true); return; }
       it.da_tai = item.getReceivedBytes();
       it.trang_thai = state === 'completed' ? 'xong' : state === 'cancelled' ? 'huy' : 'loi';
       if (state !== 'cancelled') mark(state === 'completed' ? 'xong' : 'loi', ten);
@@ -107,8 +140,36 @@ export function downloadAction(id: string, act: 'open' | 'folder' | 'cancel' | '
   else if (act === 'remove') { list = load().filter((x) => x.id !== id || items.has(id)); save(); changed(true); }
 }
 
+/** Lưu một bản sao của tệp vào nơi người dùng chọn (khung Tải xuống "Lưu vào chỗ khác…", tab xem trước "Lưu thành…"). */
+export async function saveCopyAs(path: string, ten: string, nguon: string): Promise<string | null> {
+  if (!existsSync(path)) return null;
+  const w = mainWin();
+  const opts = { defaultPath: join(app.getPath('downloads'), safeName(ten)) };
+  const r = w ? await dialog.showSaveDialog(w, opts) : await dialog.showSaveDialog(opts);
+  if (r.canceled || !r.filePath) return null;
+  copyFileSync(path, r.filePath);
+  recordSaved(r.filePath, nguon, statSync(r.filePath).size);
+  return r.filePath;
+}
+
+/** Tab xem trước "Tải về" ⇒ chép tệp tạm vào thư mục Tải về (không ghi đè), vào lịch sử. */
+export function saveCopyToDownloads(path: string, ten: string, nguon: string): string | null {
+  if (!existsSync(path)) return null;
+  const to = uniqueIn(app.getPath('downloads'), ten);
+  copyFileSync(path, to);
+  recordSaved(to, nguon, statSync(to).size);
+  return to;
+}
+
+/** Khung Tải xuống: "Lưu vào chỗ khác…" của một tệp đã tải. */
+export async function downloadSaveAs(id: string): Promise<void> {
+  const it = load().find((x) => x.id === id);
+  if (it && it.trang_thai === 'xong') await saveCopyAs(it.duong_dan, it.ten, it.nguon);
+}
+
 /** Đăng xuất ⇒ quên lịch sử tải (tệp trên đĩa giữ nguyên); huỷ lượt đang tải. */
 export function clearDownloads(): void {
+  try { rmSync(previewDir(), { recursive: true, force: true }); } catch { /* đang dùng */ }
   for (const it of items.values()) it.cancel();
   items.clear();
   list = [];
