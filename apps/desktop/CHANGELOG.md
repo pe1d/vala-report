@@ -10,11 +10,15 @@ chưa có mục ở đây (src/release-notes.ts, scripts/release-notes.cjs).
 ### vi
 - Đăng xuất rồi đăng nhập lại bằng SSO: các ứng dụng có trang đăng nhập riêng (như Vala) tự vào bằng phiên SSO, không phải bấm "Đăng nhập bằng SSO" nữa, và mỗi tab về đúng trang của nó (Tin nhắn về Tin nhắn, không về Bảng tin).
 - Nút Tải lại (F5) đưa ứng dụng về trang gốc của nó, kể cả khi đang kẹt ở trang đăng nhập hay trang lỗi. Ở ứng dụng văn bản, Tải lại dùng được cả khi đang xem giao diện Vala và giữ nguyên chế độ đang xem.
+- Tự lưu mật khẩu khi bạn đăng nhập một hệ thống hoặc SSO trong Vala Desktop, không hỏi nữa (có thông báo; tắt được ở Cài đặt → Mật khẩu).
+- Trang đăng nhập SSO của đơn vị mở rộng hết màn hình.
 - Ubuntu: khi cập nhật, hộp hỏi mật khẩu quản trị hiện lời nhắn dễ hiểu "Vala Desktop cần quyền quản trị để cài bản cập nhật mới" thay vì một dòng lệnh kỹ thuật (áp dụng từ lần cập nhật sau bản này).
 
 ### en
 - After signing out and back in with SSO, apps with their own sign-in page (such as Vala) sign in with your SSO session by themselves — no need to click "Sign in with SSO" anymore — and each tab returns to its own page (Messages stays on Messages, not the news feed).
 - The Reload button (F5) takes an app back to its starting page, even when it is stuck on a sign-in or error page. In document apps, Reload also works in the Vala view and keeps the view you are using.
+- Passwords are saved automatically when you sign in to a system or SSO inside Vala Desktop, without asking (you get a notification; can be turned off in Settings → Passwords).
+- Your organization's SSO sign-in page now fills the whole window.
 - Ubuntu: when updating, the administrator password prompt now shows a clear message, "Vala Desktop needs administrator permission to install its new version", instead of a technical command line (from the update after this version).
 
 ## 0.4.0
