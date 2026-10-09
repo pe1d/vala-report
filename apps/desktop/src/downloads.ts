@@ -9,7 +9,7 @@ import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameS
 import { basename, dirname, join } from 'node:path';
 import { app, BrowserWindow, dialog, session, shell, type DownloadItem } from 'electron';
 import { getSettings, setSettings } from './settings';
-import { addItem, overall, restore, safeName, uniqueName, viewableInApp, type TaiVe } from './downloads-model';
+import { addItem, overall, restore, safeName, uniqueName, type TaiVe } from './downloads-model';
 
 export const downloadEvents = new EventEmitter();
 const file = () => join(app.getPath('userData'), 'downloads.json');
@@ -31,12 +31,8 @@ const changed = (now = false) => {
   if (!timer) timer = setTimeout(() => { timer = null; downloadEvents.emit('changed'); }, 300);
 };
 
-/**
- * Lượt tải sắp bắt đầu do app gọi (giao diện Văn bản): đặt tên tệp; `mo` ⇒ mở bằng ứng dụng của máy khi xong; `xem` ⇒ tải
- * vào thư mục tạm rồi xem ngay trong app (PDF / ảnh — 'xem'), không vào lịch sử; `hoi` ⇒ hỏi nơi lưu ("Lưu thành…").
- * Khớp theo địa chỉ, hết hạn sau 2 phút.
- */
-export interface DownloadOpts { ten?: string; mo?: boolean; xem?: boolean; hoi?: boolean }
+/** Lượt tải sắp bắt đầu do app gọi (giao diện Văn bản): đặt tên tệp theo phiên dịch. Khớp theo địa chỉ, hết hạn sau 2 phút. */
+export interface DownloadOpts { ten?: string }
 const pending = new Map<string, DownloadOpts & { het: number }>();
 export function expectDownload(url: string, o: DownloadOpts): void {
   pending.set(url, { ...o, het: Date.now() + 120_000 });
@@ -52,18 +48,16 @@ function takePending(item: DownloadItem) {
 }
 const hostOf = (u: string) => { try { return new URL(u).host; } catch { return ''; } };
 
-/** Thư mục tạm của tệp xem trước (xoá khi mở app / đăng xuất). */
-export const previewDir = () => join(app.getPath('temp'), 'vala-xem');
 /** Thư mục tạm của tệp đang chờ người dùng chọn ở hộp Tải xuống. */
 const askDir = () => join(app.getPath('temp'), 'vala-tai');
 
 /**
- * HỎI CÁCH LƯU (người dùng 09/10/2026): mỗi lần tải ⇒ khung Tải xuống dưới nút header tự xổ ra, dòng tệp có Mở / Tải về /
- * Lưu thành… / Huỷ (overlay.ts). Tệp tải
+ * HỎI CÁCH LƯU (người dùng 09/10/2026): mỗi lần tải ⇒ khung Tải xuống dưới nút header tự xổ ra, dòng tệp có Tải về / Lưu
+ * thành… / Huỷ (overlay.ts). Tệp tải
  * NGẦM vào thư mục tạm ngay lúc hỏi; chọn xong (và tải xong) ⇒ chuyển tới nơi đã chọn. Cài đặt "Hỏi trước khi tải" tắt ⇒
  * tải thẳng vào thư mục Tải về như trước.
  */
-type Choice = 'mo' | 'tai' | 'luu_thanh';
+type Choice = 'tai' | 'luu_thanh';
 interface Ask { id: string; tmp: string; ten: string; nguon: string; done: boolean; ok: boolean; choice?: { kind: Choice; target?: string } }
 const asks = new Map<string, Ask>();
 /** Thứ tự đang chờ hỏi (hỏi lần lượt từng tệp). */
@@ -79,17 +73,6 @@ function finalize(a: Ask): void {
   const it = load().find((x) => x.id === a.id);
   asks.delete(a.id);
   if (!it || !a.choice) return;
-  if (a.choice.kind === 'mo' && viewableInApp(a.ten)) {
-    // PDF / ảnh ⇒ xem ngay trong app (tab xem trước có Tải về / Lưu thành…); không vào lịch sử.
-    mkdirSync(previewDir(), { recursive: true });
-    const view = uniqueIn(previewDir(), a.ten);
-    moveFile(a.tmp, view);
-    list = load().filter((x) => x.id !== a.id);
-    save();
-    changed(true);
-    downloadEvents.emit('xem', { path: view, ten: a.ten, nguon: a.nguon });
-    return;
-  }
   const target = a.choice.target ?? uniqueIn(app.getPath('downloads'), a.ten);
   try { moveFile(a.tmp, target); } catch { it.trang_thai = 'loi'; mark('loi', a.ten); save(); changed(true); return; }
   it.duong_dan = target;
@@ -98,7 +81,6 @@ function finalize(a: Ask): void {
   mark('xong', it.ten);
   save();
   changed(true);
-  if (a.choice.kind === 'mo') void shell.openPath(target);
 }
 
 /** Còn tệp chờ người dùng chọn cách lưu (khung Tải xuống tự xổ ra). */
@@ -159,17 +141,9 @@ const uniqueIn = (dir: string, ten: string) => {
 const mainWin = () => BrowserWindow.getAllWindows().find((w) => !w.isDestroyed() && w.isVisible()) ?? BrowserWindow.getAllWindows()[0];
 
 export function initDownloads(): void {
-  for (const d of [previewDir(), askDir()]) { try { rmSync(d, { recursive: true, force: true }); } catch { /* đang dùng */ } }
+  try { rmSync(askDir(), { recursive: true, force: true }); } catch { /* đang dùng */ }
   session.defaultSession.on('will-download', (_e, item, wc) => {
     const p = takePending(item);
-    // Xem trước: tải vào thư mục tạm, xong ⇒ browser.ts mở tab xem (Tải về / Lưu thành… trên header). Không vào lịch sử.
-    if (p?.xem) {
-      mkdirSync(previewDir(), { recursive: true });
-      const path = uniqueIn(previewDir(), p.ten || item.getFilename() || 'tep');
-      item.setSavePath(path);
-      item.once('done', (_ev, state) => downloadEvents.emit(state === 'completed' ? 'xem' : 'xem-loi', { path, ten: p.ten || item.getFilename(), nguon: hostOf(item.getURL()) }));
-      return;
-    }
     const dir = app.getPath('downloads');
     let names: Set<string>;
     try { names = new Set(readdirSync(dir)); } catch { names = new Set(); }
@@ -178,10 +152,8 @@ export function initDownloads(): void {
     const id = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
     // Trang đã tải (tab mở ra chỉ để tải chưa có địa chỉ ⇒ lấy theo địa chỉ tệp).
     const nguon = hostOf(wc && !wc.isDestroyed() && /^https?:/.test(wc.getURL()) ? wc.getURL() : item.getURL());
-    // Hộp Tải xuống (mặc định): tải ngầm vào thư mục tạm, hỏi Mở / Tải về / Lưu thành…. Lượt app tự gọi để mở (mo) ⇒ không hỏi.
-    const askIt = !p?.mo && !p?.hoi && getSettings().askBeforeDownload !== false;
-    // "Lưu thành…" của riêng lượt này ⇒ hộp chọn nơi lưu của hệ điều hành.
-    const hoi = !!p?.hoi;
+    // Hỏi cách lưu (mặc định): tải ngầm vào thư mục tạm, khung Tải xuống hỏi Tải về / Lưu thành… / Huỷ.
+    const askIt = getSettings().askBeforeDownload !== false;
     if (askIt) {
       mkdirSync(askDir(), { recursive: true });
       ten = safeName(p?.ten || item.getFilename() || 'tep');
@@ -189,8 +161,7 @@ export function initDownloads(): void {
       item.setSavePath(duong_dan);
       asks.set(id, { id, tmp: duong_dan, ten, nguon, done: false, ok: false });
       askQueue.push(id);
-    } else if (hoi) item.setSaveDialogOptions({ defaultPath: duong_dan });
-    else item.setSavePath(duong_dan);
+    } else item.setSavePath(duong_dan);
     const it: TaiVe = { id, ten, duong_dan, tong: item.getTotalBytes(), da_tai: 0, trang_thai: 'dang_tai', luc: Date.now(), nguon };
     list = addItem(load(), it);
     items.set(id, item);
@@ -201,8 +172,6 @@ export function initDownloads(): void {
     if (wc && !wc.isDestroyed()) downloadEvents.emit('started', wc);
     if (askIt) downloadEvents.emit('ask');
     item.on('updated', (_ev, state) => {
-      // Vừa chọn nơi lưu trong hộp thoại ⇒ cập nhật tên / đường dẫn thật.
-      if (hoi && item.getSavePath() && item.getSavePath() !== it.duong_dan) { duong_dan = it.duong_dan = item.getSavePath(); ten = it.ten = basename(duong_dan); }
       it.da_tai = item.getReceivedBytes();
       it.tong = item.getTotalBytes();
       it.trang_thai = state === 'interrupted' ? 'loi' : item.isPaused() ? 'tam_dung' : 'dang_tai';
@@ -210,9 +179,6 @@ export function initDownloads(): void {
     });
     item.once('done', (_ev, state) => {
       items.delete(id);
-      if (hoi && item.getSavePath()) { duong_dan = it.duong_dan = item.getSavePath(); ten = it.ten = basename(duong_dan); }
-      // Bấm Huỷ ở hộp chọn nơi lưu ⇒ coi như chưa tải: bỏ khỏi danh sách, không báo gì.
-      if (state === 'cancelled' && hoi && !item.getReceivedBytes()) { list = load().filter((x) => x.id !== id); save(); changed(true); return; }
       it.da_tai = item.getReceivedBytes();
       const a = asks.get(id);
       if (a) {
@@ -230,7 +196,6 @@ export function initDownloads(): void {
       if (state !== 'cancelled') mark(state === 'completed' ? 'xong' : 'loi', ten);
       save();
       changed(true);
-      if (state === 'completed' && p?.mo) void shell.openPath(duong_dan);
     });
   });
 }
@@ -247,8 +212,8 @@ export function recordSaved(duong_dan: string, nguon: string, bytes: number): vo
 export const downloadsState = () => ({
   list: load().map((x) => ({
     ...x, mat: x.trang_thai === 'xong' && !existsSync(x.duong_dan),
-    // Đang chờ chọn cách lưu ⇒ khung Tải xuống hiện Mở / Tải về / Lưu thành… / Huỷ ngay trên dòng tệp.
-    hoi: !!asks.get(x.id) && !asks.get(x.id)!.choice, xem_duoc: viewableInApp(x.ten),
+    // Đang chờ chọn cách lưu ⇒ khung Tải xuống hiện Tải về / Lưu thành… / Huỷ ngay trên dòng tệp.
+    hoi: !!asks.get(x.id) && !asks.get(x.id)!.choice,
   })),
   ...overall(load()),
   su_kien: suKien,
@@ -265,32 +230,13 @@ export function downloadAction(id: string, act: 'open' | 'folder' | 'cancel' | '
   else if (act === 'remove') { list = load().filter((x) => x.id !== id || items.has(id)); save(); changed(true); }
 }
 
-/** Lưu một bản sao của tệp vào nơi người dùng chọn (khung Tải xuống "Lưu vào chỗ khác…", tab xem trước "Lưu thành…"). */
-export async function saveCopyAs(path: string, ten: string, nguon: string): Promise<string | null> {
-  if (!existsSync(path)) return null;
-  const w = mainWin();
-  const opts = { defaultPath: join(app.getPath('downloads'), safeName(ten)) };
-  const r = w ? await dialog.showSaveDialog(w, opts) : await dialog.showSaveDialog(opts);
-  if (r.canceled || !r.filePath) return null;
-  copyFileSync(path, r.filePath);
-  recordSaved(r.filePath, nguon, statSync(r.filePath).size);
-  return r.filePath;
-}
 
-/** Tab xem trước "Tải về" ⇒ chép tệp tạm vào thư mục Tải về (không ghi đè), vào lịch sử. */
-export function saveCopyToDownloads(path: string, ten: string, nguon: string): string | null {
-  if (!existsSync(path)) return null;
-  const to = uniqueIn(app.getPath('downloads'), ten);
-  copyFileSync(path, to);
-  recordSaved(to, nguon, statSync(to).size);
-  return to;
-}
 
 /** Đăng xuất ⇒ quên lịch sử tải (tệp trên đĩa giữ nguyên); huỷ lượt đang tải. */
 export function clearDownloads(): void {
   asks.clear();
   askQueue.length = 0;
-  for (const d of [previewDir(), askDir()]) { try { rmSync(d, { recursive: true, force: true }); } catch { /* đang dùng */ } }
+  try { rmSync(askDir(), { recursive: true, force: true }); } catch { /* đang dùng */ }
   for (const it of items.values()) it.cancel();
   items.clear();
   list = [];

@@ -25,7 +25,7 @@ interface OverlayState {
   /** Khung Tải xuống (downloads.ts): lịch sử mới nhất trước. */
   downloads: { list: OverlayDownload[]; dang_tai: number; phan_tram: number | null } | null;
 }
-interface OverlayDownload { id: string; ten: string; duong_dan: string; tong: number; da_tai: number; trang_thai: 'dang_tai' | 'tam_dung' | 'cho_chon' | 'xong' | 'huy' | 'loi'; luc: number; nguon: string; mat?: boolean; hoi?: boolean; xem_duoc?: boolean }
+interface OverlayDownload { id: string; ten: string; duong_dan: string; tong: number; da_tai: number; trang_thai: 'dang_tai' | 'tam_dung' | 'cho_chon' | 'xong' | 'huy' | 'loi'; luc: number; nguon: string; mat?: boolean; hoi?: boolean }
 type OverlayItem = { kind: 'app' | 'action' | 'chat'; title: string; sub: string; ref: Record<string, string> };
 interface OverlaySection { kind: 'recent' | 'chats' | 'apps' | 'actions'; items: OverlayItem[] }
 interface ValaOverlayApi {
@@ -41,7 +41,7 @@ interface ValaOverlayApi {
   contextRun(id: string): Promise<void>;
   changePassword(current: string, next: string): Promise<{ ok: boolean; type?: string; title?: string; detail?: string }>;
   download(id: string, act: string): Promise<OverlayState>;
-  downloadChoose(id: string, choice: 'mo' | 'tai' | 'luu_thanh' | 'huy', khongHoi: boolean): Promise<OverlayState>;
+  downloadChoose(id: string, choice: 'tai' | 'luu_thanh' | 'huy', khongHoi: boolean): Promise<OverlayState>;
   onOpen(cb: () => void): void;
   onRefresh(cb: () => void): void;
 }
@@ -274,11 +274,11 @@ interface ValaOverlayApi {
       row.append(el('div', `mt-1 truncate text-[11px] ${x.trang_thai === 'loi' ? 'text-red-600 dark:text-red-400' : x.hoi && x.trang_thai === 'cho_chon' ? 'text-emerald-700 dark:text-emerald-400' : 'text-slate-500 dark:text-slate-400'}`,
         [st, x.nguon, fmt(x.luc)].filter(Boolean).join(' · ')));
       if (x.hoi) {
-        // Chờ chọn cách lưu (tệp đang / đã tải ngầm vào thư mục tạm): Mở · Tải về · Lưu thành… · Huỷ.
+        // Chờ chọn cách lưu (tệp đang / đã tải ngầm vào thư mục tạm): Tải về · Lưu thành… · Huỷ.
         row.classList.add('bg-blue-50/70', 'ring-1', 'ring-blue-200', 'dark:bg-slate-700/60', 'dark:ring-blue-500/40');
-        const choose = (c: 'mo' | 'tai' | 'luu_thanh' | 'huy') => void api.downloadChoose(x.id, c, askNoAsk).then(render);
+        const choose = (c: 'tai' | 'luu_thanh' | 'huy') => void api.downloadChoose(x.id, c, askNoAsk).then(render);
         const opts = el('div', 'mt-2 flex flex-wrap items-center gap-1.5');
-        const btn = (label: string, hint: string, c: 'mo' | 'tai' | 'luu_thanh' | 'huy', cls: string) => {
+        const btn = (label: string, hint: string, c: 'tai' | 'luu_thanh' | 'huy', cls: string) => {
           const b = el('button', `rounded-lg px-2.5 py-1 text-[12px] font-medium ${cls}`, label);
           b.type = 'button';
           b.title = hint;
@@ -287,7 +287,7 @@ interface ValaOverlayApi {
         };
         const plain = 'border border-slate-200 bg-white text-slate-700 hover:border-blue-300 hover:text-blue-700 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:text-blue-300';
         const save = btn(t.askSave, t.askSaveHint, 'tai', 'bg-blue-600 text-white hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-400');
-        opts.append(save, btn(t.askOpen, x.xem_duoc ? t.askOpenView : t.askOpenApp, 'mo', plain), btn(t.askSaveAs, t.askSaveAsHint, 'luu_thanh', plain),
+        opts.append(save, btn(t.askSaveAs, t.askSaveAsHint, 'luu_thanh', plain),
           btn(t.askCancel, t.askCancelHint, 'huy', 'ml-auto text-slate-500 hover:bg-slate-200 dark:text-slate-400 dark:hover:bg-slate-600'));
         row.append(opts);
         if (!firstAsk) firstAsk = save;

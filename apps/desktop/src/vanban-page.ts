@@ -5,12 +5,12 @@
  */
 import { mkdirSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { app, BrowserWindow, dialog, ipcMain, shell, type IpcMainInvokeEvent, type WebContents } from 'electron';
+import { app, ipcMain, type IpcMainInvokeEvent, type WebContents } from 'electron';
 import { setVanbanGoc, vanbanTabOf, vanbanUis } from './browser';
 import { currentPrefs, prefsEvents } from './prefs';
 import { listActions, runAction } from './scripts';
 import { reportError } from './error-report';
-import { askDirPath, askLocalFile, downloadEvents, expectDownload, previewDir, recordSaved } from './downloads';
+import { askDirPath, askLocalFile, expectDownload, recordSaved } from './downloads';
 import { safeName, uniqueName } from './downloads-model';
 import { getSettings } from './settings';
 import { siteOf } from './tabs-model';
@@ -48,46 +48,20 @@ const cleanSent = (v: unknown) => {
   return { thong_bao: String(o.thong_bao ?? '').slice(0, 500), id };
 };
 
-/** Cách xử lý một tệp đính kèm (giao diện Văn bản): xem trong app (PDF / ảnh), mở bằng ứng dụng của máy, tải về, lưu thành… */
-type Cach = 'xem' | 'mo' | 'tai' | 'luu_thanh';
-const cachOf = (args: Record<string, unknown>): Cach =>
-  args.cach === 'xem' || args.cach === 'mo' || args.cach === 'tai' || args.cach === 'luu_thanh' ? args.cach : args.mo === true ? 'mo' : 'tai';
-
 /**
- * Tệp đính kèm dạng cũ (vb_tep ⇒ { ten, base64 }) — cùng cách xử lý như tệp tải qua trình quản lý tải: xem ⇒ thư mục tạm
- * rồi tab xem trước; mo ⇒ thư mục tạm rồi mở bằng ứng dụng của máy; tai ⇒ thư mục Tải về (không ghi đè; hỏi nơi lưu nếu
- * Cài đặt bật); luu_thanh ⇒ hỏi nơi lưu.
+ * Tệp đính kèm dạng cũ (vb_tep ⇒ { ten, base64 }) — như mọi lượt tải: qua khung Tải xuống (Tải về / Lưu thành… / Huỷ), hoặc
+ * thẳng vào thư mục Tải về khi Cài đặt tắt "Hỏi trước khi tải".
  */
-async function saveFile(sender: WebContents, r: unknown, cach: Cach, nguon: string): Promise<{ ok: boolean; error?: string; saved?: string; dang_xem?: boolean; dang_tai?: boolean }> {
+function saveFile(r: unknown, nguon: string): { ok: boolean; error?: string; saved?: string; dang_tai?: boolean } {
   const o = r && typeof r === 'object' ? (r as Record<string, unknown>) : {};
   if (typeof o.base64 !== 'string' || typeof o.ten !== 'string') return { ok: false, error: 'Phiên dịch không trả tệp' };
   const buf = Buffer.from(o.base64, 'base64');
   const host = nguon.replace(/^https?:\/\//, '');
-  if (cach === 'xem' || cach === 'mo') {
-    const dir = cach === 'xem' ? previewDir() : join(app.getPath('temp'), 'vala-van-ban');
-    mkdirSync(dir, { recursive: true });
-    const file = join(dir, uniqueName(new Set(readdirSync(dir)), safeName(o.ten)));
-    writeFileSync(file, buf);
-    if (cach === 'xem') { downloadEvents.emit('xem', { path: file, ten: o.ten, nguon: host }); return { ok: true, dang_xem: true }; }
-    const err = await shell.openPath(file);
-    return err ? { ok: false, error: err } : { ok: true };
-  }
-  // Tải về ⇒ qua hộp Tải xuống như mọi lượt tải (Mở / Tải về / Lưu thành…), trừ khi Cài đặt tắt "Hỏi trước khi tải".
-  if (cach === 'tai' && getSettings().askBeforeDownload !== false) {
-    mkdirSync(askDirPath(), { recursive: true });
-    const tmp = join(askDirPath(), uniqueName(new Set(readdirSync(askDirPath())), safeName(o.ten)));
-    writeFileSync(tmp, buf);
-    askLocalFile(tmp, o.ten, host);
-    return { ok: true, dang_tai: true };
-  }
-  let path = join(app.getPath('downloads'), uniqueName(new Set(readdirSync(app.getPath('downloads'))), safeName(o.ten)));
-  if (cach === 'luu_thanh') {
-    const win = BrowserWindow.fromWebContents(sender) ?? undefined;
-    const res = win ? await dialog.showSaveDialog(win, { defaultPath: path }) : await dialog.showSaveDialog({ defaultPath: path });
-    if (res.canceled || !res.filePath) return { ok: false, error: '' };
-    path = res.filePath;
-  }
+  const dir = getSettings().askBeforeDownload !== false ? askDirPath() : app.getPath('downloads');
+  mkdirSync(dir, { recursive: true });
+  const path = join(dir, uniqueName(new Set(readdirSync(dir)), safeName(o.ten)));
   writeFileSync(path, buf);
+  if (dir === askDirPath()) { askLocalFile(path, o.ten, host); return { ok: true, dang_tai: true }; }
   recordSaved(path, host, buf.length);
   return { ok: true, saved: path };
 }
@@ -121,12 +95,11 @@ export function registerVanbanPage(): void {
         let url: URL;
         try { url = new URL(o.url, t.goc.getURL()); } catch { return { ok: false, error: 'Địa chỉ tải không hợp lệ' }; }
         if (!/^https?:$/.test(url.protocol) || siteOf(url.hostname) !== siteOf(new URL(t.goc.getURL()).hostname)) return { ok: false, error: 'Địa chỉ tải không thuộc hệ thống' };
-        const cach = cachOf(args);
-        expectDownload(url.toString(), { ten: typeof o.ten === 'string' ? o.ten : undefined, mo: cach === 'mo', xem: cach === 'xem', hoi: cach === 'luu_thanh' });
+        expectDownload(url.toString(), { ten: typeof o.ten === 'string' ? o.ten : undefined });
         t.goc.downloadURL(url.toString());
-        return cach === 'xem' ? { ok: true, dang_xem: true } : { ok: true, dang_tai: true };
+        return { ok: true, dang_tai: true };
       }
-      return saveFile(e.sender, r.result, cachOf(args), originOf(t.goc.getURL()));
+      return saveFile(r.result, originOf(t.goc.getURL()));
     }
     const clean = CLEAN[a.name];
     return { ok: true, result: clean ? clean(r.result) : cleanSent(r.result) };

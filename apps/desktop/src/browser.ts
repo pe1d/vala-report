@@ -15,14 +15,13 @@
  * trang khác không gọi được gì.
  */
 import { join } from 'node:path';
-import { pathToFileURL } from 'node:url';
 import { app, BrowserWindow, ipcMain, nativeTheme, screen, session, shell, WebContentsView, type HandlerDetails, type Input, type IpcMainInvokeEvent, type Menu, type WebContents } from 'electron';
 import { APP_NAME, ICON, IS_DEV } from './channel';
 import { messages, normLang } from './i18n';
 import { attachAutofill } from './autofill';
 import { attachSsoAuto } from './sso-auto';
 import { attachPackages, injectAll, listActions, packageEvents, packages } from './scripts';
-import { chooseDownload, hasPendingAsk, downloadAction, downloadEvents, downloadsState, saveCopyAs, saveCopyToDownloads } from './downloads';
+import { chooseDownload, hasPendingAsk, downloadAction, downloadEvents, downloadsState } from './downloads';
 import { recordActions, recordAppVisit } from './local-data';
 import { portalApi } from './account';
 import { appByKey, appKey, canAdmin, catalog, insideDomains, pinnedKeys as catalogPinnedKeys, setAppPinned, setPinnedOrder } from './apps';
@@ -46,7 +45,6 @@ const M = messages({
   close: 'Đóng tab (Ctrl+W)', menu: 'Hệ thống nguồn',
   signIn: 'Đăng nhập', signInTitle: 'Đăng nhập Vala Desktop', account: 'Tài khoản', admin: 'Quản trị',
   lightMode: 'Chế độ sáng', darkMode: 'Chế độ tối', recording: 'đang ghi thao tác', downloads: 'Tải xuống (Ctrl+J)', dlStarted: 'Đang tải', dlDone: 'Đã tải xong', dlFailed: 'Tải lỗi',
-  xemSave: 'Tải về', xemSaveAs: 'Lưu thành…', xemOpen: 'Mở bằng ứng dụng khác', xemBadge: 'Xem trước', xemTitle: 'Tệp đang xem trước — chưa lưu vào máy',
   vbVala: 'Giao diện Vala', vbGoc: 'Trang gốc', vbTitle: 'Chuyển giữa giao diện Văn bản của Vala và trang gốc của hệ thống',
   updateTitle: 'Cài bản mới: ứng dụng đóng lại, cài xong tự mở lại',
   updateLabel: (v: string) => `Đã có bản ${v} — Cập nhật`,
@@ -59,7 +57,6 @@ const M = messages({
   close: 'Close tab (Ctrl+W)', menu: 'Source systems',
   signIn: 'Sign in', signInTitle: 'Sign in to Vala Desktop', account: 'Account', admin: 'Administration',
   lightMode: 'Light mode', darkMode: 'Dark mode', recording: 'recording actions', downloads: 'Downloads (Ctrl+J)', dlStarted: 'Downloading', dlDone: 'Downloaded', dlFailed: 'Download failed',
-  xemSave: 'Download', xemSaveAs: 'Save as…', xemOpen: 'Open with another app', xemBadge: 'Preview', xemTitle: 'File preview — not saved to your computer yet',
   vbVala: 'Vala view', vbGoc: 'Original page', vbTitle: "Switch between Vala's documents view and the system's original page",
   updateTitle: 'Install the new version: the app closes, installs and reopens',
   updateLabel: (v: string) => `Version ${v} available — Update`,
@@ -122,8 +119,6 @@ interface Tab {
   hidden?: boolean;
   /** Tab đã mở ra tab này (link) ⇒ đóng tab tải về thì quay lại đó. */
   opener?: string;
-  /** Tab XEM TRƯỚC một tệp (PDF / ảnh) đã tải vào thư mục tạm — header có Tải về / Lưu thành… / Mở bằng ứng dụng khác. */
-  xem?: { path: string; ten: string; nguon: string };
 }
 
 /** Lệnh từ menu hồ sơ (khung nổi) do main.ts xử lý. */
@@ -746,25 +741,6 @@ function showDownloadAsk(): void {
   if (hasPendingAsk()) win.webContents.send('tabs:open-downloads');
 }
 
-/** Mở tab xem trước một tệp đã tải vào thư mục tạm (downloads.ts 'xem'). */
-function openPreview(f: { path: string; ten: string; nguon: string }): void {
-  ensureWindow();
-  const key = `t:${nextId++}`;
-  tabs.set(key, { key, pinned: false, url: pathToFileURL(f.path).toString(), view: null, xem: f, opener: active ?? undefined });
-  const i = active ? order.indexOf(active) : -1;
-  if (i >= 0) order.splice(i + 1, 0, key); else order.push(key);
-  showTab(key);
-}
-
-/** Nút trên header của tab xem trước. */
-async function previewAction(act: 'luu' | 'luu_thanh' | 'mo_ngoai'): Promise<void> {
-  const f = active ? tabs.get(active)?.xem : undefined;
-  if (!f) return;
-  if (act === 'luu') saveCopyToDownloads(f.path, f.ten, f.nguon);
-  else if (act === 'luu_thanh') await saveCopyAs(f.path, f.ten, f.nguon);
-  else void shell.openPath(f.path);
-}
-
 /** Lượt tải bắt đầu từ một trang chưa hiện gì (link mở tab / cửa sổ mới chỉ để tải) ⇒ đóng nó, về lại tab đã mở ra nó. */
 function closeDownloadOnly(wc: WebContents): void {
   if (wc.isDestroyed() || committed.has(wc.id)) return;
@@ -978,7 +954,7 @@ function itemOf(key: string, label: string | undefined, t: (typeof M)['vi'], clo
   const title = (wc && !wc.isDestroyed() ? wc.getTitle() : '') || '';
   return {
     key,
-    label: key === ADMIN ? t.admin : label ?? src?.ten ?? tab?.xem?.ten ?? (title || t.newTab),
+    label: key === ADMIN ? t.admin : label ?? src?.ten ?? (title || t.newTab),
     title: title || label || src?.ten || '',
     // Ứng dụng trong danh mục: biểu tượng PHẦN MỀM (appIconOf), không theo favicon động của trang; tab mở từ link: favicon trang.
     favicon: appIconOf(key) ?? (isAppKey(key) ? null : tab?.favicon ?? null),
@@ -1019,8 +995,6 @@ function pushState(): void {
     // Nút Tải xuống trên header: hiện khi có lịch sử; đang tải ⇒ phần trăm.
     downloads: (() => { const d = downloadsState(); return { has: d.list.length > 0, dang_tai: d.dang_tai, phan_tram: d.phan_tram, su_kien: d.su_kien }; })(),
     // Ứng dụng văn bản đang xem ⇒ nút chuyển Giao diện Vala / Trang gốc trên header.
-    // Tab xem trước tệp ⇒ nút Tải về / Lưu thành… / Mở bằng ứng dụng khác trên header.
-    xem: active && tabs.get(active)?.xem ? { ten: tabs.get(active)!.xem!.ten } : null,
     vanban: active && tabs.get(active)?.ui ? (tabs.get(active)!.goc ? 'goc' : 'vala') : null,
     maximized: win.isMaximized(),
     // Hồ sơ cuối thanh: tên + chữ cái đầu (họ + tên) khi đã đăng nhập; chưa thì nút "Đăng nhập".
@@ -1070,7 +1044,6 @@ function registerIpc(): void {
   ipcMain.handle('tabs:peek', (e, on: unknown) => { own(e); if (on === true) showPeek(); else hidePeek(); });
   ipcMain.handle('tabs:activate', (e, key: unknown) => { own(e); if (typeof key === 'string') activate(key); });
   ipcMain.handle('tabs:close', (e, key: unknown) => { own(e); if (typeof key === 'string') closeTab(key); });
-  ipcMain.handle('tabs:xem', async (e, act: unknown) => { own(e); if (act === 'luu' || act === 'luu_thanh' || act === 'mo_ngoai') await previewAction(act); });
   ipcMain.handle('tabs:vanban', (e, mode: unknown) => { own(e); if (active && (mode === 'goc' || mode === 'vala')) setVanbanGoc(active, mode === 'goc'); });
   ipcMain.handle('tabs:reorder', (e, a: { group?: unknown; keys?: unknown }) => { own(e); reorderGroup(a?.group, a?.keys); });
   ipcMain.handle('tabs:nav', (e, cmd: unknown) => {
@@ -1315,7 +1288,7 @@ function registerOverlayIpc(): void {
   });
   ipcMain.handle('overlay:download-choose', async (e, a: { id?: unknown; choice?: unknown; khongHoi?: unknown }) => {
     own(e);
-    const choice = (['mo', 'tai', 'luu_thanh', 'huy'] as const).find((x) => x === a?.choice);
+    const choice = (['tai', 'luu_thanh', 'huy'] as const).find((x) => x === a?.choice);
     if (!choice || typeof a?.id !== 'string') return overlayState();
     await chooseDownload(a.id, choice, a.khongHoi === true);
     return overlayState();
@@ -1368,7 +1341,7 @@ const O = messages({
   loginWeb: { ok: 'Đã đăng nhập', warn: 'Chưa đăng nhập', off: 'Chưa đăng nhập', none: 'Chưa mở' } as Record<AppLoginTone, string>,
   dlTitle: 'Tải xuống', dlEmpty: 'Chưa tải tệp nào.', dlOpen: 'Mở', dlFolder: 'Mở thư mục', dlCancel: 'Huỷ', dlRemove: 'Xoá khỏi danh sách',
   dlWaiting: 'Đã tải xong — chọn cách lưu', dlClear: 'Xoá lịch sử',
-  askOpen: 'Mở', askOpenView: 'Xem ngay trong Vala Desktop', askOpenApp: 'Mở bằng ứng dụng của máy', askSave: 'Tải về', askSaveHint: 'Lưu vào thư mục Tải về', askSaveAs: 'Lưu thành…', askSaveAsHint: 'Chọn thư mục và tên tệp', askCancel: 'Huỷ', askCancelHint: 'Huỷ tải, xoá tệp', askNoAsk: 'Lần sau không hỏi — tải thẳng vào thư mục Tải về', dlPaused: 'Tạm dừng', dlDone: 'Đã tải', dlGone: 'Tệp đã bị xoá hoặc chuyển đi', dlCancelled: 'Đã huỷ', dlFailed: 'Lỗi — tải lại từ trang gốc', dlHint: 'Tệp lưu ở thư mục Tải về. Lịch sử chỉ ở máy này, đăng xuất là xoá.',
+  askSave: 'Tải về', askSaveHint: 'Lưu vào thư mục Tải về', askSaveAs: 'Lưu thành…', askSaveAsHint: 'Chọn thư mục và tên tệp', askCancel: 'Huỷ', askCancelHint: 'Huỷ tải, xoá tệp', askNoAsk: 'Lần sau không hỏi — tải thẳng vào thư mục Tải về', dlPaused: 'Tạm dừng', dlDone: 'Đã tải', dlGone: 'Tệp đã bị xoá hoặc chuyển đi', dlCancelled: 'Đã huỷ', dlFailed: 'Lỗi — tải lại từ trang gốc', dlHint: 'Tệp lưu ở thư mục Tải về. Lịch sử chỉ ở máy này, đăng xuất là xoá.',
   ctxPin: 'Ghim lên thanh bên', ctxUnpin: 'Bỏ ghim khỏi thanh bên', ctxClose: 'Đóng tab', ctxOpen: 'Mở',
   version: (v: string) => `Phiên bản ${v}`, installUpdate: (v: string) => `Cập nhật lên bản ${v}`,
 }, {
@@ -1390,7 +1363,7 @@ const O = messages({
   loginWeb: { ok: 'Signed in', warn: 'Not signed in', off: 'Not signed in', none: 'Not opened yet' } as Record<AppLoginTone, string>,
   dlTitle: 'Downloads', dlEmpty: 'No downloads yet.', dlOpen: 'Open', dlFolder: 'Show in folder', dlCancel: 'Cancel', dlRemove: 'Remove from list',
   dlWaiting: 'Downloaded — choose how to save it', dlClear: 'Clear history',
-  askOpen: 'Open', askOpenView: 'View right in Vala Desktop', askOpenApp: 'Open with an app on this computer', askSave: 'Download', askSaveHint: 'Save to your Downloads folder', askSaveAs: 'Save as…', askSaveAsHint: 'Choose a folder and file name', askCancel: 'Cancel', askCancelHint: 'Cancel and delete the file', askNoAsk: "Don't ask next time — save straight to Downloads", dlPaused: 'Paused', dlDone: 'Downloaded', dlGone: 'File was deleted or moved', dlCancelled: 'Cancelled', dlFailed: 'Failed — download again from the original page', dlHint: 'Files are saved to your Downloads folder. History stays on this computer and is cleared when you sign out.',
+  askSave: 'Download', askSaveHint: 'Save to your Downloads folder', askSaveAs: 'Save as…', askSaveAsHint: 'Choose a folder and file name', askCancel: 'Cancel', askCancelHint: 'Cancel and delete the file', askNoAsk: "Don't ask next time — save straight to Downloads", dlPaused: 'Paused', dlDone: 'Downloaded', dlGone: 'File was deleted or moved', dlCancelled: 'Cancelled', dlFailed: 'Failed — download again from the original page', dlHint: 'Files are saved to your Downloads folder. History stays on this computer and is cleared when you sign out.',
   ctxPin: 'Pin to sidebar', ctxUnpin: 'Unpin from sidebar', ctxClose: 'Close tab', ctxOpen: 'Open',
   version: (v: string) => `Version ${v}`, installUpdate: (v: string) => `Update to version ${v}`,
 });
@@ -1416,7 +1389,6 @@ export function initBrowser(h: BrowserHooks): void {
     c.once('destroyed', () => committed.delete(id));
   });
   downloadEvents.on('started', (wc: WebContents) => closeDownloadOnly(wc));
-  downloadEvents.on('xem', (f: { path: string; ten: string; nguon: string }) => openPreview(f));
   downloadEvents.on('ask', () => showDownloadAsk());
   let dark = nativeTheme.shouldUseDarkColors;
   nativeTheme.on('updated', () => {

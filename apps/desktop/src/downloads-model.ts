@@ -41,6 +41,3 @@ export function restore(raw: unknown): TaiVe[] {
   return raw.filter((x): x is TaiVe => !!x && typeof x === 'object' && typeof (x as TaiVe).id === 'string' && typeof (x as TaiVe).duong_dan === 'string')
     .map((x) => (x.trang_thai === 'dang_tai' || x.trang_thai === 'tam_dung' || x.trang_thai === 'cho_chon' ? { ...x, trang_thai: 'loi' as const } : x)).slice(0, MAX_HISTORY);
 }
-
-/** Tệp xem được ngay trong app (bộ xem PDF / ảnh của Chromium) — "Mở" ⇒ tab xem trước thay vì phần mềm của máy. */
-export const viewableInApp = (ten: string): boolean => /\.(pdf|png|jpe?g|gif|webp|bmp)$/i.test(ten.trim());
