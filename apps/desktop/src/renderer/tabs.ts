@@ -356,7 +356,6 @@ interface ValaTabsApi {
     }
     // Nút Tải xuống: hiện khi có lịch sử; đang tải ⇒ phần trăm (chưa biết tổng ⇒ số tệp đang tải).
     display($('dl'), s.signedIn && (s.downloads.has || s.downloads.dang_tai > 0));
-    setIf($('dl'), 'title', s.t.downloads);
     setIf($('dl'), 'aria-label', s.t.downloads);
     renderDownload(s);
     // Ứng dụng văn bản: nút chuyển Giao diện Vala / Trang gốc.
@@ -420,14 +419,22 @@ interface ValaTabsApi {
   $('vb-vala').addEventListener('click', () => void api.vanban('vala'));
   // Khung Tải xuống neo dưới nút (nút đang ẩn ⇒ dưới nút cửa sổ ─).
   /**
-   * Nút Tải xuống trên header: vòng tiến độ quanh biểu tượng khi đang tải (không biết dung lượng ⇒ vòng quay), vừa bắt đầu
-   * ⇒ nháy + chữ "Đang tải", xong ⇒ dấu ✓ + "Đã tải xong", lỗi ⇒ chữ đỏ — để người dùng biết đã / đang tải.
+   * Nút Tải xuống trên header — như Chrome, KHÔNG có chữ: đang tải ⇒ vòng tiến độ quanh biểu tượng (không biết dung lượng ⇒
+   * vòng quay); vừa bắt đầu ⇒ nháy sáng; vừa xong ⇒ vòng đầy rồi biểu tượng nảy nhẹ; lỗi ⇒ chấm đỏ. Chi tiết ở ghi chú khi
+   * rê chuột (title) và trong khung Tải xuống.
    */
   const RING = 62.83;
   let dlSo: number | null = null;
   let dlFlash: { loai: 'bat_dau' | 'xong' | 'loi'; until: number } | null = null;
   let dlTimer: ReturnType<typeof setTimeout> | null = null;
   let lastState: TabsState | null = null;
+  /** Chạy một hiệu ứng CSS (lớp animate-*) một lần trên phần tử. */
+  const once = (el: Element, cls: string, ms: number) => {
+    el.classList.remove(cls);
+    void (el as HTMLElement).offsetWidth;
+    el.classList.add(cls);
+    setTimeout(() => el.classList.remove(cls), ms);
+  };
   function renderDownload(s: TabsState) {
     lastState = s;
     const d = s.downloads;
@@ -436,37 +443,32 @@ interface ValaTabsApi {
     if (dlSo === null) dlSo = ev?.so ?? 0;
     else if (ev && ev.so > dlSo) {
       dlSo = ev.so;
-      dlFlash = { loai: ev.loai, until: Date.now() + (ev.loai === 'bat_dau' ? 2200 : 4000) };
+      dlFlash = { loai: ev.loai, until: Date.now() + (ev.loai === 'loi' ? 6000 : 1200) };
       if (ev.loai === 'bat_dau') {
         const ping = $('dl-ping');
         ping.hidden = false;
-        ping.classList.remove('animate-ping');
-        void ping.offsetWidth;
-        ping.classList.add('animate-ping');
-        setTimeout(() => { ping.hidden = true; ping.classList.remove('animate-ping'); }, 1200);
+        once(ping, 'animate-ping', 1000);
+        setTimeout(() => { ping.hidden = true; }, 1000);
       }
+      if (ev.loai === 'xong') once($('dl-icon'), 'animate-bounce', 1000);
       if (dlTimer) clearTimeout(dlTimer);
       dlTimer = setTimeout(() => { dlFlash = null; if (lastState) renderDownload(lastState); }, dlFlash.until - Date.now());
     }
     const flash = dlFlash && dlFlash.until > Date.now() ? dlFlash.loai : null;
     const busy = d.dang_tai > 0;
+    // Vừa xong (không còn tệp nào đang tải) ⇒ vòng đầy thêm một nhịp rồi tắt.
+    const full = !busy && flash === 'xong';
     const ring = $('dl-ring') as unknown as SVGElement;
-    ring.toggleAttribute('hidden', !busy);
+    ring.toggleAttribute('hidden', !busy && !full);
     ring.classList.toggle('animate-spin', busy && d.phan_tram === null);
     const arc = $('dl-arc');
     arc.setAttribute('stroke-dasharray', busy && d.phan_tram === null ? '16 47' : String(RING));
-    arc.setAttribute('stroke-dashoffset', busy && d.phan_tram !== null ? String(RING * (1 - d.phan_tram / 100)) : busy ? '0' : String(RING));
-    const done = flash === 'xong' && !busy;
-    $('dl-done').toggleAttribute('hidden', !done);
-    $('dl-icon').toggleAttribute('hidden', done);
-    const pct = $('dl-pct');
-    pct.className = `whitespace-nowrap text-[11px] font-semibold tabular-nums ${flash === 'loi' ? 'text-red-600 dark:text-red-400' : flash === 'xong' && !busy ? 'text-emerald-700 dark:text-emerald-400' : 'text-blue-700 dark:text-blue-300'}`;
-    const text = flash === 'bat_dau' ? s.t.dlStarted
-      : busy ? (d.phan_tram !== null ? `${d.phan_tram}%` : `${d.dang_tai}…`)
-        : flash === 'xong' ? s.t.dlDone : flash === 'loi' ? s.t.dlFailed : '';
-    setText(pct, text);
-    // Không có chữ ⇒ ẩn hẳn (không chiếm chỗ) ⇒ nút vuông như các nút bên cạnh, biểu tượng nằm giữa khi rê chuột.
-    display(pct, !!text);
+    arc.setAttribute('stroke-dashoffset', full ? '0' : busy && d.phan_tram !== null ? String(RING * (1 - d.phan_tram / 100)) : busy ? '0' : String(RING));
+    $('dl-icon').classList.toggle('text-blue-600', busy || full);
+    $('dl-icon').classList.toggle('dark:text-blue-400', busy || full);
+    $('dl-err').toggleAttribute('hidden', flash !== 'loi');
+    const tip = busy ? `${s.t.dlStarted}${d.phan_tram !== null ? ` ${d.phan_tram}%` : '…'}` : flash === 'loi' ? s.t.dlFailed : flash === 'xong' ? s.t.dlDone : '';
+    setIf($('dl'), 'title', tip ? `${s.t.downloads} — ${tip}` : s.t.downloads);
   }
 
   const openDownloads = () => void api.overlay('downloads', rect($('dl').style.display === 'none' ? $('win-min') : $('dl')));
