@@ -18,7 +18,10 @@ export interface CatalogApp {
   /** Trang web: địa chỉ; hệ thống nguồn: base_url của hệ thống; Báo cáo: null (cổng của máy chủ). */
   url: string | null;
   source_system: string | null;
+  /** Ảnh biểu tượng máy chủ dựng sẵn (ô chuẩn nền màu + biểu tượng trắng, ảnh riêng, hoặc mặc định theo loại). */
   icon: string | null;
+  /** Mô tả ngắn quản trị khai. */
+  mo_ta?: string | null;
   pinned_default: boolean;
   is_default: boolean;
 }

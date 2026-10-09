@@ -5,7 +5,7 @@
  * chỗ ô tìm kiếm, kết quả xổ xuống). Dựng DOM bằng textContent (tiêu đề trang đã xem là chữ của trang web bất kỳ).
  */
 type LoginTone = 'ok' | 'warn' | 'off' | 'none';
-interface OverlayApp { key: string; label: string; favicon: string | null; pinned: boolean; status: 'ok' | 'warn' | 'off' | null; login: { tone: LoginTone; text: string } }
+interface OverlayApp { key: string; label: string; desc: string | null; favicon: string | null; pinned: boolean; status: 'ok' | 'warn' | 'off' | null; login: { tone: LoginTone; text: string } }
 interface OverlayState {
   kind: 'profile' | 'search' | 'password' | 'more' | 'context' | 'downloads';
   anchor: { x: number; y: number; w: number; h: number };
@@ -157,18 +157,21 @@ interface ValaOverlayApi {
     open.type = 'button';
     const box = el('span', 'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-600 text-sm font-semibold text-white dark:bg-blue-500', (a.label.trim()[0] ?? '•').toUpperCase());
     if (a.favicon) {
-      const img = el('img', 'h-6 w-6');
+      // Ô chuẩn (nền màu dựng sẵn) ⇒ đủ cỡ; ảnh riêng / favicon ⇒ đặt trên nền nhạt.
+      const tile = a.favicon.startsWith('data:image/svg+xml,');
+      const img = el('img', tile ? 'h-9 w-9' : 'h-6 w-6');
       img.alt = '';
-      img.addEventListener('load', () => { if (img.naturalWidth > 1) { box.className = 'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 dark:bg-slate-700'; box.replaceChildren(img); } });
+      img.addEventListener('load', () => { if (img.naturalWidth > 1) { box.className = `flex h-9 w-9 shrink-0 items-center justify-center rounded-lg${tile ? '' : ' bg-slate-100 dark:bg-slate-700'}`; box.replaceChildren(img); } });
       img.src = a.favicon;
     }
     const text = el('span', 'min-w-0 flex-1');
     text.append(el('span', 'block truncate text-[13px] font-medium', a.label));
+    if (a.desc) text.append(el('span', 'block truncate text-[11px] text-slate-500 dark:text-slate-400', a.desc));
     const st = el('span', `mt-0.5 flex items-center gap-1.5 text-[11px] ${TONE_TEXT[a.login.tone]}`);
     st.append(el('span', `h-1.5 w-1.5 shrink-0 rounded-full ${TONE_DOT[a.login.tone]}`), el('span', 'truncate', a.login.text));
     text.append(st);
     open.append(box, text);
-    open.title = `${a.label} — ${a.login.text}`;
+    open.title = [a.label, a.desc, a.login.text].filter(Boolean).join(' — ');
     open.addEventListener('click', () => void api.openApp(a.key));
     const pin = el('button', `flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${a.pinned ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400 opacity-0 group-hover:opacity-100 focus:opacity-100'} hover:bg-slate-200 dark:hover:bg-slate-600`);
     pin.type = 'button';

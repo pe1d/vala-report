@@ -7,6 +7,7 @@
  */
 import type { FastifyPluginAsync } from 'fastify';
 import { L, Problem, currentTenant, withTenant, type Tx } from '@vala/core';
+import { isColor, libraryIconName, resolveAppIcon } from '@vala/ui/app-icons';
 import { loginMethodsOf, ssoHostsOf, ssoPasswordUrlOf, tenantByCode } from '../login-target.js';
 import { audit } from '../audit.js';
 import type { ApiDeps } from '../deps.js';
@@ -17,14 +18,19 @@ export interface DesktopApp {
   kind: 'web' | 'source' | 'reports';
   url: string | null;
   source_system: string | null;
+  /** Ảnh riêng (http(s) / data:image) hoặc `lucide:<tên>` (bộ có sẵn — @vala/ui/app-icons); null ⇒ mặc định theo loại. */
   icon: string | null;
+  /** Màu ô biểu tượng (khoá APP_COLORS); null ⇒ tự gán theo mã. */
+  mau: string | null;
+  /** Mô tả ngắn (≤ 300 ký tự) — hiện ở khung Tất cả ứng dụng / ghi chú khi rê chuột. */
+  mo_ta: string | null;
   sort: number;
   pinned_default: boolean;
   is_default: boolean;
   enabled: boolean;
 }
 
-const COLS = 'ma, ten, kind, url, source_system, icon, sort, pinned_default, is_default, enabled';
+const COLS = 'ma, ten, kind, url, source_system, icon, mau, mo_ta, sort, pinned_default, is_default, enabled';
 const MA = /^[a-z][a-z0-9_]{1,39}$/;
 
 /**
@@ -56,14 +62,15 @@ export const desktopAppExtRoutes = (deps: ApiDeps): FastifyPluginAsync => async 
     // Ứng dụng hệ thống nguồn: địa chỉ = base_url của hệ thống (Desktop mở được cả khi người dùng chưa kết nối nguồn).
     const apps = await t.any<DesktopApp>(
       `SELECT a.ma, a.ten, a.kind, CASE WHEN a.kind = 'source' THEN ss.base_url ELSE a.url END AS url, a.source_system, a.icon,
-              a.sort, a.pinned_default, a.is_default, a.enabled
+              a.mau, a.mo_ta, a.sort, a.pinned_default, a.is_default, a.enabled
          FROM desktop_apps a LEFT JOIN source_systems ss ON ss.code = a.source_system
         WHERE a.enabled AND (a.kind <> 'source' OR ss.enabled) ORDER BY a.is_default DESC, a.sort, a.ten`);
     const row = await t.oneOrNone<{ pinned: string[] }>('SELECT pinned FROM desktop_app_layouts WHERE app_user_id = $1', [req.user.id]);
     const tenant = await tenantByCode(deps, currentTenant());
     const inside = await t.oneOrNone<{ d: string[] }>('SELECT desktop_open_inside AS d FROM app_settings WHERE id = 1');
     return {
-      apps: apps.map(({ enabled: _e, ...a }) => a),
+      // Biểu tượng chuẩn dựng sẵn (ô nền màu + biểu tượng trắng / ảnh riêng / mặc định theo loại) ⇒ Desktop chỉ việc hiện ảnh.
+      apps: apps.map(({ enabled: _e, mau: _m, ...a }) => ({ ...a, icon: resolveAppIcon({ ma: a.ma, kind: a.kind, icon: a.icon, mau: _m }) })),
       // Tên miền mà link mở cửa sổ mới tới đó mở thành tab trong Desktop (ngoài tên miền của các ứng dụng trong danh mục).
       open_inside: inside?.d ?? [],
       layout: { pinned: row ? cleanLayout(row.pinned, apps.map((a) => a.ma)) : null },
@@ -91,6 +98,7 @@ export const desktopAppExtRoutes = (deps: ApiDeps): FastifyPluginAsync => async 
 
 interface AppBody {
   ma?: string; ten?: string; kind?: DesktopApp['kind']; url?: string | null; source_system?: string | null; icon?: string | null;
+  mau?: string | null; mo_ta?: string | null;
   pinned_default?: boolean; is_default?: boolean; enabled?: boolean;
 }
 const appBodySchema = {
@@ -99,12 +107,21 @@ const appBodySchema = {
     kind: { type: 'string', enum: ['web', 'source', 'reports'] },
     url: { type: ['string', 'null'], maxLength: 500 }, source_system: { type: ['string', 'null'], maxLength: 40 },
     icon: { type: ['string', 'null'], maxLength: 200000 },
+    mau: { type: ['string', 'null'], maxLength: 20 }, mo_ta: { type: ['string', 'null'], maxLength: 300 },
     pinned_default: { type: 'boolean' }, is_default: { type: 'boolean' }, enabled: { type: 'boolean' },
   },
 } as const;
 
 const reportsFixed = () => new Problem('invalid_params', L('Báo cáo luôn có trong Vala Desktop', 'Reports is always part of Vala Desktop'),
-  L('Chỉ đổi được tên, biểu tượng, thứ tự, ghim sẵn của ứng dụng Báo cáo', 'You can only change the name, icon, order and default pin of the Reports app'));
+  L('Chỉ đổi được tên, mô tả, biểu tượng, thứ tự, ghim sẵn của ứng dụng Báo cáo', 'You can only change the name, description, icon, order and default pin of the Reports app'));
+
+/** Biểu tượng `lucide:<tên>` phải có trong bộ; màu phải trong bảng màu. */
+function checkDisplay(b: AppBody): void {
+  if (typeof b.icon === 'string' && b.icon.startsWith('lucide:') && !libraryIconName(b.icon.trim())) {
+    throw new Problem('invalid_params', L('Biểu tượng không có trong bộ có sẵn', 'Icon is not in the built-in set'));
+  }
+  if (b.mau && !isColor(b.mau)) throw new Problem('invalid_params', L('Màu biểu tượng không hợp lệ', 'Invalid icon colour'));
+}
 
 /** Lỗi ràng buộc CSDL ⇒ câu dễ hiểu cho quản trị. */
 function friendly(e: unknown): never {
@@ -115,7 +132,8 @@ function friendly(e: unknown): never {
   if (code === '23505' && c === 'desktop_apps_source') throw new Problem('invalid_params', L('Hệ thống nguồn này đã có trong danh mục', 'This source system is already in the catalog'));
   if (code === '23503') throw new Problem('invalid_params', L('Không có hệ thống nguồn này', 'Source system not found'));
   if (code === '23514') throw new Problem('invalid_params', L('Thông tin ứng dụng chưa hợp lệ', 'Invalid app details'),
-    L('Trang web cần địa chỉ http(s); hệ thống nguồn cần chọn hệ thống; biểu tượng là địa chỉ ảnh hoặc ảnh tải lên', 'A web page needs an http(s) address; a source app needs a source system; the icon must be an image URL or an uploaded image'));
+    L('Trang web cần địa chỉ http(s); hệ thống nguồn cần chọn hệ thống; biểu tượng chọn từ bộ có sẵn, địa chỉ ảnh hoặc ảnh tải lên; mô tả tối đa 300 ký tự',
+      'A web page needs an http(s) address; a source app needs a source system; the icon must come from the built-in set, an image URL or an uploaded image; the description is at most 300 characters'));
   throw e;
 }
 
@@ -144,15 +162,16 @@ export const adminDesktopAppRoutes = (deps: ApiDeps): FastifyPluginAsync => asyn
   app.post<{ Body: AppBody }>('/admin/desktop-apps', { schema: { body: { ...appBodySchema, required: ['ma', 'ten', 'kind'] } } }, async (req, reply) => {
     const b = req.body;
     if (!MA.test(b.ma!)) throw new Problem('invalid_params', L('Mã ứng dụng: chữ thường, số, gạch dưới; bắt đầu bằng chữ', 'App code: lowercase letters, digits, underscores; starts with a letter'));
+    checkDisplay(b);
     const row = await withTenant(deps.writer, async (t) => {
       // Mặc định mới ⇒ bỏ mặc định cũ (chỉ một mục mặc định).
       if (b.is_default) await t.none('UPDATE desktop_apps SET is_default = false WHERE is_default');
       const sort = await t.one<{ s: number }>('SELECT coalesce(max(sort), 0) + 10 AS s FROM desktop_apps WHERE kind <> $1', ['reports']);
       const r = await t.one<DesktopApp>(
-        `INSERT INTO desktop_apps (ma, ten, kind, url, source_system, icon, sort, pinned_default, is_default, enabled, updated_by)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING ${COLS}`,
+        `INSERT INTO desktop_apps (ma, ten, kind, url, source_system, icon, mau, mo_ta, sort, pinned_default, is_default, enabled, updated_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING ${COLS}`,
         [b.ma, b.ten!.trim(), b.kind, b.kind === 'web' ? b.url?.trim() || null : null, b.kind === 'source' ? b.source_system || null : null,
-          b.icon?.trim() || null, sort.s, b.pinned_default ?? true, b.is_default ?? false, b.enabled ?? true, req.user.id]);
+          b.icon?.trim() || null, b.mau || null, b.mo_ta?.trim() || null, sort.s, b.pinned_default ?? true, b.is_default ?? false, b.enabled ?? true, req.user.id]);
       await audit(t, req, 'source_change', { type: 'desktop_app', id: r.ma }, { op: 'create' });
       return r;
     }).catch(friendly);
@@ -161,6 +180,7 @@ export const adminDesktopAppRoutes = (deps: ApiDeps): FastifyPluginAsync => asyn
 
   app.patch<{ Params: { ma: string }; Body: AppBody }>('/admin/desktop-apps/:ma', { schema: { body: appBodySchema } }, async (req) => {
     const b = req.body;
+    checkDisplay(b);
     return withTenant(deps.writer, async (t) => {
       const cur = await t.oneOrNone<DesktopApp>(`SELECT ${COLS} FROM desktop_apps WHERE ma = $1`, [req.params.ma]);
       if (!cur) throw new Problem('not_found', L('Không có ứng dụng này', 'App not found'));
@@ -170,12 +190,13 @@ export const adminDesktopAppRoutes = (deps: ApiDeps): FastifyPluginAsync => asyn
       const kind = b.kind ?? cur.kind;
       const r = await t.one<DesktopApp>(
         `UPDATE desktop_apps SET ten = $2, kind = $3, url = $4, source_system = $5, icon = $6, pinned_default = $7, is_default = $8,
-                enabled = $9, updated_at = now(), updated_by = $10 WHERE ma = $1 RETURNING ${COLS}`,
+                enabled = $9, updated_at = now(), updated_by = $10, mau = $11, mo_ta = $12 WHERE ma = $1 RETURNING ${COLS}`,
         [cur.ma, b.ten?.trim() ?? cur.ten, kind,
           kind === 'web' ? (b.url !== undefined ? b.url?.trim() || null : cur.url) : null,
           kind === 'source' ? (b.source_system !== undefined ? b.source_system : cur.source_system) : null,
           b.icon !== undefined ? b.icon?.trim() || null : cur.icon,
-          b.pinned_default ?? cur.pinned_default, b.is_default ?? cur.is_default, b.enabled ?? cur.enabled, req.user.id]);
+          b.pinned_default ?? cur.pinned_default, b.is_default ?? cur.is_default, b.enabled ?? cur.enabled, req.user.id,
+          b.mau !== undefined ? b.mau || null : cur.mau, b.mo_ta !== undefined ? b.mo_ta?.trim() || null : cur.mo_ta]);
       await audit(t, req, 'source_change', { type: 'desktop_app', id: r.ma }, { op: 'update' });
       return r;
     }).catch(friendly);

@@ -791,11 +791,11 @@ const appLabel = (key: string): string => appDefs().find((a) => a.key === key)?.
 export const listApps = (): { key: string; label: string }[] => appDefs().map(({ key, label }) => ({ key, label }));
 
 // ---- ứng dụng trên thanh dọc: danh mục của đơn vị (apps.ts) ----
-interface AppDef { key: string; label: string; icon: string | null; url: string; isDefault: boolean }
+interface AppDef { key: string; label: string; icon: string | null; url: string; isDefault: boolean; desc?: string | null }
 function appDefs(): AppDef[] {
   if (!signedIn()) return [];
   const list: AppDef[] = catalog().apps.map((a) => ({
-    key: appKey(a), label: a.ten, icon: a.icon, isDefault: a.is_default,
+    key: appKey(a), label: a.ten, icon: a.icon, isDefault: a.is_default, desc: a.mo_ta ?? null,
     url: a.kind === 'reports' ? portalUrl() : a.url ?? '',
   }));
   // Báo cáo luôn đi kèm Vala Desktop (phiên các hệ thống nguồn, kết nối, lịch dữ liệu đều ở đó) — danh mục thiếu thì tự thêm.
@@ -955,7 +955,8 @@ function itemOf(key: string, label: string | undefined, t: (typeof M)['vi'], clo
   return {
     key,
     label: key === ADMIN ? t.admin : label ?? src?.ten ?? (title || t.newTab),
-    title: title || label || src?.ten || '',
+    // Rê chuột: tên + mô tả quản trị khai (nếu có).
+    title: [title || label || src?.ten || '', appDefs().find((a) => a.key === key)?.desc].filter(Boolean).join(' — '),
     // Ứng dụng trong danh mục: biểu tượng PHẦN MỀM (appIconOf), không theo favicon động của trang; tab mở từ link: favicon trang.
     favicon: appIconOf(key) ?? (isAppKey(key) ? null : tab?.favicon ?? null),
     status: src ? tabStatus(statusOf(src.code)?.result, src.state) : null,
@@ -1269,7 +1270,7 @@ function overlayState() {
     account: s.deviceToken ? catalog().account ?? null : null,
     apps: appDefs().map((a) => {
       const src = sourceOf(a.key);
-      return { key: a.key, label: a.label, favicon: appIconOf(a.key), pinned: pinned.has(a.key),
+      return { key: a.key, label: a.label, desc: a.desc ?? null, favicon: appIconOf(a.key), pinned: pinned.has(a.key),
         status: src ? tabStatus(statusOf(src.code)?.result, src.state) : null, login: appLogin(a, t) };
     }),
   };

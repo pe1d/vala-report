@@ -14,11 +14,13 @@
     "./branding": "./src/branding.tsx",
     "./api": "./src/api.ts",
     "./base.css": "./src/base.css",
-    "./tailwind-preset": "./tailwind-preset.cjs"
+    "./tailwind-preset": "./tailwind-preset.cjs",
+    "./app-icons": "./src/app-icons.ts"
   },
   "scripts": {
     "typecheck": "tsc -p .",
-    "test": "echo 'ui: chưa có test'"
+    "test": "echo 'ui: chưa có test'",
+    "gen-app-icons": "node scripts/gen-app-icons.mjs"
   },
   "peerDependencies": {
     "react": "^18.3.1",
@@ -28,6 +30,7 @@
   "devDependencies": {
     "@types/react": "^18.3.31",
     "@types/react-dom": "^18.3.7",
+    "lucide-static": "0.460.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.30.6",

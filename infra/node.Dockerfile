@@ -11,6 +11,8 @@ RUN npm install -g pnpm@12.5.1 --no-fund --no-audit --loglevel=error
 # Cài thư viện trước (tận dụng cache khi chỉ đổi mã nguồn).
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY packages/core/package.json packages/core/
+# @vala/ui: API dùng bộ biểu tượng ứng dụng (src/app-icons.ts — TypeScript thuần, không React).
+COPY packages/ui/package.json packages/ui/
 COPY apps/api/package.json apps/api/
 COPY apps/worker/package.json apps/worker/
 COPY apps/web/package.json apps/web/

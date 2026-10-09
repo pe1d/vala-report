@@ -4,6 +4,7 @@ import { useAsync } from '@vala/ui/hooks';
 import { Empty, ErrorBox, Loading } from '@vala/ui/States';
 import { Badge, Banner, Button, Card, Field, Input, Menu, Muted, PageTitle, Select, Table, Td, Th } from '@vala/ui/ui';
 import { messages, useT } from '@vala/ui/i18n';
+import { AppIconPicker, AppTile } from './AppIconPicker';
 
 /**
  * Quản trị → Ứng dụng Desktop: danh mục ứng dụng Vala Desktop của đơn vị (họp 07/10 phần 3) — trang web, hệ thống nguồn,
@@ -12,7 +13,7 @@ import { messages, useT } from '@vala/ui/i18n';
  */
 interface DesktopApp {
   ma: string; ten: string; kind: 'web' | 'source' | 'reports'; url: string | null; source_system: string | null; icon: string | null;
-  sort: number; pinned_default: boolean; is_default: boolean; enabled: boolean;
+  mau: string | null; mo_ta: string | null; sort: number; pinned_default: boolean; is_default: boolean; enabled: boolean;
 }
 type Draft = Omit<DesktopApp, 'sort'> & { isNew: boolean };
 
@@ -23,16 +24,18 @@ const M = messages({
   thOrder: 'Thứ tự', thApp: 'Ứng dụng', thKind: 'Loại', thTarget: 'Địa chỉ / hệ thống', thFlags: 'Hiển thị', thActions: '',
   kinds: { web: 'Trang web', source: 'Hệ thống nguồn', reports: 'Báo cáo' } as Record<DesktopApp['kind'], string>,
   reportsTarget: 'Cổng Vala Reporting (đi kèm Vala Desktop)',
-  isDefault: 'Mặc định', pinned: 'Ghim sẵn', notPinned: 'Trong ⊞', off: 'Đang tắt',
+  isDefault: 'Mặc định', pinned: 'Ghim sẵn', notPinned: 'Chưa ghim', off: 'Đang tắt',
   up: 'Lên', down: 'Xuống', edit: 'Sửa', turnOff: 'Tắt', turnOn: 'Bật', remove: 'Xoá',
   removeConfirm: (ten: string) => `Xoá ứng dụng “${ten}” khỏi danh mục? Người dùng sẽ không còn thấy ứng dụng này.`,
   newTitle: 'Thêm ứng dụng', editTitle: (ten: string) => `Sửa: ${ten}`,
-  kind: 'Loại ứng dụng', name: 'Tên hiển thị', namePh: 'vd Vala, eGov, Báo điện tử…',
+  kind: 'Loại ứng dụng', name: 'Tên hiển thị', namePh: 'vd Tin nhắn, Lịch họp, eGov…',
+  nameHint: 'Viết hoa chữ cái đầu, giữ nguyên tên riêng / viết tắt (vd: Tin nhắn, Lịch họp, Văn bản Hà Nội, eGov).',
+  nameCaps: (s: string) => `Tên đang viết hoa toàn bộ — nên đổi thành “${s}”.`, nameFix: 'Đổi',
+  desc: 'Mô tả ngắn (không bắt buộc)', descPh: 'vd Nhắn tin, gọi điện với đồng nghiệp trong đơn vị', descHint: 'Hiện dưới tên ứng dụng trong khung Tất cả ứng dụng và khi rê chuột trên thanh bên.',
   code: 'Mã (chữ thường, số, gạch dưới)', codePh: 'vd bao_dien_tu', codeHint: 'Dùng để lưu bố cục của người dùng — không đổi được sau khi tạo.',
   url: 'Địa chỉ trang', urlPh: 'https://…',
   source: 'Hệ thống nguồn', pickSource: 'Chọn hệ thống…', sourceHint: 'Mở trang đăng nhập của hệ thống; Vala Desktop giữ phiên và chạy kịch bản như hiện nay.',
-  icon: 'Biểu tượng (không bắt buộc)', iconPh: 'https://…/favicon.png', iconUpload: 'Tải ảnh lên', iconClear: 'Bỏ biểu tượng',
-  iconHint: 'Để trống ⇒ dùng biểu tượng của trang (favicon) hoặc chữ cái đầu.', iconTooBig: 'Ảnh quá lớn (tối đa 150 KB).',
+  icon: 'Biểu tượng',
   pinnedDefault: 'Ghim sẵn trên thanh bên (người dùng chưa tự sắp xếp)', defaultApp: 'Ứng dụng mặc định (đứng đầu, nạp sẵn)', enabledLabel: 'Bật',
   reportsNote: 'Báo cáo luôn đi kèm Vala Desktop (phiên các hệ thống nguồn, kết nối, lịch dữ liệu ở đây): không tắt / xoá được.',
   cancel: 'Huỷ', save: 'Lưu', create: 'Thêm', saving: 'Đang lưu…',
@@ -44,32 +47,38 @@ const M = messages({
   thOrder: 'Order', thApp: 'App', thKind: 'Type', thTarget: 'Address / system', thFlags: 'Display', thActions: '',
   kinds: { web: 'Web page', source: 'Source system', reports: 'Reports' } as Record<DesktopApp['kind'], string>,
   reportsTarget: 'Vala Reporting portal (built into Vala Desktop)',
-  isDefault: 'Default', pinned: 'Pinned', notPinned: 'In ⊞', off: 'Disabled',
+  isDefault: 'Default', pinned: 'Pinned', notPinned: 'Not pinned', off: 'Disabled',
   up: 'Up', down: 'Down', edit: 'Edit', turnOff: 'Disable', turnOn: 'Enable', remove: 'Delete',
   removeConfirm: (ten: string) => `Remove “${ten}” from the catalog? Users will no longer see this app.`,
   newTitle: 'Add app', editTitle: (ten: string) => `Edit: ${ten}`,
-  kind: 'App type', name: 'Display name', namePh: 'e.g. Vala, eGov, News…',
+  kind: 'App type', name: 'Display name', namePh: 'e.g. Messages, Meetings, eGov…',
+  nameHint: 'Capitalize the first letter, keep proper names / acronyms as they are (e.g. Messages, Meetings, eGov).',
+  nameCaps: (s: string) => `The name is in all caps — consider “${s}”.`, nameFix: 'Change',
+  desc: 'Short description (optional)', descPh: 'e.g. Chat and call colleagues in your organization', descHint: 'Shown under the app name in the All apps panel and when hovering on the sidebar.',
   code: 'Code (lowercase letters, digits, underscores)', codePh: 'e.g. news', codeHint: "Used to store users' layouts — can't be changed after creation.",
   url: 'Page address', urlPh: 'https://…',
   source: 'Source system', pickSource: 'Choose a system…', sourceHint: 'Opens the system’s sign-in page; Vala Desktop keeps the session and runs scripts as before.',
-  icon: 'Icon (optional)', iconPh: 'https://…/favicon.png', iconUpload: 'Upload image', iconClear: 'Remove icon',
-  iconHint: "Leave empty to use the page's favicon or the first letter.", iconTooBig: 'Image too large (max 150 KB).',
+  icon: 'Icon',
   pinnedDefault: "Pinned on the sidebar (for users who haven't arranged their own)", defaultApp: 'Default app (first, preloaded)', enabledLabel: 'Enabled',
   reportsNote: 'Reports is always part of Vala Desktop (source-system sessions, connections and data schedules live there): it cannot be disabled or deleted.',
   cancel: 'Cancel', save: 'Save', create: 'Add', saving: 'Saving…',
   saved: (ten: string) => `Saved “${ten}”. Vala Desktop picks up the change at its next refresh (within 15 minutes).`,
 });
 
-const blank = (): Draft => ({ isNew: true, ma: '', ten: '', kind: 'web', url: '', source_system: null, icon: null, pinned_default: true, is_default: false, enabled: true });
+const blank = (): Draft => ({ isNew: true, ma: '', ten: '', kind: 'web', url: '', source_system: null, icon: null, mau: null, mo_ta: null, pinned_default: true, is_default: false, enabled: true });
+
+/** Tên viết hoa toàn bộ (vd "EGOV (BKAV)", "LỊCH HỌP") ⇒ gợi ý viết hoa chữ cái đầu; tên bình thường ⇒ null. */
+export function capsSuggestion(ten: string): string | null {
+  const s = ten.trim();
+  const letters = s.replace(/[^\p{L}]/gu, '');
+  if (letters.length < 4 || s !== s.toLocaleUpperCase('vi')) return null;
+  const lower = s.toLocaleLowerCase('vi');
+  return lower.charAt(0).toLocaleUpperCase('vi') + lower.slice(1);
+}
 /** Mã gợi ý từ tên: bỏ dấu, chữ thường, gạch dưới. */
 const slug = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/gi, 'd').toLowerCase()
   .replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').replace(/^(\d)/, 'a_$1').slice(0, 40);
 
-function AppIcon({ a }: { a: Pick<DesktopApp, 'icon' | 'ten'> }) {
-  const [bad, setBad] = useState(false);
-  if (a.icon && !bad) return <img src={a.icon} alt="" className="h-6 w-6 shrink-0 rounded-md object-contain" onError={() => setBad(true)} />;
-  return <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-blue-600 text-[11px] font-semibold text-white">{(a.ten.trim()[0] ?? '•').toUpperCase()}</span>;
-}
 
 const L = messages({
   title: 'Liên kết mở trong Vala Desktop',
@@ -179,13 +188,6 @@ export function AdminDesktopAppsPage() {
     } catch (e) { fail(e); }
     setBusy(false);
   };
-  const upload = (f: File | undefined) => {
-    if (!f || !draft) return;
-    if (f.size > 150_000) { setNote({ tone: 'err', text: t.iconTooBig }); return; }
-    const r = new FileReader();
-    r.onload = () => setDraft((d) => (d ? { ...d, icon: String(r.result) } : d));
-    r.readAsDataURL(f);
-  };
 
   // Hệ thống nguồn chưa có trong danh mục (mỗi hệ thống một ứng dụng) — khi sửa thì giữ hệ thống đang chọn.
   const usedSources = new Set(list.filter((a) => a.source_system && a.ma !== draft?.ma).map((a) => a.source_system));
@@ -197,7 +199,7 @@ export function AdminDesktopAppsPage() {
       {note && <Banner tone={note.tone} role={note.tone === 'err' ? 'alert' : 'status'}>{note.text}</Banner>}
 
       {draft ? (
-        <Card className="mb-4 max-w-2xl rounded-2xl">
+        <Card className="mb-4 max-w-3xl rounded-2xl">
           <h2 className="mb-3 text-base font-semibold">{draft.isNew ? t.newTitle : t.editTitle(draft.ten)}</h2>
           <div className="grid gap-3">
             {draft.kind === 'reports' ? <Muted>{t.reportsNote}</Muted> : (
@@ -211,6 +213,18 @@ export function AdminDesktopAppsPage() {
             <Field label={t.name}>
               <Input value={draft.ten} placeholder={t.namePh} maxLength={60}
                 onChange={(e) => setDraft({ ...draft, ten: e.target.value, ...(draft.isNew ? { ma: slug(e.target.value) } : {}) })} />
+              {capsSuggestion(draft.ten) ? (
+                <span className="flex items-center gap-2 font-normal text-amber-700 dark:text-amber-400">
+                  {t.nameCaps(capsSuggestion(draft.ten)!)}
+                  <button type="button" className="font-medium underline" onClick={() => setDraft({ ...draft, ten: capsSuggestion(draft.ten)! })}>{t.nameFix}</button>
+                </span>
+              ) : <span className="font-normal text-slate-400">{t.nameHint}</span>}
+            </Field>
+            <Field label={t.desc}>
+              <textarea value={draft.mo_ta ?? ''} placeholder={t.descPh} maxLength={300} rows={2}
+                className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900"
+                onChange={(e) => setDraft({ ...draft, mo_ta: e.target.value })} />
+              <span className="flex justify-between font-normal text-slate-400"><span>{t.descHint}</span><span>{(draft.mo_ta ?? '').length}/300</span></span>
             </Field>
             {draft.isNew && (
               <Field label={t.code}>
@@ -236,17 +250,8 @@ export function AdminDesktopAppsPage() {
               </Field>
             )}
             <Field label={t.icon}>
-              <div className="flex items-center gap-2">
-                <AppIcon a={{ icon: draft.icon, ten: draft.ten || '?' }} />
-                <Input className="min-w-0 flex-1" value={draft.icon?.startsWith('data:') ? '' : draft.icon ?? ''} placeholder={draft.icon?.startsWith('data:') ? '✓' : t.iconPh}
-                  onChange={(e) => setDraft({ ...draft, icon: e.target.value || null })} />
-                <label className="cursor-pointer whitespace-nowrap rounded-md border border-slate-300 px-2.5 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800">
-                  {t.iconUpload}
-                  <input type="file" accept="image/png,image/jpeg,image/svg+xml,image/webp,image/x-icon" hidden onChange={(e) => upload(e.target.files?.[0])} />
-                </label>
-                {draft.icon && <Button onClick={() => setDraft({ ...draft, icon: null })}>{t.iconClear}</Button>}
-              </div>
-              <span className="font-normal text-slate-400">{t.iconHint}</span>
+              <AppIconPicker ma={draft.ma} kind={draft.kind} ten={draft.ten} value={{ icon: draft.icon, mau: draft.mau }}
+                onChange={(v) => setDraft({ ...draft, ...v })} onError={(text) => setNote({ tone: 'err', text })} />
             </Field>
             <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={draft.pinned_default} onChange={(e) => setDraft({ ...draft, pinned_default: e.target.checked })} />{t.pinnedDefault}</label>
             <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={draft.is_default} onChange={(e) => setDraft({ ...draft, is_default: e.target.checked })} />{t.defaultApp}</label>
@@ -282,8 +287,12 @@ export function AdminDesktopAppsPage() {
                 </Td>
                 <Td>
                   <div className="flex items-center gap-2">
-                    <AppIcon a={a} />
-                    <div className="min-w-0"><div className="font-medium">{a.ten}</div><div className="font-mono text-xs text-slate-500">{a.ma}</div></div>
+                    <AppTile a={a} size="h-8 w-8" />
+                    <div className="min-w-0">
+                      <div className="font-medium">{a.ten}</div>
+                      {a.mo_ta && <div className="max-w-xs truncate text-xs text-slate-500" title={a.mo_ta}>{a.mo_ta}</div>}
+                      <div className="font-mono text-xs text-slate-400">{a.ma}</div>
+                    </div>
                   </div>
                 </Td>
                 <Td>{t.kinds[a.kind]}</Td>

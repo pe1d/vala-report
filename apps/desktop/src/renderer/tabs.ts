@@ -126,7 +126,8 @@ interface ValaTabsApi {
     letter.className = 'flex h-5 w-5 items-center justify-center rounded-md bg-blue-600 text-[11px] font-semibold leading-none text-white dark:bg-blue-500';
     const icon = document.createElement('img');
     icon.alt = '';
-    icon.className = 'h-[18px] w-[18px]';
+    // Biểu tượng chuẩn (ô màu máy chủ dựng sẵn) / favicon: đủ ô 20px.
+    icon.className = 'h-5 w-5';
     display(icon, false);
     const glyphBox = document.createElement('span');
     glyphBox.className = 'flex h-5 w-5 items-center justify-center text-slate-600 dark:text-slate-300';

@@ -171,6 +171,9 @@ importers:
       '@vala/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@vala/ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
       ajv:
         specifier: ^8.20.0
         version: 8.20.0
@@ -412,6 +415,9 @@ importers:
       '@types/react-dom':
         specifier: ^18.3.7
         version: 18.3.7(@types/react@18.3.31)
+      lucide-static:
+        specifier: 0.460.0
+        version: 0.460.0
       react:
         specifier: ^18.3.1
         version: 18.3.1
@@ -2340,6 +2346,9 @@ packages:
   lru-cache@7.18.3:
     resolution: {integrity: sha512-jumlc0BIUrS3qJGgIkWZsyfAM7NCWiBcCDhnd+3NNM5KbBmLTgHVfWBcg6W+rLUsIpzpERPsvwUP7CckAQSOoA==}
     engines: {node: '>=12'}
+
+  lucide-static@0.460.0:
+    resolution: {integrity: sha512-X6pIdg7jVxv7YQ/uR241hwhNiztcAfmj181TbcX7HCxxk/3mGaRtAc6b2ftUvQBufbJE6ehgyzO2uVsa604tWg==}
 
   luxon@3.7.2:
     resolution: {integrity: sha512-vtEhXh/gNjI9Yg1u4jX/0YVPMvxzHuGgCm6tC5kZyb08yjGWGnqAjGJvcXbqQR2P3MyMEFnRbpcdFS6PBcLqew==}
@@ -5414,6 +5423,8 @@ snapshots:
       yallist: 4.0.0
 
   lru-cache@7.18.3: {}
+
+  lucide-static@0.460.0: {}
 
   luxon@3.7.2: {}
 
