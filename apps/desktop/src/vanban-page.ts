@@ -10,7 +10,7 @@ import { setVanbanGoc, vanbanTabOf, vanbanUis } from './browser';
 import { currentPrefs, prefsEvents } from './prefs';
 import { listActions, runAction } from './scripts';
 import { reportError } from './error-report';
-import { downloadEvents, expectDownload, previewDir, recordSaved } from './downloads';
+import { askDirPath, askLocalFile, downloadEvents, expectDownload, previewDir, recordSaved } from './downloads';
 import { safeName, uniqueName } from './downloads-model';
 import { getSettings } from './settings';
 import { siteOf } from './tabs-model';
@@ -58,7 +58,7 @@ const cachOf = (args: Record<string, unknown>): Cach =>
  * rồi tab xem trước; mo ⇒ thư mục tạm rồi mở bằng ứng dụng của máy; tai ⇒ thư mục Tải về (không ghi đè; hỏi nơi lưu nếu
  * Cài đặt bật); luu_thanh ⇒ hỏi nơi lưu.
  */
-async function saveFile(sender: WebContents, r: unknown, cach: Cach, nguon: string): Promise<{ ok: boolean; error?: string; saved?: string; dang_xem?: boolean }> {
+async function saveFile(sender: WebContents, r: unknown, cach: Cach, nguon: string): Promise<{ ok: boolean; error?: string; saved?: string; dang_xem?: boolean; dang_tai?: boolean }> {
   const o = r && typeof r === 'object' ? (r as Record<string, unknown>) : {};
   if (typeof o.base64 !== 'string' || typeof o.ten !== 'string') return { ok: false, error: 'Phiên dịch không trả tệp' };
   const buf = Buffer.from(o.base64, 'base64');
@@ -72,8 +72,16 @@ async function saveFile(sender: WebContents, r: unknown, cach: Cach, nguon: stri
     const err = await shell.openPath(file);
     return err ? { ok: false, error: err } : { ok: true };
   }
+  // Tải về ⇒ qua hộp Tải xuống như mọi lượt tải (Mở / Tải về / Lưu thành…), trừ khi Cài đặt tắt "Hỏi trước khi tải".
+  if (cach === 'tai' && getSettings().askBeforeDownload !== false) {
+    mkdirSync(askDirPath(), { recursive: true });
+    const tmp = join(askDirPath(), uniqueName(new Set(readdirSync(askDirPath())), safeName(o.ten)));
+    writeFileSync(tmp, buf);
+    askLocalFile(tmp, o.ten, host);
+    return { ok: true, dang_tai: true };
+  }
   let path = join(app.getPath('downloads'), uniqueName(new Set(readdirSync(app.getPath('downloads'))), safeName(o.ten)));
-  if (cach === 'luu_thanh' || getSettings().askDownloadPath === true) {
+  if (cach === 'luu_thanh') {
     const win = BrowserWindow.fromWebContents(sender) ?? undefined;
     const res = win ? await dialog.showSaveDialog(win, { defaultPath: path }) : await dialog.showSaveDialog({ defaultPath: path });
     if (res.canceled || !res.filePath) return { ok: false, error: '' };

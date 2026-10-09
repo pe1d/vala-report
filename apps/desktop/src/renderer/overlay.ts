@@ -7,7 +7,7 @@
 type LoginTone = 'ok' | 'warn' | 'off' | 'none';
 interface OverlayApp { key: string; label: string; favicon: string | null; pinned: boolean; status: 'ok' | 'warn' | 'off' | null; login: { tone: LoginTone; text: string } }
 interface OverlayState {
-  kind: 'profile' | 'search' | 'password' | 'more' | 'context' | 'downloads';
+  kind: 'profile' | 'search' | 'password' | 'more' | 'context' | 'downloads' | 'download-ask';
   anchor: { x: number; y: number; w: number; h: number };
   collapsed: boolean;
   lang: 'vi' | 'en';
@@ -24,8 +24,10 @@ interface OverlayState {
   context: { title: string; items: Array<{ id: string; label: string; enabled: boolean; checked?: boolean; sep?: boolean; icon?: string; hint?: string }> } | null;
   /** Khung Tải xuống (downloads.ts): lịch sử mới nhất trước. */
   downloads: { list: OverlayDownload[]; dang_tai: number; phan_tram: number | null } | null;
+  ask: OverlayAsk | null;
 }
-interface OverlayDownload { id: string; ten: string; duong_dan: string; tong: number; da_tai: number; trang_thai: 'dang_tai' | 'tam_dung' | 'xong' | 'huy' | 'loi'; luc: number; nguon: string; mat?: boolean }
+interface OverlayAsk { id: string; ten: string; nguon: string; tong: number; da_tai: number; xong: boolean; xem_duoc: boolean; con: number }
+interface OverlayDownload { id: string; ten: string; duong_dan: string; tong: number; da_tai: number; trang_thai: 'dang_tai' | 'tam_dung' | 'cho_chon' | 'xong' | 'huy' | 'loi'; luc: number; nguon: string; mat?: boolean }
 type OverlayItem = { kind: 'app' | 'action' | 'chat'; title: string; sub: string; ref: Record<string, string> };
 interface OverlaySection { kind: 'recent' | 'chats' | 'apps' | 'actions'; items: OverlayItem[] }
 interface ValaOverlayApi {
@@ -42,6 +44,8 @@ interface ValaOverlayApi {
   changePassword(current: string, next: string): Promise<{ ok: boolean; type?: string; title?: string; detail?: string }>;
   download(id: string, act: string): Promise<OverlayState>;
   downloadSaveAs(id: string): Promise<void>;
+  downloadChoose(id: string, choice: 'mo' | 'tai' | 'luu_thanh' | 'huy', khongHoi: boolean): Promise<OverlayState>;
+  downloadAsk(id: string): Promise<void>;
   onOpen(cb: () => void): void;
   onRefresh(cb: () => void): void;
 }
@@ -214,6 +218,66 @@ interface ValaOverlayApi {
     return out;
   }
 
+  /**
+   * HỘP TẢI XUỐNG: mỗi lần tải ⇒ chọn Mở (PDF / ảnh xem ngay trong app; loại khác mở bằng ứng dụng của máy) · Tải về
+   * (thư mục Tải về) · Lưu thành… (chọn nơi lưu) · Huỷ. Tệp đang tải ngầm (thanh tiến độ). Enter = Tải về.
+   */
+  let askNoAsk = false;
+  function askPanel(s: OverlayState): { nodes: HTMLElement[]; primary: HTMLButtonElement | null } {
+    const t = s.t;
+    const a = s.ask;
+    if (!a) return { nodes: [], primary: null };
+    const out: HTMLElement[] = [el('div', 'px-1 pb-3 text-base font-semibold', t.askTitle)];
+    const fileRow = el('div', 'flex items-start gap-3 rounded-xl bg-slate-50 p-3 dark:bg-slate-900');
+    fileRow.append(el('span', 'flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-blue-600 text-[11px] font-bold uppercase text-white dark:bg-blue-500', (/\.([a-z0-9]{1,4})$/i.exec(a.ten)?.[1] ?? 'tệp').toUpperCase()));
+    const info = el('div', 'min-w-0 flex-1');
+    const name = el('div', 'truncate text-[14px] font-medium', a.ten);
+    name.title = a.ten;
+    info.append(name, el('div', 'mt-0.5 truncate text-[12px] text-slate-500 dark:text-slate-400', [a.tong > 0 ? size(a.tong) : '', a.nguon ? `${t.askFrom} ${a.nguon}` : ''].filter(Boolean).join(' · ')));
+    const pct = a.tong > 0 ? Math.min(100, Math.round((a.da_tai / a.tong) * 100)) : null;
+    const status = el('div', `mt-2 flex items-center gap-2 text-[12px] ${a.xong ? 'text-emerald-700 dark:text-emerald-400' : 'text-slate-500 dark:text-slate-400'}`);
+    if (!a.xong) {
+      const bar = el('div', 'h-1.5 flex-1 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700');
+      const fill = el('div', `h-full rounded-full ${pct === null ? 'w-1/3 animate-pulse bg-blue-400' : 'bg-blue-600 dark:bg-blue-400'}`);
+      if (pct !== null) fill.style.width = `${pct}%`;
+      bar.append(fill);
+      status.append(bar, el('span', 'shrink-0 tabular-nums', pct === null ? t.askBusy : `${t.askBusy} ${pct}%`));
+    } else status.append(el('span', '', `✓ ${t.askReady}`));
+    info.append(status);
+    fileRow.append(info);
+    out.push(fileRow);
+
+    const choose = (c: 'mo' | 'tai' | 'luu_thanh' | 'huy') => void api.downloadChoose(a.id, c, askNoAsk).then(render);
+    const opt = (label: string, hint: string, c: 'mo' | 'tai' | 'luu_thanh', primary = false) => {
+      const b = el('button', `flex min-w-0 flex-1 flex-col items-start rounded-xl border px-3 py-2.5 text-left ${primary
+        ? 'border-blue-600 bg-blue-600 text-white hover:bg-blue-700 dark:border-blue-500 dark:bg-blue-500 dark:hover:bg-blue-400'
+        : 'border-slate-200 hover:border-blue-300 hover:bg-blue-50/60 dark:border-slate-700 dark:hover:border-blue-500/60 dark:hover:bg-slate-700/60'}`);
+      b.type = 'button';
+      b.append(el('span', 'text-[13px] font-semibold', label), el('span', `mt-0.5 text-[11px] ${primary ? 'text-blue-100' : 'text-slate-500 dark:text-slate-400'}`, hint));
+      b.addEventListener('click', () => choose(c));
+      return b;
+    };
+    const row = el('div', 'mt-3 flex gap-2');
+    const save = opt(t.askSave, t.askSaveHint, 'tai', true);
+    row.append(opt(t.askOpen, a.xem_duoc ? t.askOpenView : t.askOpenApp, 'mo'), opt(t.askSaveAs, t.askSaveAsHint, 'luu_thanh'), save);
+    out.push(row);
+
+    const foot = el('div', 'mt-3 flex items-center gap-3');
+    const lab = el('label', 'flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-[12px] text-slate-600 dark:text-slate-300');
+    const cb = el('input', 'h-3.5 w-3.5 shrink-0');
+    cb.type = 'checkbox';
+    cb.checked = askNoAsk;
+    cb.addEventListener('change', () => { askNoAsk = cb.checked; });
+    lab.append(cb, el('span', 'truncate', t.askNoAsk));
+    const cancel = el('button', 'shrink-0 rounded-lg px-3 py-1.5 text-[13px] text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-700', t.askCancel);
+    cancel.type = 'button';
+    cancel.addEventListener('click', () => choose('huy'));
+    foot.append(lab, cancel);
+    out.push(foot);
+    if (a.con > 0) out.push(el('div', 'mt-2 text-[11px] text-slate-400', `+${a.con} ${t.askMore}`));
+    return { nodes: out, primary: save };
+  }
+
   /** Khung Tải xuống: mỗi tệp một dòng (tên, tiến độ / trạng thái, dung lượng, nguồn, giờ) + Mở / Mở thư mục / Huỷ / Xoá. */
   const size = (n: number) => (n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
   function downloadsPanel(s: OverlayState): HTMLElement[] {
@@ -252,6 +316,12 @@ interface ValaOverlayApi {
         saveAs.addEventListener('click', () => void api.downloadSaveAs(x.id));
         top.append(act(t.dlOpen, 'open'), act(t.dlFolder, 'folder'), saveAs);
       }
+      if (x.trang_thai === 'cho_chon') {
+        const choose = el('button', 'shrink-0 rounded px-1.5 py-0.5 text-[12px] font-medium text-blue-700 hover:bg-blue-50 dark:text-blue-300 dark:hover:bg-slate-600', t.dlChoose);
+        choose.type = 'button';
+        choose.addEventListener('click', () => void api.downloadAsk(x.id));
+        top.append(choose);
+      }
       if (x.trang_thai === 'dang_tai' || x.trang_thai === 'tam_dung') top.append(act(t.dlCancel, 'cancel'));
       else {
         const rm = el('button', 'flex h-5 w-5 shrink-0 items-center justify-center rounded text-slate-400 opacity-0 hover:bg-slate-200 group-hover:opacity-100 dark:hover:bg-slate-600');
@@ -271,7 +341,7 @@ interface ValaOverlayApi {
         row.append(bar);
       }
       const st = x.trang_thai === 'dang_tai' ? `${size(x.da_tai)}${x.tong > 0 ? ` / ${size(x.tong)}` : ''}`
-        : x.trang_thai === 'tam_dung' ? t.dlPaused : x.trang_thai === 'xong' ? (x.mat ? t.dlGone : `${t.dlDone} · ${size(x.tong || x.da_tai)}`)
+        : x.trang_thai === 'tam_dung' ? t.dlPaused : x.trang_thai === 'cho_chon' ? t.dlWaiting : x.trang_thai === 'xong' ? (x.mat ? t.dlGone : `${t.dlDone} · ${size(x.tong || x.da_tai)}`)
         : x.trang_thai === 'huy' ? t.dlCancelled : t.dlFailed;
       row.append(el('div', `mt-1 truncate text-[11px] ${x.trang_thai === 'loi' ? 'text-red-600 dark:text-red-400' : 'text-slate-500 dark:text-slate-400'}`,
         [st, x.nguon, fmt(x.luc)].filter(Boolean).join(' · ')));
@@ -445,8 +515,24 @@ interface ValaOverlayApi {
     applyTheme();
     panel.style.maxHeight = '';   // chỉ khung Tải xuống đặt chiều cao tối đa riêng
     // Khung đổi mật khẩu là hộp thoại: nền mờ, bấm ra ngoài KHÔNG đóng (tránh mất chữ đang gõ) — Esc / Huỷ để đóng.
-    backdrop.className = s.kind === 'password' ? 'fixed inset-0 bg-black/30' : 'fixed inset-0';
-    backdrop.dataset.modal = String(s.kind === 'password');
+    const modal = s.kind === 'password' || s.kind === 'download-ask';
+    backdrop.className = modal ? 'fixed inset-0 bg-black/30' : 'fixed inset-0';
+    backdrop.dataset.modal = String(modal);
+    if (s.kind === 'download-ask') {
+      // Hộp Tải xuống: giữa màn hình, che mờ phía sau; Enter = Tải về.
+      const { nodes, primary } = askPanel(s);
+      panel.replaceChildren(...nodes);
+      const w = Math.min(window.innerWidth - 16, 520);
+      panel.style.width = `${w}px`;
+      panel.style.left = `${Math.max(8, Math.round(window.innerWidth / 2 - w / 2))}px`;
+      panel.style.top = `${Math.max(8, Math.round(window.innerHeight / 4))}px`;
+      panel.style.bottom = '';
+      panel.classList.remove('p-1.5', 'overflow-hidden');
+      panel.classList.add('overflow-y-auto', 'p-4');
+      primary?.focus();
+      return;
+    }
+    panel.classList.remove('p-4');
     if (s.kind === 'password') {
       const { nodes, first } = passwordPanel(s);
       panel.replaceChildren(...nodes);
@@ -528,7 +614,7 @@ interface ValaOverlayApi {
 
   const load = () => void api.state().then(render);
   backdrop.addEventListener('mousedown', () => { if (backdrop.dataset.modal !== 'true') void api.close(); });
-  api.onOpen(() => { onlyNot = false; load(); });
+  api.onOpen(() => { onlyNot = false; askNoAsk = false; load(); });
   api.onRefresh(load);
   load();
 })();

@@ -12,7 +12,7 @@ interface SettingsState {
   serverUrl: string;
   user: { ho_ten: string; email: string } | null;
   autostart: { enabled: boolean; supported: boolean };
-  options: { autoUpdate: boolean; errorReport: boolean; autoSavePasswords: boolean; askDownloadPath: boolean };
+  options: { autoUpdate: boolean; errorReport: boolean; autoSavePasswords: boolean; askBeforeDownload: boolean };
   update: { pending: string | null; canUpdate: boolean };
   whatsNew: { current: string[] | null; pending: string[] | null };
   passwords: { available: boolean; sources: PwRow[]; sites: PwRow[]; never: { code: string; ten: string }[] };
@@ -23,7 +23,7 @@ interface ValaSettingsApi {
   setLang(lang: string): Promise<SettingsState>;
   setTheme(theme: string): Promise<SettingsState>;
   setAutostart(on: boolean): Promise<SettingsState>;
-  setOption(key: 'autoUpdate' | 'errorReport' | 'autoSavePasswords' | 'askDownloadPath', on: boolean): Promise<SettingsState>;
+  setOption(key: 'autoUpdate' | 'errorReport' | 'autoSavePasswords' | 'askBeforeDownload', on: boolean): Promise<SettingsState>;
   signIn(): Promise<void>;
   logout(): Promise<SettingsState>;
   openPortal(): Promise<void>;
@@ -145,7 +145,7 @@ interface ValaSettingsApi {
     $<HTMLInputElement>('auto-update').checked = next.options.autoUpdate;
     $<HTMLInputElement>('error-report').checked = next.options.errorReport;
     $<HTMLInputElement>('auto-save').checked = next.options.autoSavePasswords;
-    $<HTMLInputElement>('ask-download').checked = next.options.askDownloadPath;
+    $<HTMLInputElement>('ask-download').checked = next.options.askBeforeDownload;
 
     $('version').textContent = next.version;
     $('update-hint').textContent = next.update.canUpdate ? t.updateHint : t.noUpdate;
@@ -172,7 +172,7 @@ interface ValaSettingsApi {
   $<HTMLInputElement>('autostart').addEventListener('change', async (e) => render(await vala.setAutostart((e.target as HTMLInputElement).checked)));
   $<HTMLInputElement>('auto-update').addEventListener('change', async (e) => render(await vala.setOption('autoUpdate', (e.target as HTMLInputElement).checked)));
   $<HTMLInputElement>('error-report').addEventListener('change', async (e) => render(await vala.setOption('errorReport', (e.target as HTMLInputElement).checked)));
-  $<HTMLInputElement>('ask-download').addEventListener('change', async (e) => render(await vala.setOption('askDownloadPath', (e.target as HTMLInputElement).checked)));
+  $<HTMLInputElement>('ask-download').addEventListener('change', async (e) => render(await vala.setOption('askBeforeDownload', (e.target as HTMLInputElement).checked)));
   $<HTMLInputElement>('auto-save').addEventListener('change', async (e) => render(await vala.setOption('autoSavePasswords', (e.target as HTMLInputElement).checked)));
   $('sign-in').addEventListener('click', () => void vala.signIn());
   $('logout').addEventListener('click', async () => render(await vala.logout()));

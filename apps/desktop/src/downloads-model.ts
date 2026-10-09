@@ -1,5 +1,6 @@
 /** Trình quản lý tải — phần thuần, có test: tên tệp an toàn / không trùng, lịch sử, tiến độ chung cho nút trên header. */
-export type TrangThaiTai = 'dang_tai' | 'tam_dung' | 'xong' | 'huy' | 'loi';
+/** cho_chon: đã tải (ngầm, vào thư mục tạm) — đang chờ người dùng chọn ở hộp Tải xuống (Mở / Tải về / Lưu thành…). */
+export type TrangThaiTai = 'dang_tai' | 'tam_dung' | 'cho_chon' | 'xong' | 'huy' | 'loi';
 export interface TaiVe {
   id: string; ten: string; duong_dan: string; tong: number; da_tai: number; trang_thai: TrangThaiTai;
   /** Lúc bắt đầu (ms). */ luc: number;
@@ -38,5 +39,8 @@ export function overall(list: readonly TaiVe[]): { dang_tai: number; phan_tram: 
 export function restore(raw: unknown): TaiVe[] {
   if (!Array.isArray(raw)) return [];
   return raw.filter((x): x is TaiVe => !!x && typeof x === 'object' && typeof (x as TaiVe).id === 'string' && typeof (x as TaiVe).duong_dan === 'string')
-    .map((x) => (x.trang_thai === 'dang_tai' || x.trang_thai === 'tam_dung' ? { ...x, trang_thai: 'loi' as const } : x)).slice(0, MAX_HISTORY);
+    .map((x) => (x.trang_thai === 'dang_tai' || x.trang_thai === 'tam_dung' || x.trang_thai === 'cho_chon' ? { ...x, trang_thai: 'loi' as const } : x)).slice(0, MAX_HISTORY);
 }
+
+/** Tệp xem được ngay trong app (bộ xem PDF / ảnh của Chromium) — "Mở" ⇒ tab xem trước thay vì phần mềm của máy. */
+export const viewableInApp = (ten: string): boolean => /\.(pdf|png|jpe?g|gif|webp|bmp)$/i.test(ten.trim());

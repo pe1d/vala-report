@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addItem, MAX_HISTORY, overall, restore, safeName, uniqueName, type TaiVe } from '../src/downloads-model';
+import { addItem, MAX_HISTORY, overall, restore, safeName, uniqueName, viewableInApp, type TaiVe } from '../src/downloads-model';
 
 const it0 = (o: Partial<TaiVe>): TaiVe => ({ id: '1', ten: 'a.pdf', duong_dan: '/d/a.pdf', tong: 100, da_tai: 0, trang_thai: 'dang_tai', luc: 0, nguon: 'h', ...o });
 
@@ -25,5 +25,18 @@ describe('trình quản lý tải', () => {
   it('khôi phục: đang tải dở lúc tắt app ⇒ lỗi; mục hỏng bị bỏ', () => {
     expect(restore([it0({}), { id: 2 }, null]).map((x) => x.trang_thai)).toEqual(['loi']);
     expect(restore('rác')).toEqual([]);
+  });
+});
+
+describe('viewableInApp', () => {
+  it('PDF / ảnh ⇒ xem trong app; Word, Excel, SVG ⇒ không', () => {
+    expect(viewableInApp('Cong van.PDF')).toBe(true);
+    expect(viewableInApp('anh.jpeg')).toBe(true);
+    expect(viewableInApp('bao-cao.docx')).toBe(false);
+    expect(viewableInApp('so-lieu.xlsx')).toBe(false);
+    expect(viewableInApp('logo.svg')).toBe(false);
+  });
+  it('restore: tệp đang chờ chọn lúc tắt app ⇒ lỗi', () => {
+    expect(restore([{ id: 'a', ten: 'a', duong_dan: '/t/a', tong: 1, da_tai: 1, trang_thai: 'cho_chon', luc: 1, nguon: '' }])[0]!.trang_thai).toBe('loi');
   });
 });

@@ -34,9 +34,9 @@ const M = messages({
   pick: 'Chọn một văn bản để xem chi tiết.', keys: 'Phím tắt: ↑ ↓ chọn văn bản · / tìm · N tạo văn bản · R tải lại', close: 'Đóng',
   fSo: 'Số ký hiệu', fCoQuan: 'Cơ quan ban hành', fNgay: 'Ngày', fHan: 'Hạn xử lý', fTrangThai: 'Trạng thái', fNguoi: 'Người xử lý',
   fLoai: 'Loại văn bản', fDoKhan: 'Độ khẩn', fNoiNhan: 'Nơi nhận', more: 'Thông tin khác',
-  content: 'Nội dung', files: 'Tệp đính kèm', history: 'Quá trình xử lý', save: 'Tải về', open: 'Mở', saved: (p: string) => `Đã lưu ${p}`,
-  downloading: 'Đang tải — xem tiến độ ở nút Tải xuống trên cùng (Ctrl+J).',
-  preparing: 'Đang lấy tệp từ hệ thống…', opening: 'Đang mở…', saveAs: 'Lưu thành…', previewOpened: 'Đã mở xem trước ở tab mới — bấm Tải về / Lưu thành… trên đầu trang để lưu.',
+  content: 'Nội dung', files: 'Tệp đính kèm', history: 'Quá trình xử lý', save: 'Tải xuống', open: 'Mở', saved: (p: string) => `Đã lưu ${p}`,
+  downloading: 'Chọn Mở, Tải về hay Lưu thành… ở hộp Tải xuống. Tiến độ xem ở nút Tải xuống trên cùng (Ctrl+J).',
+  preparing: 'Đang lấy tệp từ hệ thống…', opening: 'Đang mở…', previewOpened: 'Đã mở xem trước ở tab mới — bấm Tải về / Lưu thành… trên đầu trang để lưu.',
   fileFailed: 'Không tải được tệp này. Bấm thử lại; vẫn lỗi thì bấm "Trang gốc" để tải trên hệ thống.',
   overdue: (n: number) => `Quá hạn ${n} ngày`, dueToday: 'Hạn hôm nay', dueIn: (n: number) => `Còn ${n} ngày`, unread: 'Chưa đọc',
   cancel: 'Huỷ', confirm: 'Xác nhận', required: (f: string) => `Chưa điền ${f}`, tooBig: (f: string) => `${f}: tệp quá lớn (tối đa 25 MB mỗi lần gửi)`,
@@ -54,8 +54,8 @@ const M = messages({
   fSo: 'Number', fCoQuan: 'Issued by', fNgay: 'Date', fHan: 'Due', fTrangThai: 'Status', fNguoi: 'Handled by',
   fLoai: 'Type', fDoKhan: 'Urgency', fNoiNhan: 'Recipients', more: 'Other details',
   content: 'Content', files: 'Attachments', history: 'Processing history', save: 'Download', open: 'Open', saved: (p: string) => `Saved ${p}`,
-  downloading: 'Downloading — see progress on the Downloads button at the top (Ctrl+J).',
-  preparing: 'Getting the file from the system…', opening: 'Opening…', saveAs: 'Save as…', previewOpened: 'Opened a preview in a new tab — click Download / Save as… at the top to save it.',
+  downloading: 'Choose Open, Download or Save as… in the Download box. Progress is on the Downloads button at the top (Ctrl+J).',
+  preparing: 'Getting the file from the system…', opening: 'Opening…', previewOpened: 'Opened a preview in a new tab — click Download / Save as… at the top to save it.',
   fileFailed: 'Could not download this file. Try again; if it still fails, click "Original page" and download it there.',
   overdue: (n: number) => `${n} days overdue`, dueToday: 'Due today', dueIn: (n: number) => `${n} days left`, unread: 'Unread',
   cancel: 'Cancel', confirm: 'Confirm', required: (f: string) => `${f} is required`, tooBig: (f: string) => `${f}: files too large (25 MB per send)`,
@@ -387,7 +387,6 @@ function Detail({ id, system, onClose, onChanged, flash, t, lang }: { id: string
                           {f.id && <>
                             <button type="button" disabled={busy} onClick={() => void file(f.id!, viewable(f.ten) ? 'xem' : 'mo')} className="text-[13px] font-medium text-blue-700 hover:underline disabled:opacity-40 dark:text-blue-400">{t.open}</button>
                             <button type="button" disabled={busy} onClick={() => void file(f.id!, 'tai')} className="text-[13px] font-medium text-blue-700 hover:underline disabled:opacity-40 dark:text-blue-400">{t.save}</button>
-                            <button type="button" disabled={busy} onClick={() => void file(f.id!, 'luu_thanh')} className="text-[13px] font-medium text-slate-600 hover:underline disabled:opacity-40 dark:text-slate-400">{t.saveAs}</button>
                           </>}
                         </div>
                         {st?.text && (
