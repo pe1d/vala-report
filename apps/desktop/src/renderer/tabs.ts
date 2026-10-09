@@ -102,7 +102,7 @@ interface ValaTabsApi {
   function glyph(kind: keyof typeof PATHS): SVGSVGElement {
     const svg = document.createElementNS(SVG, 'svg');
     for (const [k, v] of [['viewBox', '0 0 24 24'], ['fill', 'none'], ['stroke', 'currentColor'], ['stroke-width', '2'],
-      ['stroke-linecap', 'round'], ['stroke-linejoin', 'round'], ['class', kind === 'close' ? 'h-3.5 w-3.5' : 'h-[18px] w-[18px]']]) svg.setAttribute(k!, v!);
+      ['stroke-linecap', 'round'], ['stroke-linejoin', 'round'], ['class', kind === 'close' ? 'h-3.5 w-3.5' : 'h-5 w-5']]) svg.setAttribute(k!, v!);
     for (const d of PATHS[kind]) { const p = document.createElementNS(SVG, 'path'); p.setAttribute('d', d); svg.append(p); }
     return svg;
   }
@@ -127,17 +127,17 @@ interface ValaTabsApi {
     // Chuột phải ⇒ menu của mục (mật khẩu, ghi thao tác — tiến trình chính quyết định mục nào có menu).
     el.addEventListener('contextmenu', (e) => { e.preventDefault(); void api.tabMenu(key, e.clientX, e.clientY); });
     const box = document.createElement('span');
-    box.className = 'relative flex h-5 w-5 shrink-0 items-center justify-center';
+    box.className = 'relative flex h-6 w-6 shrink-0 items-center justify-center';
     // Chưa có favicon dùng được ⇒ chữ cái đầu của tên trong ô màu (không để ô trống).
     const letter = document.createElement('span');
-    letter.className = 'flex h-5 w-5 items-center justify-center rounded-md bg-blue-600 text-[11px] font-semibold leading-none text-white dark:bg-blue-500';
+    letter.className = 'flex h-6 w-6 items-center justify-center rounded-md bg-blue-600 text-[12px] font-semibold leading-none text-white dark:bg-blue-500';
     const icon = document.createElement('img');
     icon.alt = '';
     // Biểu tượng chuẩn (ô màu máy chủ dựng sẵn) / favicon: đủ ô 20px.
-    icon.className = 'h-5 w-5';
+    icon.className = 'h-6 w-6';
     display(icon, false);
     const glyphBox = document.createElement('span');
-    glyphBox.className = 'flex h-5 w-5 items-center justify-center text-slate-600 dark:text-slate-300';
+    glyphBox.className = 'flex h-6 w-6 items-center justify-center text-slate-600 dark:text-slate-300';
     display(glyphBox, false);
     const showIcon = (ok: boolean) => { display(icon, ok); display(letter, !ok); };
     icon.addEventListener('error', () => showIcon(false));
@@ -211,7 +211,7 @@ interface ValaTabsApi {
   moreEl.type = 'button';
   moreEl.className = 'side-item text-slate-500 dark:text-slate-400';
   const moreIcon = document.createElement('span');
-  moreIcon.className = 'flex h-5 w-5 shrink-0 items-center justify-center';
+  moreIcon.className = 'flex h-6 w-6 shrink-0 items-center justify-center';
   moreIcon.append(glyph('more'));
   const moreLabel = document.createElement('span');
   moreLabel.className = 'min-w-0 flex-1 truncate';
@@ -343,7 +343,7 @@ interface ValaTabsApi {
     // Độ rộng + bố cục theo trạng thái thu gọn (khớp SIDEBAR_W / SIDEBAR_MIN_W của browser.ts).
     const c = s.collapsed;
     $('bar').classList.toggle('w-[248px]', !c);
-    $('bar').classList.toggle('w-[52px]', c);
+    $('bar').classList.toggle('w-[56px]', c);
     // Thu gọn: ảnh đại diện vẫn ở hàng cuối (đúng chỗ như lúc mở rộng), nút ⊞ lên trên nó.
     $('me').classList.toggle('flex-col-reverse', c);
     $('me').classList.toggle('items-start', c);
@@ -543,9 +543,9 @@ interface ValaTabsApi {
     display($('card'), false);
     document.body.style.background = 'transparent';
     $('bar').classList.add('rounded-r-xl', 'border-r', 'border-slate-200', 'bg-slate-100', 'shadow-2xl', 'dark:border-slate-700', 'dark:bg-slate-900');
-    // Trượt ra từ đúng mép thanh thu gọn (52px) tới đủ rộng (kể cả bóng đổ) và ngược lại — cắt bằng clip-path, chạy trên GPU.
+    // Trượt ra từ đúng mép thanh thu gọn (56px) tới đủ rộng (kể cả bóng đổ) và ngược lại — cắt bằng clip-path, chạy trên GPU.
     const bar = $('bar');
-    const CLOSED = 'inset(0 calc(100% - 52px) 0 0)';
+    const CLOSED = 'inset(0 calc(100% - 56px) 0 0)';
     const OPEN = 'inset(0 -24px 0 0)';
     bar.style.clipPath = CLOSED;
     bar.style.transition = 'clip-path 200ms cubic-bezier(0.215, 0.61, 0.355, 1)';

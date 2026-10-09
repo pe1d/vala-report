@@ -68,11 +68,9 @@ const M = messages({
 /** Kích thước khung theo cỡ chữ (zoom.ts): số đo CSS của tabs.html × tỉ lệ đang phóng ⇒ điểm ảnh của cửa sổ. */
 const z = (cssPx: number) => Math.round(cssPx * zoomFactor());
 /** Độ rộng thanh ứng dụng dọc (mở rộng / thu gọn chỉ biểu tượng) — khớp resources/tabs.html. */
-/** Thanh bên phóng riêng 115% (tabs.html #bar zoom) — chữ, biểu tượng, khoảng cách to hơn header / trang. */
-const SIDEBAR_SCALE = 1.15;
-const SIDEBAR_W = () => z(248 * SIDEBAR_SCALE);
-/** 8 (lề thanh) + 8 (lề mục) + 20 (biểu tượng) + 8 + 8 ⇒ biểu tượng ở giữa VÀ trùng chỗ với lúc mở rộng (xem nhanh không nhảy). */
-const SIDEBAR_MIN_W = () => z(52 * SIDEBAR_SCALE);
+const SIDEBAR_W = () => z(248);
+/** 8 (lề thanh) + 8 (lề mục) + 24 (biểu tượng) + 8 + 8 ⇒ biểu tượng ở giữa VÀ trùng chỗ với lúc mở rộng (xem nhanh không nhảy). */
+const SIDEBAR_MIN_W = () => z(56);
 /** Đã đăng nhập (có token thiết bị). Chưa ⇒ chỉ màn hình đăng nhập, không có thanh ứng dụng. */
 const signedIn = () => !!getSettings().deviceToken;
 /** Độ rộng thanh trong lúc trượt thu gọn / mở rộng (animateSidebar); null ⇒ theo cài đặt. */

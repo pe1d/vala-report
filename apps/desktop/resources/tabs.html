@@ -8,7 +8,7 @@
 </head>
 <!--
   Cửa sổ không viền (browser.ts): HEADER cao 44px chạy hết chiều ngang (HEADER_H) — thu gọn thanh bên, logo, ◀ ▶ ⟳, ô tìm
-  kiếm Ctrl+K (giữa), nút cửa sổ ─ □ ✕; kéo header để di chuyển cửa sổ. Bên dưới: THANH ỨNG DỤNG DỌC (248 / 52px — SIDEBAR_W
+  kiếm Ctrl+K (giữa), nút cửa sổ ─ □ ✕; kéo header để di chuyển cửa sổ. Bên dưới: THANH ỨNG DỤNG DỌC (248 / 56px — SIDEBAR_W
   / SIDEBAR_MIN_W) và khung bo góc #card nơi trang web nằm (cách mép phải/dưới 8px — GAP). Không có ô địa chỉ. Chữ hiển thị
   do tiến trình chính gửi; mục danh sách dựng bằng JS (renderer/tabs.ts).
 -->
@@ -45,8 +45,7 @@
     </div>
   </header>
   <div class="flex min-h-0 flex-1">
-  <!-- Thanh bên to hơn phần còn lại 15% (người dùng 09/10/2026) — khớp SIDEBAR_SCALE của browser.ts. -->
-  <div id="bar" class="flex h-full w-[248px] shrink-0 flex-col [zoom:1.15]">
+  <div id="bar" class="flex h-full w-[248px] shrink-0 flex-col">
     <div id="chat-slot" class="space-y-1 px-2 pt-1"></div>
     <nav id="scroll" class="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-2 pb-2">
       <div id="apps-title" class="side-sec"></div>
@@ -58,10 +57,10 @@
       <button type="button" id="update" class="w-full truncate rounded-md bg-blue-600 px-2 py-1.5 text-xs font-medium text-white hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-400"></button>
       <div id="me" class="flex items-center gap-1">
         <button type="button" id="profile" class="flex h-12 min-w-0 flex-1 items-center gap-2 rounded-lg px-1 py-1.5 text-left hover:bg-slate-200 dark:hover:bg-slate-800">
-          <span id="avatar" class="relative flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-blue-600 text-[11px] font-semibold text-white dark:bg-blue-500"></span>
+          <span id="avatar" class="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-600 text-[12px] font-semibold text-white dark:bg-blue-500"></span>
           <span id="profile-text" class="min-w-0 flex-1">
-            <span id="profile-name" class="block truncate text-[13px] font-medium"></span>
-            <span id="profile-sub" class="block truncate text-[11px] text-slate-500 dark:text-slate-400"></span>
+            <span id="profile-name" class="block truncate text-[15px] font-medium"></span>
+            <span id="profile-sub" class="block truncate text-[12px] text-slate-500 dark:text-slate-400"></span>
           </span>
           <svg id="profile-chev" viewBox="0 0 24 24" class="h-4 w-4 shrink-0 text-slate-500" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>
         </button>
