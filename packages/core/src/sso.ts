@@ -154,6 +154,22 @@ export function usernameOf(who: SsoUser, o: { usernameClaim: string }): string |
   return USERNAME.test(sub) || EMAIL.test(sub) ? sub : null;
 }
 
+/** sub đã chuẩn hoá để so: chữ thường, bỏ tenant mặc định WSO2 (@carbon.super) và miền kho người dùng (PRIMARY/…). */
+const normSub = (sub: string) => sub.trim().toLowerCase().replace(/@carbon\.super$/, '').replace(/^[a-z0-9_-]+\//, '');
+
+/**
+ * Hai sub có phải cùng một tài khoản SSO không. WSO2 trả sub theo đúng chuỗi người dùng gõ ở trang đăng nhập (`DiepTX`,
+ * `dieptx@carbon.super`, `PRIMARY/dieptx`, `dieptx@bkav.com`…) ⇒ so sau khi chuẩn hoá. Dạng email chỉ coi là cùng người
+ * khi đúng là email của tài khoản cổng (`accountEmail`) và phần trước @ trùng sub kia. UUID khác nhau ⇒ khác người.
+ */
+export function sameSubject(a: string, b: string, accountEmail?: string | null): boolean {
+  const x = normSub(a), y = normSub(b);
+  if (x === y) return true;
+  const mail = accountEmail?.trim().toLowerCase();
+  if (!mail) return false;
+  return (x === mail && mail.split('@')[0] === y) || (y === mail && mail.split('@')[0] === x);
+}
+
 /**
  * Email để ghép / tạo tài khoản: email SSO trả (trừ khi SSO báo chưa xác minh); không có ⇒ <tên đăng nhập>@emailDomain khi
  * nơi triển khai đặt SSO_EMAIL_DOMAIN (tên đăng nhập đã là email thì dùng nguyên). Không đoán được ⇒ null.

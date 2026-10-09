@@ -3,7 +3,7 @@
  * `state` (ký HMAC, hết hạn 10 phút) cho biết đây là quay về sau khi ĐĂNG NHẬP cổng hay sau khi UỶ QUYỀN.
  */
 import type { FastifyPluginAsync, FastifyReply } from 'fastify';
-import { DEFAULT_TENANT, Problem, emailOf, isTenantCode, pkcePair, runInTenant, usernameOf, withTenant, withUserContext, type SsoClient, type SsoUser, type UserContext } from '@vala/core';
+import { DEFAULT_TENANT, Problem, emailOf, isTenantCode, pkcePair, runInTenant, sameSubject, usernameOf, withTenant, withUserContext, type SsoClient, type SsoUser, type UserContext } from '@vala/core';
 import { audit } from '../audit.js';
 import { issuePortalToken } from '../auth.js';
 import type { ApiDeps } from '../deps.js';
@@ -106,7 +106,7 @@ async function handleLogin(deps: ApiDeps, sso: SsoClient, req: Parameters<typeof
     req.log?.warn({ err: (e as Error).message, detail: e instanceof Problem ? e.detail : undefined }, 'đăng nhập SSO thất bại');
     return toWeb(reply, deps, '/dang-nhap', { loi: 'sso_loi' });
   }
-  const found = await findOrLinkUser(deps, sso, who);
+  const found = await findOrLinkUser(deps, sso, who, req.log);
   if ('loi' in found) return toWeb(reply, deps, '/dang-nhap', { loi: found.loi });
   const user = found;
   const token = issuePortalToken(user.id, deps.config.jwtSecret);
@@ -126,8 +126,8 @@ async function handleGrant(deps: ApiDeps, req: Parameters<typeof audit>[1], repl
     // Người đăng nhập SSO lúc uỷ quyền phải CHÍNH LÀ người dùng cổng đã bấm uỷ quyền. Không thì dữ liệu
     // của tài khoản B sẽ bị gán cho người dùng A.
     const expected = await withTenant(deps.reader, (t) => t.one(
-      'SELECT sso_subject FROM app_users WHERE id = $1', [st.uid], (r: { sso_subject: string }) => r.sso_subject));
-    if (who.sub !== expected) return back(false, 'sai_tai_khoan');
+      'SELECT sso_subject, email FROM app_users WHERE id = $1', [st.uid], (r: { sso_subject: string | null; email: string | null }) => r));
+    if (!expected.sso_subject || !sameSubject(expected.sso_subject, who.sub, expected.email)) return back(false, 'sai_tai_khoan');
     await deps.sessions.saveSso(st.uid, tokens, who.sub);
     expiresAt = (await deps.sessions.deriveAppSession(st.uid, st.src)).expires_at;
   } catch (e) {
@@ -152,7 +152,7 @@ async function handleGrant(deps: ApiDeps, req: Parameters<typeof audit>[1], repl
  *      rồi tên đăng nhập), liên kết sub vào tài khoản đó; tài khoản đã liên kết với định danh SSO KHÁC ⇒ từ chối;
  *   3. vẫn chưa có ⇒ tự tạo nếu SSO_AUTO_CREATE=true (người dùng thường), không thì báo chưa có tài khoản.
  */
-async function findOrLinkUser(deps: ApiDeps, sso: SsoClient, who: SsoUser): Promise<{ id: number } | { loi: string }> {
+async function findOrLinkUser(deps: ApiDeps, sso: SsoClient, who: SsoUser, log?: { warn: (o: object, m: string) => void }): Promise<{ id: number } | { loi: string }> {
   const cfg = sso.cfg;
   // Email SSO trả; không có ⇒ <tên đăng nhập>@SSO_EMAIL_DOMAIN (nếu đặt). Tên đăng nhập: preferred_username hoặc sub (WSO2).
   const email = emailOf(who, cfg);
@@ -167,12 +167,16 @@ async function findOrLinkUser(deps: ApiDeps, sso: SsoClient, who: SsoUser): Prom
     for (const by of cfg.matchBy) {
       const v = by === 'email' ? email : username;
       if (!v) continue;
-      const u = await t.oneOrNone<{ id: number; is_active: boolean; sso_subject: string | null }>(
-        `SELECT id, is_active, sso_subject FROM app_users WHERE lower(${by === 'email' ? 'email' : 'username'}) = $1`, [v]);
+      const u = await t.oneOrNone<{ id: number; is_active: boolean; sso_subject: string | null; email: string | null }>(
+        `SELECT id, is_active, sso_subject, email FROM app_users WHERE lower(${by === 'email' ? 'email' : 'username'}) = $1`, [v]);
       if (!u) continue;
-      if (u.sso_subject && u.sso_subject !== who.sub) return { loi: 'tai_khoan_da_lien_ket' };
+      // Cùng người nhưng sub khác dạng (WSO2 trả theo chuỗi gõ ở trang đăng nhập — sameSubject) ⇒ nhận, giữ liên kết cũ.
+      if (u.sso_subject && !sameSubject(u.sso_subject, who.sub, u.email)) {
+        log?.warn({ tai_khoan: u.id, ghep_theo: by, sub_da_luu: u.sso_subject, sub_moi: who.sub }, 'SSO: tài khoản cổng đã liên kết với sub khác');
+        return { loi: 'tai_khoan_da_lien_ket' };
+      }
       if (!u.is_active) return { loi: 'tai_khoan_bi_khoa' };
-      await t.none('UPDATE app_users SET sso_subject = $2, last_login_at = now() WHERE id = $1', [u.id, who.sub]);
+      await t.none('UPDATE app_users SET sso_subject = COALESCE(sso_subject, $2), last_login_at = now() WHERE id = $1', [u.id, who.sub]);
       return { id: u.id };
     }
     if (!cfg.autoCreate) return { loi: 'chua_co_tai_khoan' };
