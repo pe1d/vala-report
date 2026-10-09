@@ -64,6 +64,10 @@ interface ValaLoginApi {
     $('server').textContent = st.server ? `${T('server')}: ${st.server}` : '';
     for (const id of ['next', 'sign-in', 'save', 'sso']) ($(id) as HTMLButtonElement).disabled = busy;
 
+    // Bước SSO: trang SSO của đơn vị rộng hết màn hình — thu lề lớn của màn hình đăng nhập lại.
+    const full = step === 'sso';
+    for (const c of ['px-6', 'py-8']) $('main').classList.toggle(c, !full);
+    $('main').classList.toggle('p-3', full);
     show($('card'), step !== 'sso');
     show($('sso-step'), step === 'sso');
     show($('step1'), step === 'step1');
