@@ -1,55 +1,54 @@
 /**
- * Cỡ chữ (người dùng 09/10/2026): thu phóng NỘI DUNG trang — ứng dụng web, Trợ lý, Cài đặt, Quản trị, giao diện Văn bản —
- * theo tài khoản (apps.ts fontPercent, lưu trên máy chủ). Thanh bên / header / khung nổi giữ nguyên cỡ.
+ * Cỡ chữ (người dùng 09/10/2026): phóng CẢ app — thanh bên, header, menu, các trang (ứng dụng web, Trợ lý, Cài đặt, Quản
+ * trị, giao diện Văn bản) — theo tài khoản (apps.ts fontPercent, lưu trên máy chủ). Màn hình đăng nhập giữ cỡ gốc.
  *
- * Chromium thu phóng theo TÊN MIỀN: mọi trang cục bộ (file://) — kể cả header / thanh bên — chung một "tên miền" ⇒ trang
- * cục bộ phóng bằng CSS `zoom` của riêng trang đó; trang web (http(s), vala-ui://) dùng setZoomFactor.
+ * Mỗi lớp (WebContents) phóng riêng bằng setZoomFactor (Electron: trang file:// không dùng chung mức thu phóng); browser.ts
+ * nhân kích thước khung (rộng thanh bên, cao header, lề, bo góc) theo zoomFactor() để khớp với trang đã phóng.
  */
+import { EventEmitter } from 'node:events';
 import type { WebContents } from 'electron';
 import { appsEvents, fontPercent, setFontPercent } from './apps';
 import { cleanZoom, stepZoom } from './zoom-model';
 
+/** 'changed' — cỡ chữ vừa đổi (browser.ts sắp lại bố cục khung). */
+export const zoomEvents = new EventEmitter();
 const tracked = new Set<WebContents>();
-const cssKey = new WeakMap<WebContents, string>();
 let applied = 100;
 
 const current = () => cleanZoom(fontPercent());
+export const zoomPercent = current;
+/** Tỉ lệ đang áp (1 = 100%). */
+export const zoomFactor = (): number => applied / 100;
 
-async function apply(wc: WebContents): Promise<void> {
-  if (wc.isDestroyed()) return;
-  const pct = current();
-  if (wc.getURL().startsWith('file:')) {
-    const old = cssKey.get(wc);
-    if (old) { await wc.removeInsertedCSS(old).catch(() => {}); cssKey.delete(wc); }
-    if (pct !== 100) cssKey.set(wc, await wc.insertCSS(`html { zoom: ${pct / 100} !important; }`).catch(() => ''));
-  } else {
-    wc.setZoomFactor(pct / 100);
-  }
-}
+const apply = (wc: WebContents) => { if (!wc.isDestroyed()) wc.setZoomFactor(zoomFactor()); };
 
-/** Theo dõi một trang nội dung: áp cỡ chữ mỗi lần trang nạp (CSS chèn / mức thu phóng mất khi điều hướng). */
+/** Theo dõi một lớp: áp cỡ chữ mỗi lần nạp / điều hướng (trang web: mức thu phóng theo tên miền, đổi khi sang trang khác). */
 export function trackZoom(wc: WebContents): void {
   if (tracked.has(wc)) return;
   tracked.add(wc);
-  wc.on('dom-ready', () => void apply(wc));
-  wc.on('did-navigate', () => { if (!wc.getURL().startsWith('file:')) void apply(wc); });
+  wc.on('did-finish-load', () => apply(wc));
+  wc.on('did-navigate', () => apply(wc));
   wc.once('destroyed', () => tracked.delete(wc));
-  void apply(wc);
+  apply(wc);
 }
 
-const applyAll = () => { for (const wc of tracked) void apply(wc); };
+function refresh(): void {
+  const p = current();
+  if (p === applied) return;
+  applied = p;
+  for (const wc of tracked) apply(wc);
+  zoomEvents.emit('changed');
+}
 
 /** Đổi cỡ chữ: +1 / −1 bước, 0 ⇒ 100%, hoặc một mức cụ thể. */
 export function changeZoom(v: 1 | -1 | 0 | { pct: number }): number {
   const next = typeof v === 'object' ? cleanZoom(v.pct) : stepZoom(current(), v);
-  void setFontPercent(next);
+  void setFontPercent(next);   // đổi bản đệm ngay ⇒ appsEvents 'changed' ⇒ refresh
   return next;
 }
 
-export const zoomPercent = current;
-
 export function initZoom(): void {
-  // Danh mục làm mới (đăng nhập / máy khác vừa đổi cỡ chữ / đăng xuất) ⇒ áp lại nếu khác.
-  appsEvents.on('changed', () => { const p = current(); if (p !== applied) { applied = p; applyAll(); } });
   applied = current();
+  // Danh mục làm mới (đăng nhập / máy khác vừa đổi cỡ chữ / đăng xuất ⇒ 100%) ⇒ áp lại nếu khác.
+  appsEvents.on('changed', refresh);
 }

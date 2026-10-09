@@ -32,7 +32,7 @@ import { cachedSources, events, statusOf, type SourceFull } from './sync';
 import { applySubsetOrder, cookieMatchesHost, openTarget, reordered, sidebarSections, siteOf, tabStatus, webLoginTone, type AppLoginTone, type TabStatus } from './tabs-model';
 import { ssoHosts } from './sso-session';
 import { siteIcon, siteIconEvents } from './site-icons';
-import { changeZoom, trackZoom, zoomPercent } from './zoom';
+import { changeZoom, trackZoom, zoomEvents, zoomFactor, zoomPercent } from './zoom';
 import { vanBanKeys } from './vanban-model';
 import { pendingUpdate, promptInstall } from './updater';
 import { recordingKey } from './recorder';
@@ -64,15 +64,17 @@ const M = messages({
   status: { ok: 'Connected', warn: 'Needs signing in again', off: 'Not connected' } as Record<TabStatus, string>,
 });
 
+/** Kích thước khung theo cỡ chữ (zoom.ts): số đo CSS của tabs.html × tỉ lệ đang phóng ⇒ điểm ảnh của cửa sổ. */
+const z = (cssPx: number) => Math.round(cssPx * zoomFactor());
 /** Độ rộng thanh ứng dụng dọc (mở rộng / thu gọn chỉ biểu tượng) — khớp resources/tabs.html. */
-const SIDEBAR_W = 248;
+const SIDEBAR_W = () => z(248);
 /** 8 (lề thanh) + 8 (lề mục) + 20 (biểu tượng) + 8 + 8 ⇒ biểu tượng ở giữa VÀ trùng chỗ với lúc mở rộng (xem nhanh không nhảy). */
-const SIDEBAR_MIN_W = 52;
+const SIDEBAR_MIN_W = () => z(52);
 /** Đã đăng nhập (có token thiết bị). Chưa ⇒ chỉ màn hình đăng nhập, không có thanh ứng dụng. */
 const signedIn = () => !!getSettings().deviceToken;
 /** Độ rộng thanh trong lúc trượt thu gọn / mở rộng (animateSidebar); null ⇒ theo cài đặt. */
 let sidebarAnimW: number | null = null;
-const sidebarWidth = () => (!signedIn() ? 0 : sidebarAnimW ?? (getSettings().sidebarCollapsed ? SIDEBAR_MIN_W : SIDEBAR_W));
+const sidebarWidth = () => (!signedIn() ? 0 : sidebarAnimW ?? (getSettings().sidebarCollapsed ? SIDEBAR_MIN_W() : SIDEBAR_W()));
 /** Thời gian trượt — khớp transition của #bar (renderer/tabs.ts). */
 const SLIDE_MS = 200;
 const easeOut = (t: number) => 1 - (1 - t) ** 3;
@@ -90,10 +92,10 @@ function animateSidebar(from: number, to: number): void {
   }, 16);
 }
 /** Header trên cùng (thay thanh tiêu đề của hệ điều hành) và lề quanh khung trang web — khớp resources/tabs.html. */
-const HEADER_H = 44;
-const GAP = 8;
+const HEADER_H = () => z(44);
+const GAP = () => z(8);
 /** Bán kính bo góc khung trang web — khớp resources/corner.css. */
-const RADIUS = 12;
+const RADIUS = () => z(12);
 const TAB_PRELOAD = join(__dirname, 'portal-preload.js');
 
 interface PinnedDef { key: string; label: string; url: string }
@@ -210,9 +212,12 @@ function ensureWindow(): BrowserWindow {
   for (const ev of ['maximize', 'unmaximize'] as const) w.on(ev as 'maximize', () => pushState());
   w.webContents.on('before-input-event', (e, input) => { if (shortcut(input)) e.preventDefault(); });
   void w.loadFile(join(__dirname, '../resources/tabs.html'));
+  // Cỡ chữ theo tài khoản phóng cả khung (zoom.ts) — header / thanh bên, góc bo (bán kính nhân theo tỉ lệ — RADIUS()).
+  trackZoom(w.webContents);
   corners = (['tl', 'tr', 'bl', 'br'] as const).map((c) => {
     const v = new WebContentsView();
     v.setBackgroundColor('#00000000');
+    trackZoom(v.webContents);
     void v.webContents.loadFile(join(__dirname, '../resources/corner.html'), { hash: c });
     w.contentView.addChildView(v);
     return v;
@@ -242,10 +247,10 @@ let peekOpen = false;
 let peekWatch: NodeJS.Timeout | null = null;
 let peekRemove: NodeJS.Timeout | null = null;
 /** Rộng thêm phần trong suốt bên phải cho bóng đổ. */
-const PEEK_SHADOW = 16;
+const PEEK_SHADOW = () => z(16);
 const peekBounds = () => {
   const [, height] = win!.getContentSize();
-  return { x: 0, y: HEADER_H, width: SIDEBAR_W + PEEK_SHADOW, height: Math.max(0, height! - HEADER_H) };
+  return { x: 0, y: HEADER_H(), width: SIDEBAR_W() + PEEK_SHADOW(), height: Math.max(0, height! - HEADER_H()) };
 };
 const isPeek = (wc: WebContents) => !!peek && peek.webContents === wc;
 
@@ -256,6 +261,7 @@ function ensurePeek(): WebContentsView {
   v.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   v.webContents.on('will-navigate', (e) => e.preventDefault());
   v.webContents.on('before-input-event', (e, input) => { if (shortcut(input)) e.preventDefault(); });
+  trackZoom(v.webContents);
   void v.webContents.loadFile(join(__dirname, '../resources/tabs.html'), { hash: 'peek' });
   // Lần đầu: trang chưa nạp xong lúc bảo trượt ra ⇒ bảo lại khi nạp xong.
   v.webContents.on('did-finish-load', () => { if (peekOpen) v.webContents.send('tabs:peek-slide', true); });
@@ -307,7 +313,7 @@ function layout(): void {
   const [width, height] = win.getContentSize();
   const bounds = contentBounds()!;
   for (const t of tabs.values()) { t.view?.setBounds(bounds); t.ui?.setBounds(bounds); }
-  const r = RADIUS;
+  const r = RADIUS();
   const right = bounds.x + bounds.width - r;
   const bottom = bounds.y + bounds.height - r;
   [[bounds.x, bounds.y], [right, bounds.y], [bounds.x, bottom], [right, bottom]].forEach(([x, y], i) => corners[i]?.setBounds({ x: x!, y: y!, width: r, height: r }));
@@ -324,8 +330,8 @@ export function contentBounds(): { x: number; y: number; width: number; height: 
   if (!win || win.isDestroyed()) return null;
   const [width, height] = win.getContentSize();
   // Không có thanh ứng dụng (màn hình đăng nhập) ⇒ lề trái bằng lề phải.
-  const w = sidebarWidth() || GAP;
-  return { x: w, y: HEADER_H, width: Math.max(0, width! - w - GAP), height: Math.max(0, height! - HEADER_H - GAP) };
+  const w = sidebarWidth() || GAP();
+  return { x: w, y: HEADER_H(), width: Math.max(0, width! - w - GAP()), height: Math.max(0, height! - HEADER_H() - GAP()) };
 }
 
 // ---- tab trang cục bộ: Cài đặt (như chrome://settings), Bản ghi thao tác — preload riêng, không điều hướng đi đâu ----
@@ -1050,7 +1056,11 @@ function registerIpc(): void {
   // Trang thanh dọc của cửa sổ, hoặc bản "xem nhanh" của nó (cùng lệnh).
   const own = (e: IpcMainInvokeEvent) => { if (!win || (e.sender !== win.webContents && !isPeek(e.sender))) throw new Error('forbidden'); };
   /** Toạ độ trong bản xem nhanh ⇒ toạ độ trong cửa sổ (menu / khung nổi neo đúng chỗ). */
-  const offset = (e: IpcMainInvokeEvent) => (isPeek(e.sender) && win ? peekBounds() : { x: 0, y: 0 });
+  // Vị trí view (điểm ảnh cửa sổ) ⇒ đơn vị CSS của trang đã phóng theo cỡ chữ (khung nổi cùng tỉ lệ với thanh bên).
+  const offset = (e: IpcMainInvokeEvent) => {
+    const b = isPeek(e.sender) && win ? peekBounds() : { x: 0, y: 0 };
+    return { x: b.x / zoomFactor(), y: b.y / zoomFactor() };
+  };
   ipcMain.handle('tabs:ready', (e) => { own(e); if (!active && !isPeek(e.sender)) showDefault(); else pushState(); });
   ipcMain.handle('tabs:peek', (e, on: unknown) => { own(e); if (on === true) showPeek(); else hidePeek(); });
   ipcMain.handle('tabs:activate', (e, key: unknown) => { own(e); if (typeof key === 'string') activate(key); });
@@ -1072,7 +1082,7 @@ function registerIpc(): void {
     hidePeek(true);
     setSettings({ sidebarCollapsed: collapsing });
     pushState();
-    animateSidebar(from, collapsing ? SIDEBAR_MIN_W : SIDEBAR_W);
+    animateSidebar(from, collapsing ? SIDEBAR_MIN_W() : SIDEBAR_W());
   });
   ipcMain.handle('tabs:window', (e, cmd: unknown) => {
     own(e);
@@ -1134,6 +1144,7 @@ function ensureOverlay(): WebContentsView {
     // Esc đóng; Ctrl+K lần nữa ⇒ đóng ô tìm kiếm.
     if (input.key === 'Escape' || ((input.control || input.meta) && input.key.toLowerCase() === 'k' && overlayKind === 'search')) { e.preventDefault(); closeOverlay(); }
   });
+  trackZoom(wc);
   void wc.loadFile(join(__dirname, '../resources/overlay.html'));
   overlay = v;
   return v;
@@ -1163,7 +1174,7 @@ export function changePassword(): void {
   const acc = catalog().account;
   if (acc?.has_password) {
     const [width, height] = win && !win.isDestroyed() ? win.getContentSize() : [1280, 800];
-    openOverlay('password', { x: Math.round(width! / 2), y: Math.round(height! / 3), w: 0, h: 0 });
+    openOverlay('password', { x: Math.round(width! / 2 / zoomFactor()), y: Math.round(height! / 3 / zoomFactor()), w: 0, h: 0 });
   } else if (acc?.sso_password_url) openTab(acc.sso_password_url);
 }
 
@@ -1402,6 +1413,13 @@ export function initBrowser(h: BrowserHooks): void {
   });
   downloadEvents.on('started', (wc: WebContents) => closeDownloadOnly(wc));
   downloadEvents.on('ask', () => showDownloadAsk());
+  // Cỡ chữ đổi ⇒ kích thước khung (thanh bên, header, lề, góc) theo tỉ lệ mới; khung nổi đang mở ⇒ vẽ lại.
+  zoomEvents.on('changed', () => {
+    hidePeek(true);
+    layout();
+    pushState();
+    if (overlay && overlayOpen && !overlay.webContents.isDestroyed()) overlay.webContents.send('overlay:refresh');
+  });
   let dark = nativeTheme.shouldUseDarkColors;
   nativeTheme.on('updated', () => {
     if (nativeTheme.shouldUseDarkColors === dark) return;
