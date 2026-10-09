@@ -209,7 +209,7 @@ function ensureWindow(): BrowserWindow {
   w.once('ready-to-show', () => w.show());
   // Cửa sổ nổi Trợ lý AI đi theo cửa sổ chính: ẩn / thu nhỏ thì ẩn, hiện lại thì hiện.
   for (const ev of ['hide', 'minimize'] as const) w.on(ev as 'hide', () => { if (aiFloat && !aiFloat.isDestroyed()) aiFloat.hide(); });
-  for (const ev of ['show', 'restore'] as const) w.on(ev as 'show', () => { if (aiOpen && aiPrefs().mode === 'noi') placeAi(); });
+  for (const ev of ['show', 'restore'] as const) w.on(ev as 'show', () => { if (aiShown() && aiPrefs().mode === 'noi') placeAi(); });
   // Quay lại cửa sổ ⇒ làm mới thông báo (không chờ nhịp 1 phút).
   w.on('focus', () => void refreshNotifications());
   // Đóng cửa sổ chỉ ẩn xuống khay hệ thống (các tab, phiên vẫn giữ); "Thoát" mới đóng thật.
@@ -247,7 +247,7 @@ function raiseChrome(): void {
   if (!win || win.isDestroyed()) return;
   for (const c of corners) win.contentView.addChildView(c);
   // Trợ lý AI (cột / nổi) trên trang đang xem, dưới thanh xem nhanh và khung nổi.
-  if (aiView && aiOpen && aiPrefs().mode === 'cot') win.contentView.addChildView(aiView);
+  if (aiView && aiShown() && aiPrefs().mode === 'cot') win.contentView.addChildView(aiView);
   if (peek && peekOpen) win.contentView.addChildView(peek);
   if (overlay && overlayOpen) win.contentView.addChildView(overlay);
 }
@@ -265,9 +265,12 @@ const aiPrefs = () => {
   const p = { ...getSettings().aiPanel, ...aiLive };
   return { mode: (p?.mode === 'noi' ? 'noi' : 'cot') as AiMode, w: Math.min(720, Math.max(320, p?.w ?? 400)), rect: p?.rect ?? null };
 };
-/** Chỗ cột Trợ lý AI chiếm bên phải (gồm lề với trang); không mở / đang nổi ⇒ 0. */
+/** Đang hiện: đã mở, trừ khi đang ở trang Trợ lý AI toàn trang (không hiện hai giao diện Trợ lý cùng lúc). */
+const aiShown = () => aiOpen && signedIn() && active !== CHAT;
+let aiShownLast = false;
+/** Chỗ cột Trợ lý AI chiếm bên phải (gồm lề với trang); không hiện / đang nổi ⇒ 0. */
 function aiColumnW(): number {
-  return aiOpen && signedIn() && aiPrefs().mode === 'cot' ? z(aiPrefs().w) + GAP() : 0;
+  return aiShown() && aiPrefs().mode === 'cot' ? z(aiPrefs().w) + GAP() : 0;
 }
 /** Cột bên phải (trong cửa sổ chính). */
 function aiBounds(): Rect {
@@ -329,10 +332,12 @@ function ensureAiFloat(): BrowserWindow {
 /** Đặt Trợ lý AI đúng chỗ theo trạng thái: đóng / cột trong cửa sổ chính / cửa sổ nổi riêng. */
 function placeAi(): void {
   if (!win || win.isDestroyed()) return;
-  const v = aiOpen ? ensureAiView() : aiView;
+  const shown = aiShown();
+  aiShownLast = shown;
+  const v = shown ? ensureAiView() : aiView;
   if (!v) return;
-  const noi = aiOpen && aiPrefs().mode === 'noi';
-  const cot = aiOpen && !noi;
+  const noi = shown && aiPrefs().mode === 'noi';
+  const cot = shown && !noi;
   if (!cot) win.contentView.removeChildView(v);
   if (!noi && aiFloat && !aiFloat.isDestroyed()) { aiFloat.contentView.removeChildView(v); aiFloat.hide(); }
   if (cot) { win.contentView.addChildView(v); v.setBounds(aiBounds()); raiseChrome(); }
@@ -368,7 +373,7 @@ function aiContext(): { key: string; label: string; host: string } | null {
   return { key: active, label: label || (wc && !wc.isDestroyed() ? wc.getTitle() : '') || host, host };
 }
 function pushAiContext(): void {
-  if (aiView && aiOpen && !aiView.webContents.isDestroyed()) aiView.webContents.send('chat:panel', { mode: aiPrefs().mode, context: aiContext() });
+  if (aiView && aiShown() && !aiView.webContents.isDestroyed()) aiView.webContents.send('chat:panel', { mode: aiPrefs().mode, context: aiContext() });
 }
 
 /** Kéo thanh tiêu đề (di chuyển, chế độ nổi) / kéo mép, góc (đổi cỡ): bám theo con trỏ tới khi thả chuột. */
@@ -489,7 +494,7 @@ function layout(): void {
   [[bounds.x, bounds.y], [right, bounds.y], [bounds.x, bottom], [right, bottom]].forEach(([x, y], i) => corners[i]?.setBounds({ x: x!, y: y!, width: r, height: r }));
   if (overlay && overlayOpen) overlay.setBounds({ x: 0, y: 0, width: width!, height: height! });
   if (peek && peekOpen) peek.setBounds(peekBounds());
-  if (aiView && aiOpen && aiPrefs().mode === 'cot') aiView.setBounds(aiBounds());
+  if (aiView && aiShown() && aiPrefs().mode === 'cot') aiView.setBounds(aiBounds());
   layoutSso();
 }
 
@@ -1182,6 +1187,8 @@ function itemOf(key: string, label: string | undefined, t: (typeof M)['vi'], clo
 
 function pushState(): void {
   if (!win || win.isDestroyed()) return;
+  // Vào / rời trang Trợ lý AI toàn trang ⇒ ẩn / hiện lại cột (cửa sổ nổi) Trợ lý.
+  if (aiShown() !== aiShownLast) { placeAi(); layout(); }
   pushAiContext();
   const s = getSettings();
   const t = M[s.lang];
@@ -1211,7 +1218,8 @@ function pushState(): void {
     downloads: (() => { const d = downloadsState(); return { has: d.list.length > 0, dang_tai: d.dang_tai, phan_tram: d.phan_tram, su_kien: d.su_kien }; })(),
     // Trợ lý AI (icon ✦ góc phải header): đang mở?
     // cot: chỗ cột Trợ lý chiếm bên phải (đơn vị CSS) ⇒ nền khung trang (tabs.html #card) chừa ra, không lộ nền trắng.
-    ai: { open: aiOpen, cot: aiOpen && signedIn() && aiPrefs().mode === 'cot' ? aiPrefs().w + 8 : 0 },
+    // shown: false khi đang ở trang Trợ lý AI ⇒ ẩn nút ✦ (đã là Trợ lý).
+    ai: { open: aiOpen, shown: active !== CHAT, cot: aiShown() && aiPrefs().mode === 'cot' ? aiPrefs().w + 8 : 0 },
     // Chuông thông báo trên header: số chưa đọc (chờ xử lý).
     thongBao: (() => { const d = notificationsState().dem; return { chua_doc: d.chua_doc, cho: d.cho_xu_ly }; })(),
     // Ứng dụng văn bản đang xem ⇒ nút chuyển Giao diện Vala / Trang gốc trên header.

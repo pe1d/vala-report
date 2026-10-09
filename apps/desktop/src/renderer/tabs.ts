@@ -38,7 +38,7 @@ interface TabsState {
   nav: { back: boolean; forward: boolean; reload: boolean };
   /** Nút Tải xuống: có lịch sử ⇒ hiện; đang tải ⇒ phần trăm (null nếu chưa biết tổng). */
   thongBao: { chua_doc: number; cho: number };
-  ai: { open: boolean; cot: number };
+  ai: { open: boolean; shown: boolean; cot: number };
   downloads: { has: boolean; dang_tai: number; phan_tram: number | null; su_kien: { so: number; loai: 'bat_dau' | 'xong' | 'loi'; ten: string } | null };
   /** Tab đang xem là ứng dụng văn bản ⇒ đang ở giao diện Vala hay trang gốc. */
   vanban: 'vala' | 'goc' | null;
@@ -378,7 +378,7 @@ interface ValaTabsApi {
     setIf($('dl'), 'aria-label', s.t.downloads);
     renderDownload(s);
     // Trợ lý AI (góc phải header): mở / đóng cửa sổ bên cạnh.
-    display($('ai'), s.signedIn);
+    display($('ai'), s.signedIn && s.ai.shown);
     setIf($('ai'), 'aria-pressed', String(s.ai.open));
     // Cột Trợ lý bên phải: nền trắng của khung trang co lại theo (mr-2 = 8px lề phải gốc).
     const mr = `${8 + s.ai.cot}px`;
