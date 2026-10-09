@@ -273,14 +273,12 @@ function aiBounds(): Rect {
   const p = aiPrefs();
   return { x: width! - GAP() - z(p.w), y: HEADER_H(), width: z(p.w), height: Math.max(0, height! - HEADER_H() - GAP()) };
 }
-/** Lề trong suốt quanh cửa sổ nổi để vẽ bóng đổ (khớp chat.ts PANEL_PAD). */
-const AI_PAD = 14;
 /** Cửa sổ nổi (toạ độ màn hình): vị trí đã nhớ, chưa có ⇒ góc dưới phải của cửa sổ chính; giữ trong màn hình. */
 function aiFloatRect(): Rect {
   const p = aiPrefs();
   const m = win!.getBounds();
-  const w = Math.max(300, p.rect?.width ?? z(420) + 2 * AI_PAD);
-  const h = Math.max(260, p.rect?.height ?? Math.min(z(620), m.height - 80) + 2 * AI_PAD);
+  const w = Math.max(300, p.rect?.width ?? z(420));
+  const h = Math.max(260, p.rect?.height ?? Math.min(z(620), m.height - 80));
   const x = p.rect?.x ?? m.x + m.width - w - 24;
   const y = p.rect?.y ?? m.y + m.height - h - 24;
   const area = screen.getDisplayMatching({ x, y, width: w, height: h }).workArea;
@@ -308,15 +306,15 @@ function ensureAiView(): WebContentsView {
 }
 
 /**
- * Cửa sổ nổi: cửa sổ RIÊNG của hệ điều hành (không viền, nền trong suốt, bóng đổ) ⇒ kéo ra ngoài app được, không chìm trên
- * nền trắng. Đi kèm cửa sổ chính (thu nhỏ / ẩn cùng). Trang Trợ lý (view) được chuyển qua lại giữa cột và cửa sổ nổi —
+ * Cửa sổ nổi: cửa sổ RIÊNG của hệ điều hành (không khung tiêu đề; bóng đổ do hệ điều hành vẽ như mọi cửa sổ) ⇒ kéo ra
+ * ngoài app được. Không dùng nền trong suốt: nhiều máy (Linux) không vẽ trong suốt ⇒ hiện thành khung nền xám thừa. Đi kèm cửa sổ chính (thu nhỏ / ẩn cùng). Trang Trợ lý (view) được chuyển qua lại giữa cột và cửa sổ nổi —
  * không nạp lại, giữ hội thoại đang dở.
  */
 let aiFloat: BrowserWindow | null = null;
 function ensureAiFloat(): BrowserWindow {
   if (aiFloat && !aiFloat.isDestroyed()) return aiFloat;
   const f = new BrowserWindow({
-    ...aiFloatRect(), parent: win ?? undefined, frame: false, transparent: true, backgroundColor: '#00000000', hasShadow: false,
+    ...aiFloatRect(), parent: win ?? undefined, frame: false, hasShadow: true, backgroundColor: nativeTheme.shouldUseDarkColors ? '#020617' : '#ffffff',
     resizable: false, skipTaskbar: true, show: false, title: M[getSettings().lang].assistant, icon: ICON,
   });
   f.on('closed', () => { if (aiFloat === f) aiFloat = null; });

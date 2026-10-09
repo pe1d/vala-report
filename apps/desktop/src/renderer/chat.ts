@@ -407,11 +407,8 @@ interface ChatPanelState { mode: 'cot' | 'noi'; context: { key: string; label: s
     );
     $('grip-w').style.display = noi ? 'none' : '';
     $('grip-r').style.display = noi ? '' : 'none';
-    // Cửa sổ nổi riêng (nền trong suốt): chừa lề cho bóng đổ, viền đậm hơn ⇒ không chìm trên nền trắng (khớp AI_PAD).
-    const pad = noi ? 14 : 0;
-    document.body.style.margin = `${pad}px`;
-    document.body.style.height = `calc(100vh - ${2 * pad}px)`;
-    document.body.style.boxShadow = noi ? '0 12px 40px rgba(15, 23, 42, 0.28), 0 2px 8px rgba(15, 23, 42, 0.12)' : '';
+    // Cửa sổ nổi riêng: khung vuông vừa đúng cửa sổ (không bo góc — góc ngoài là của hệ điều hành), viền mảnh để tách nền.
+    document.body.classList.toggle('rounded-xl', !noi);
     document.body.classList.toggle('border-slate-300', noi);
     document.body.classList.toggle('border-slate-200', !noi);
   }
