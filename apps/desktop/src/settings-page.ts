@@ -14,6 +14,8 @@ import {
 import { messages, normLang } from './i18n';
 import { prefsEvents, setPrefs } from './prefs';
 import { DEFAULT_SERVER, getSettings, setSettings } from './settings';
+import { changeZoom, zoomPercent } from './zoom';
+import { appsEvents } from './apps';
 import { strings } from './settings-strings';
 import { SSO_KEY } from './autofill';
 import { ssoHosts } from './sso-session';
@@ -61,7 +63,7 @@ function state() {
   const t = M[s.lang];
   return {
     t: { ...t, title: IS_DEV ? `${t.title} (dev)` : t.title },
-    lang: s.lang, theme: s.theme, dev: IS_DEV, version: app.getVersion(),
+    lang: s.lang, theme: s.theme, zoom: zoomPercent(), dev: IS_DEV, version: app.getVersion(),
     serverUrl: s.serverUrl || DEFAULT_SERVER, user: s.deviceToken ? s.user : null,
     autostart: { enabled: autostartEnabled(), supported: autostartSupported() },
     options: { autoUpdate: autoUpdateEnabled(), errorReport: getSettings().errorReport !== false, autoSavePasswords: getSettings().autoSavePasswords !== false, askBeforeDownload: getSettings().askBeforeDownload !== false },
@@ -75,6 +77,8 @@ function state() {
 export function registerSettingsPage(hooks: SettingsHooks): void {
   const own = (e: IpcMainInvokeEvent) => { if (!hooks.isSettings(e)) throw new Error('forbidden'); };
   for (const ev of ['login', 'logout'] as const) accountEvents.on(ev, hooks.push);
+  // Cỡ chữ đổi ở nơi khác (phím tắt, menu tài khoản, máy khác) ⇒ nút đang chọn theo.
+  appsEvents.on('changed', hooks.push);
   prefsEvents.on('changed', hooks.push);
   credentialEvents.on('changed', hooks.push);
   syncEvents.on('status', hooks.push);
@@ -82,6 +86,7 @@ export function registerSettingsPage(hooks: SettingsHooks): void {
   ipcMain.handle('vala:settings-state', (e) => { own(e); return state(); });
   ipcMain.handle('vala:set-lang', (e, l: unknown) => { own(e); setPrefs({ lang: normLang(l) }); return state(); });
   ipcMain.handle('vala:set-theme', (e, v: unknown) => { own(e); setPrefs({ theme: v }); return state(); });
+  ipcMain.handle('vala:set-zoom', (e, v: unknown) => { own(e); changeZoom({ pct: Number(v) }); return state(); });
   ipcMain.handle('vala:set-autostart', (e, on: unknown) => { own(e); setAutostart(on === true); return state(); });
   ipcMain.handle('vala:set-option', (e, a: { key?: unknown; on?: unknown }) => {
     own(e);

@@ -3,6 +3,7 @@
  * cáo; mỗi người dùng có bố cục riêng (ứng dụng ghim + thứ tự). Bảng nằm trong schema đơn vị (migration đơn vị 002).
  *   GET  /ext/apps                 danh mục đang bật + bố cục của người dùng (token thiết bị)
  *   PUT  /ext/layout               lưu bố cục
+ *   PUT  /ext/prefs                tuỳ chọn riêng của người dùng (cỡ chữ)
  *   /admin/desktop-apps…           quản trị đơn vị thêm / sửa / xoá / sắp xếp
  */
 import type { FastifyPluginAsync } from 'fastify';
@@ -66,6 +67,7 @@ export const desktopAppExtRoutes = (deps: ApiDeps): FastifyPluginAsync => async 
          FROM desktop_apps a LEFT JOIN source_systems ss ON ss.code = a.source_system
         WHERE a.enabled AND (a.kind <> 'source' OR ss.enabled) ORDER BY a.is_default DESC, a.sort, a.ten`);
     const row = await t.oneOrNone<{ pinned: string[] }>('SELECT pinned FROM desktop_app_layouts WHERE app_user_id = $1', [req.user.id]);
+    const prefs = await t.oneOrNone<{ co_chu: number | null }>('SELECT co_chu FROM desktop_user_prefs WHERE app_user_id = $1', [req.user.id]);
     const tenant = await tenantByCode(deps, currentTenant());
     const inside = await t.oneOrNone<{ d: string[] }>('SELECT desktop_open_inside AS d FROM app_settings WHERE id = 1');
     return {
@@ -74,6 +76,8 @@ export const desktopAppExtRoutes = (deps: ApiDeps): FastifyPluginAsync => async 
       // Tên miền mà link mở cửa sổ mới tới đó mở thành tab trong Desktop (ngoài tên miền của các ứng dụng trong danh mục).
       open_inside: inside?.d ?? [],
       layout: { pinned: row ? cleanLayout(row.pinned, apps.map((a) => a.ma)) : null },
+      // Tuỳ chọn riêng theo tài khoản (mở máy khác vẫn đúng): cỡ chữ (%), null ⇒ 100%.
+      prefs: { co_chu: prefs?.co_chu ?? null },
       // Host SSO của đơn vị: Desktop giữ phiên SSO + mật khẩu SSO dùng chung cho mọi ứng dụng.
       sso_hosts: tenant ? ssoHostsOf(deps, tenant) : [],
       // Quản trị đơn vị ⇒ Desktop hiện mục "Quản trị đơn vị".
@@ -83,6 +87,16 @@ export const desktopAppExtRoutes = (deps: ApiDeps): FastifyPluginAsync => async 
       // Đơn vị đã tắt mật khẩu Vala ⇒ mật khẩu cũ (nếu còn) không dùng được nữa: coi như chỉ SSO.
       account: { has_password: req.user.has_password && (!tenant || loginMethodsOf(deps, tenant).includes('password')), sso_password_url: tenant ? ssoPasswordUrlOf(deps, tenant) : null },
     };
+  }));
+
+  app.put<{ Body: { co_chu: number | null } }>('/ext/prefs', {
+    schema: { body: { type: 'object', required: ['co_chu'], additionalProperties: false, properties: {
+      co_chu: { anyOf: [{ type: 'integer', minimum: 50, maximum: 200 }, { type: 'null' }] } } } },
+  }, async (req) => withTenant(deps.writer, async (t) => {
+    const co = req.body.co_chu === 100 ? null : req.body.co_chu;
+    await t.none(`INSERT INTO desktop_user_prefs (app_user_id, co_chu, updated_at) VALUES ($1, $2, now())
+                  ON CONFLICT (app_user_id) DO UPDATE SET co_chu = EXCLUDED.co_chu, updated_at = now()`, [req.user.id, co]);
+    return { co_chu: co };
   }));
 
   app.put<{ Body: { pinned: string[] } }>('/ext/layout', {

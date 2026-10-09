@@ -25,7 +25,7 @@ export interface CatalogApp {
   pinned_default: boolean;
   is_default: boolean;
 }
-interface Catalog { apps: CatalogApp[]; layout: { pinned: string[] | null }; /** Host SSO của đơn vị (sso-session.ts). */ sso_hosts?: string[]; /** Quản trị đơn vị ⇒ mục "Quản trị đơn vị". */ is_admin?: boolean;
+interface Catalog { apps: CatalogApp[]; layout: { pinned: string[] | null }; /** Tuỳ chọn riêng theo tài khoản (cỡ chữ %). */ prefs?: { co_chu: number | null }; /** Host SSO của đơn vị (sso-session.ts). */ sso_hosts?: string[]; /** Quản trị đơn vị ⇒ mục "Quản trị đơn vị". */ is_admin?: boolean;
   /** Quản trị hệ thống ⇒ trang Quản trị có thêm mục Đơn vị. */ is_system_admin?: boolean;
   /** Đổi mật khẩu: có mật khẩu Vala ⇒ form trong app; chỉ SSO ⇒ trang đổi mật khẩu của SSO (nếu đơn vị khai). */
   account?: { has_password: boolean; sso_password_url: string | null };
@@ -100,6 +100,15 @@ export async function setPinnedOrder(keys: readonly string[]): Promise<void> {
   const pinned = keys.map((k) => appByKey(k)?.ma).filter((m): m is string => !!m);
   save({ ...catalog(), layout: { pinned } });
   try { await api('PUT', '/ext/layout', { pinned }); } catch { /* lần làm mới sau sẽ lấy lại bố cục trên máy chủ */ }
+}
+
+/** Cỡ chữ (%) của người dùng đang đăng nhập — theo tài khoản, lưu trên máy chủ (zoom.ts). */
+export const fontPercent = (): number => catalog().prefs?.co_chu ?? 100;
+
+/** Đổi cỡ chữ: đổi bản đệm ngay (áp liền), lưu lên máy chủ theo tài khoản. */
+export async function setFontPercent(pct: number): Promise<void> {
+  save({ ...catalog(), prefs: { co_chu: pct === 100 ? null : pct } });
+  try { await api('PUT', '/ext/prefs', { co_chu: pct === 100 ? null : pct }); } catch { /* lần làm mới sau lấy lại từ máy chủ */ }
 }
 
 /** Đăng xuất ⇒ quên danh mục của đơn vị. */

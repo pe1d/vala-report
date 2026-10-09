@@ -32,6 +32,7 @@ import { cachedSources, events, statusOf, type SourceFull } from './sync';
 import { applySubsetOrder, cookieMatchesHost, openTarget, reordered, sidebarSections, siteOf, tabStatus, webLoginTone, type AppLoginTone, type TabStatus } from './tabs-model';
 import { ssoHosts } from './sso-session';
 import { siteIcon, siteIconEvents } from './site-icons';
+import { changeZoom, trackZoom, zoomPercent } from './zoom';
 import { vanBanKeys } from './vanban-model';
 import { pendingUpdate, promptInstall } from './updater';
 import { recordingKey } from './recorder';
@@ -372,6 +373,8 @@ function createLocalView(t: Tab): WebContentsView {
   view.setVisible(false);
   const wc = view.webContents;
   autoRecover(wc);
+  // Cỡ chữ theo tài khoản — trang cục bộ (Trợ lý, Cài đặt, Quản trị…); màn hình đăng nhập giữ cỡ gốc.
+  if (t.key !== LOGIN) trackZoom(wc);
   wc.setWindowOpenHandler(() => ({ action: 'deny' }));
   wc.on('will-navigate', (e) => e.preventDefault());
   wc.on('page-title-updated', () => pushState());
@@ -487,6 +490,8 @@ function createView(t: Tab): WebContentsView {
   attachAutofill(wc);
   // Trang đăng nhập riêng của ứng dụng có nút "Đăng nhập bằng SSO" ⇒ app đã có phiên SSO thì bấm hộ (sso-auto.ts).
   attachSsoAuto(wc, () => homeUrl(t));
+  // Cỡ chữ theo tài khoản (zoom.ts).
+  trackZoom(wc);
   // Tab Báo cáo chạy bản giao diện trong máy: trang của cổng trên máy chủ (vd SSO đăng nhập xong chuyển về
   // https://<máy chủ>/#token…) ⇒ mở cùng đường dẫn trong bản trong máy, giữ nguyên query và #.
   if (t.key === 'portal') {
@@ -603,6 +608,7 @@ function createUiView(t: Tab): void {
   view.setVisible(false);
   const wc = view.webContents;
   autoRecover(wc);
+  trackZoom(wc);
   wc.setWindowOpenHandler(() => ({ action: 'deny' }));
   wc.on('will-navigate', (e) => e.preventDefault());
   wc.on('before-input-event', (e, input) => { if (shortcut(input)) e.preventDefault(); });
@@ -1018,6 +1024,10 @@ function shortcut(input: Input): boolean {
   if (ctrl && key === ',') { hooks.profileCommand('settings'); return true; }
   if (ctrl && key.toLowerCase() === 'k') { openSearch(); return true; }
   if (ctrl && key.toLowerCase() === 'j') { openDownloads(); return true; }
+  // Cỡ chữ (như trình duyệt): Ctrl + = / + tăng, Ctrl + − giảm, Ctrl + 0 về 100% — lưu theo tài khoản.
+  if (ctrl && (key === '=' || key === '+')) { changeZoom(1); return true; }
+  if (ctrl && (key === '-' || key === '_')) { changeZoom(-1); return true; }
+  if (ctrl && key === '0') { changeZoom(0); return true; }
   if (ctrl && key === 'Tab') {
     const i = active ? keys.indexOf(active) : 0;
     const next = keys[(i + (input.shift ? -1 : 1) + keys.length) % keys.length];
@@ -1260,7 +1270,7 @@ function overlayState() {
   const up = pendingUpdate();
   const { version, installUpdate, ...plain } = t;
   return {
-    kind: overlayKind, anchor: overlayAnchor, collapsed: !!s.sidebarCollapsed && !overlayExpanded, lang: s.lang, theme: s.theme, dev: IS_DEV,
+    kind: overlayKind, anchor: overlayAnchor, collapsed: !!s.sidebarCollapsed && !overlayExpanded, lang: s.lang, theme: s.theme, zoom: zoomPercent(), dev: IS_DEV,
     isAdmin: canAdmin(),
     context: overlayKind === 'context' ? contextMenu : null,
     downloads: overlayKind === 'downloads' ? downloadsState() : null,
@@ -1302,6 +1312,7 @@ function registerOverlayIpc(): void {
     if (cmd === 'sign-in') { hooks.signIn(); return; }
     if (COMMANDS.includes(cmd as ProfileCommand)) hooks.profileCommand(cmd as ProfileCommand);
   });
+  ipcMain.handle('overlay:zoom', (e, dir: unknown) => { own(e); if (dir === 1 || dir === -1 || dir === 0) changeZoom(dir); return overlayState(); });
   ipcMain.handle('overlay:prefs', (e, p: { lang?: unknown; theme?: unknown }) => { own(e); setPrefs({ lang: p?.lang, theme: p?.theme }); return overlayState(); });
   ipcMain.handle('overlay:open-app', (e, key: unknown) => { own(e); closeOverlay(); if (typeof key === 'string') activate(key); });
   ipcMain.handle('overlay:pin', (e, key: unknown, on: unknown) => { own(e); if (typeof key === 'string') setPinned(key, on === true); return overlayState(); });
@@ -1324,7 +1335,7 @@ function registerOverlayIpc(): void {
 
 /** Chữ của khung nổi (menu hồ sơ, khung ⊞). */
 const O = messages({
-  settings: 'Cài đặt', admin: 'Quản trị', language: 'Ngôn ngữ', appearance: 'Giao diện', light: 'Sáng', dark: 'Tối', system: 'Theo hệ thống',
+  settings: 'Cài đặt', admin: 'Quản trị', language: 'Ngôn ngữ', appearance: 'Giao diện', textSize: 'Cỡ chữ', zoomIn: 'Tăng cỡ chữ (Ctrl + =)', zoomOut: 'Giảm cỡ chữ (Ctrl + −)', zoomReset: 'Về 100% (Ctrl + 0)', light: 'Sáng', dark: 'Tối', system: 'Theo hệ thống',
   passwords: 'Quản lý mật khẩu', sync: 'Đồng bộ phiên ngay', checkUpdate: 'Kiểm tra cập nhật', signOut: 'Đăng xuất', quit: 'Thoát',
   signIn: 'Đăng nhập', changePassword: 'Đổi mật khẩu', changeSsoPassword: 'Đổi mật khẩu SSO',
   currentPassword: 'Mật khẩu hiện tại', newPassword: 'Mật khẩu mới — ít nhất 8 ký tự, có cả chữ và số', confirmPassword: 'Nhập lại mật khẩu mới',
@@ -1346,7 +1357,7 @@ const O = messages({
   ctxPin: 'Ghim lên thanh bên', ctxUnpin: 'Bỏ ghim khỏi thanh bên', ctxClose: 'Đóng tab', ctxOpen: 'Mở',
   version: (v: string) => `Phiên bản ${v}`, installUpdate: (v: string) => `Cập nhật lên bản ${v}`,
 }, {
-  settings: 'Settings', admin: 'Administration', language: 'Language', appearance: 'Appearance', light: 'Light', dark: 'Dark', system: 'System',
+  settings: 'Settings', admin: 'Administration', language: 'Language', appearance: 'Appearance', textSize: 'Text size', zoomIn: 'Larger text (Ctrl + =)', zoomOut: 'Smaller text (Ctrl + −)', zoomReset: 'Back to 100% (Ctrl + 0)', light: 'Light', dark: 'Dark', system: 'System',
   passwords: 'Manage passwords', sync: 'Sync sessions now', checkUpdate: 'Check for updates', signOut: 'Sign out', quit: 'Quit',
   signIn: 'Sign in', changePassword: 'Change password', changeSsoPassword: 'Change SSO password',
   currentPassword: 'Current password', newPassword: 'New password: at least 8 characters, with both letters and numbers', confirmPassword: 'Confirm new password',

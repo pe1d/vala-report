@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld('valaOverlay', {
   close: () => ipcRenderer.invoke('overlay:close'),
   command: (cmd: string) => ipcRenderer.invoke('overlay:command', cmd),
   prefs: (p: { lang?: string; theme?: string }) => ipcRenderer.invoke('overlay:prefs', p),
+  zoom: (dir: number) => ipcRenderer.invoke('overlay:zoom', dir),
   openApp: (key: string) => ipcRenderer.invoke('overlay:open-app', key),
   pin: (key: string, on: boolean) => ipcRenderer.invoke('overlay:pin', key, on),
   search: (q: string) => ipcRenderer.invoke('overlay:search', q),

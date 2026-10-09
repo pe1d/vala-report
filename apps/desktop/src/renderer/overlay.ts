@@ -12,6 +12,8 @@ interface OverlayState {
   collapsed: boolean;
   lang: 'vi' | 'en';
   theme: 'light' | 'dark' | 'system';
+  /** Cỡ chữ hiện tại (%). */
+  zoom: number;
   dev: boolean;
   /** Quản trị đơn vị / hệ thống ⇒ mục "Quản trị" (trang quản trị trong app). */
   isAdmin: boolean;
@@ -33,6 +35,7 @@ interface ValaOverlayApi {
   close(): Promise<void>;
   command(cmd: string): Promise<void>;
   prefs(p: { lang?: string; theme?: string }): Promise<OverlayState>;
+  zoom(dir: 1 | -1 | 0): Promise<OverlayState>;
   openApp(key: string): Promise<void>;
   pin(key: string, on: boolean): Promise<OverlayState>;
   search(q: string): Promise<OverlaySection[]>;
@@ -64,6 +67,7 @@ interface ValaOverlayApi {
     settings: ['M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z', 'M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-2.8 1.2V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-2.9-1.2l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0-1.2-2.9H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.2-2.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.7 1.7 0 0 0 10 3.1V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 2.9 1.2l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0 1.2 2.9H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z'],
     language: ['M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z', 'M3 12h18', 'M12 3a14 14 0 0 1 0 18', 'M12 3a14 14 0 0 0 0 18'],
     appearance: ['M12 21a9 9 0 1 0 0-18z'],
+    textSize: ['M4 7V4h16v3', 'M9 20h6', 'M12 4v16'],
     passwords: ['M7 11V7a5 5 0 0 1 10 0v4', 'M5 11h14v10H5z'],
     changePassword: ['M21 2l-2 2m-7.6 7.6a5.5 5.5 0 1 1-7.8 7.8 5.5 5.5 0 0 1 7.8-7.8zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4'],
     sync: ['M21 12a9 9 0 0 1-15.5 6.2', 'M3 12A9 9 0 0 1 18.5 5.8', 'M21 3v6h-6', 'M3 21v-6h6'],
@@ -121,6 +125,22 @@ interface ValaOverlayApi {
     if (s.isAdmin) out.push(item('admin', t.admin, () => void api.command('admin')));
     out.push(choice('language', t.language, [['vi', 'Tiếng Việt'], ['en', 'English']], s.lang, (v) => void api.prefs({ lang: v }).then(render)));
     out.push(choice('appearance', t.appearance, [['light', t.light], ['dark', t.dark], ['system', t.system]], s.theme, (v) => void api.prefs({ theme: v }).then(render)));
+    // Cỡ chữ (theo tài khoản): A− 100% A+ — bấm % ⇒ về 100%.
+    if (s.profile) {
+      const row = el('div', 'flex items-center gap-3 px-2.5 py-1.5');
+      row.append(icon('textSize', 'h-4 w-4 shrink-0 text-slate-500 dark:text-slate-400'), el('span', 'min-w-0 flex-1 truncate', t.textSize));
+      const seg = el('div', 'flex items-center overflow-hidden rounded-md border border-slate-200 text-xs dark:border-slate-600');
+      const zb = (label: string, title: string, dir: 1 | -1 | 0, cls = '') => {
+        const b = el('button', `px-2 py-0.5 hover:bg-slate-100 dark:hover:bg-slate-700 ${cls}`, label);
+        b.type = 'button';
+        b.title = title;
+        b.addEventListener('click', () => void api.zoom(dir).then(render));
+        return b;
+      };
+      seg.append(zb('A−', t.zoomOut, -1), zb(`${s.zoom}%`, t.zoomReset, 0, 'min-w-[3.25rem] border-x border-slate-200 tabular-nums dark:border-slate-600'), zb('A+', t.zoomIn, 1));
+      row.append(seg);
+      out.push(row);
+    }
     out.push(sep());
     out.push(item('passwords', t.passwords, () => void api.command('passwords')));
     if (s.account?.has_password) out.push(item('changePassword', t.changePassword, () => void api.command('change-password')));

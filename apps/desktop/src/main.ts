@@ -13,6 +13,7 @@ import { registerVanbanPage } from './vanban-page';
 import { offerPin } from './pin';
 import { checkAdminAlerts } from './admin-alert';
 import { clearDownloads, initDownloads } from './downloads';
+import { initZoom } from './zoom';
 import { initErrorReport, refreshCrashIdentity, startCrashReporter } from './error-report';
 import { registerChatPage } from './chat-page';
 import { registerLoginPage } from './login-page';
@@ -104,6 +105,7 @@ if (!app.requestSingleInstanceLock()) {
     // setLoginItemSettings ⇒ tự ghi mục autostart (linux.ts).
     initErrorReport();
     initDownloads();
+    initZoom();
     applyAutostart();
     applyTheme();
     setNotifyReveal(revealWindow);

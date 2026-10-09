@@ -7,6 +7,7 @@ interface SettingsState {
   t: Record<string, string>;
   lang: 'vi' | 'en';
   theme: 'light' | 'dark' | 'system';
+  zoom: number;
   dev: boolean;
   version: string;
   serverUrl: string;
@@ -22,6 +23,7 @@ interface ValaSettingsApi {
   state(): Promise<SettingsState>;
   setLang(lang: string): Promise<SettingsState>;
   setTheme(theme: string): Promise<SettingsState>;
+  setZoom(pct: number): Promise<SettingsState>;
   setAutostart(on: boolean): Promise<SettingsState>;
   setOption(key: 'autoUpdate' | 'errorReport' | 'autoSavePasswords' | 'askBeforeDownload', on: boolean): Promise<SettingsState>;
   signIn(): Promise<void>;
@@ -137,6 +139,7 @@ interface ValaSettingsApi {
 
     for (const b of all('[data-lang]')) b.setAttribute('aria-pressed', String(b.dataset.lang === next.lang));
     for (const b of all('[data-theme]')) b.setAttribute('aria-pressed', String(b.dataset.theme === next.theme));
+    for (const b of all('[data-zoom]')) b.setAttribute('aria-pressed', String(Number(b.dataset.zoom) === next.zoom));
 
     const auto = $<HTMLInputElement>('autostart');
     auto.checked = next.autostart.enabled;
@@ -169,6 +172,7 @@ interface ValaSettingsApi {
   // ---- thao tác ----
   for (const b of all('[data-lang]')) b.addEventListener('click', async () => render(await vala.setLang(b.dataset.lang!)));
   for (const b of all('[data-theme]')) b.addEventListener('click', async () => render(await vala.setTheme(b.dataset.theme!)));
+  for (const b of all('[data-zoom]')) b.addEventListener('click', async () => render(await vala.setZoom(Number(b.dataset.zoom))));
   $<HTMLInputElement>('autostart').addEventListener('change', async (e) => render(await vala.setAutostart((e.target as HTMLInputElement).checked)));
   $<HTMLInputElement>('auto-update').addEventListener('change', async (e) => render(await vala.setOption('autoUpdate', (e.target as HTMLInputElement).checked)));
   $<HTMLInputElement>('error-report').addEventListener('change', async (e) => render(await vala.setOption('errorReport', (e.target as HTMLInputElement).checked)));

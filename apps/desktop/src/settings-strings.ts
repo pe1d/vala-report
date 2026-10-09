@@ -1,7 +1,7 @@
 /** Chữ hiển thị của tab Cài đặt (settings-page.ts). Bản tiếng Anh phải đủ khoá như tiếng Việt. */
 const vi = {
   title: 'Cài đặt',
-  navAccount: 'Tài khoản', navPasswords: 'Mật khẩu', navAppearance: 'Giao diện', navStartup: 'Khởi động & cập nhật', navDownloads: 'Tải xuống', navAbout: 'Giới thiệu',
+  navAccount: 'Tài khoản', navPasswords: 'Mật khẩu', navAppearance: 'Giao diện', navStartup: 'Khởi động & cập nhật', navDownloads: 'Tải xuống', zoomLabel: 'Cỡ chữ', zoomHint: 'Phóng to / thu nhỏ nội dung trang (ứng dụng, Trợ lý, Cài đặt…). Lưu theo tài khoản của bạn — đăng nhập máy khác vẫn giữ. Phím tắt: Ctrl + = tăng, Ctrl + − giảm, Ctrl + 0 về 100%.', navAbout: 'Giới thiệu',
   accountHint: 'Tài khoản Vala Desktop của bạn: dùng để mở các ứng dụng của đơn vị, giữ phiên các hệ thống nguồn và gửi cho Vala lấy dữ liệu thay bạn.',
   notSignedIn: 'Chưa đăng nhập.', signIn: 'Đăng nhập', signedInAs: 'Đã đăng nhập', serverIs: 'Máy chủ',
   openPortal: 'Mở cổng báo cáo', logout: 'Đăng xuất',
@@ -32,7 +32,7 @@ const vi = {
 };
 const en: typeof vi = {
   title: 'Settings',
-  navAccount: 'Account', navPasswords: 'Passwords', navAppearance: 'Appearance', navStartup: 'Startup & updates', navDownloads: 'Downloads', navAbout: 'About',
+  navAccount: 'Account', navPasswords: 'Passwords', navAppearance: 'Appearance', navStartup: 'Startup & updates', navDownloads: 'Downloads', zoomLabel: 'Text size', zoomHint: 'Zoom page content in or out (apps, Assistant, Settings…). Saved with your account — it follows you to other computers. Shortcuts: Ctrl + = larger, Ctrl + − smaller, Ctrl + 0 back to 100%.', navAbout: 'About',
   accountHint: 'Your Vala Desktop account: used to open your organization\'s apps, keep your source-system sessions and send them to Vala to fetch data for you.',
   notSignedIn: 'Not signed in.', signIn: 'Sign in', signedInAs: 'Signed in as', serverIs: 'Server',
   openPortal: 'Open reporting portal', logout: 'Sign out',
