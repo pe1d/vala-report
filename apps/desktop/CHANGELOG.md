@@ -5,6 +5,28 @@ dùng đọc: ngắn, nói lợi ích, không dùng từ kỹ thuật. Mục nà
 sau khi cập nhật và ở Cài đặt → Giới thiệu. Đóng gói (`pnpm package*`, `scripts/package-win.sh`) dừng nếu bản đang build
 chưa có mục ở đây (src/release-notes.ts, scripts/release-notes.cjs).
 
+## 0.4.0
+
+### vi
+- Giao diện Văn bản ngay trong Vala Desktop: xem danh sách theo đủ các mục như hệ thống văn bản của đơn vị, xem chi tiết, tệp đính kèm, quá trình xử lý, và tạo văn bản mới. Bấm "Trang gốc" để quay về trang của hệ thống bất cứ lúc nào.
+- Ứng dụng văn bản giữ đăng nhập sau khi tắt / mở lại Vala Desktop. Đăng xuất là thoát hết như trước.
+- Tải tệp có tiến độ: nút Tải xuống trên cùng hiện phần trăm; bấm vào (hoặc Ctrl+J) để xem các tệp đã tải, mở tệp hoặc mở thư mục chứa tệp.
+- Kéo thả để đổi thứ tự ứng dụng trên thanh bên trái.
+- Mở Vala ở nhiều tab (vd Tin nhắn và Trang thông tin) không còn bị mất kết nối tin nhắn ở tab đang xem.
+- Tự động cập nhật (bật sẵn, tắt được ở Cài đặt): bản mới được tải ngầm và cài khi bạn không dùng máy, không làm gián đoạn công việc.
+- Tự gửi báo lỗi để đội phát triển sửa nhanh hơn (không gửi nội dung trang hay mật khẩu; tắt được ở Cài đặt). Trang bị đóng đột ngột sẽ tự mở lại.
+- Bộ cài mới gọn nhẹ: tải về chỉ khoảng 1 MB, chạy lên mới tải phần còn lại. Ubuntu tự ghim Vala Desktop vào thanh Dock.
+
+### en
+- Documents view right inside Vala Desktop: browse the same folders as your organization's document system, open details, attachments and processing history, and create new documents. Click "Original page" to go back to the system's own page at any time.
+- Document apps stay signed in after you close and reopen Vala Desktop. Signing out still signs you out of everything.
+- Download progress: the Downloads button at the top shows the percentage; click it (or press Ctrl+J) to see downloaded files, open a file or its folder.
+- Drag and drop to reorder apps in the left bar.
+- Opening Vala in several tabs (e.g. Messages and the news page) no longer drops the message connection in the tab you are viewing.
+- Automatic updates (on by default, can be turned off in Settings): new versions download in the background and install while you are away, without interrupting your work.
+- Error reports are sent automatically so problems get fixed faster (no page content or passwords are sent; can be turned off in Settings). Pages that close unexpectedly reload by themselves.
+- A lighter installer: about 1 MB to download, the rest is fetched while installing. On Ubuntu, Vala Desktop is pinned to the Dock automatically.
+
 ## 0.3.0
 
 ### vi
