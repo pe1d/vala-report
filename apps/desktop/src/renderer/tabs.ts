@@ -34,7 +34,7 @@ interface TabsState {
   more: number;
   nav: { back: boolean; forward: boolean; reload: boolean };
   /** Nút Tải xuống: có lịch sử ⇒ hiện; đang tải ⇒ phần trăm (null nếu chưa biết tổng). */
-  downloads: { has: boolean; dang_tai: number; phan_tram: number | null };
+  downloads: { has: boolean; dang_tai: number; phan_tram: number | null; su_kien: { so: number; loai: 'bat_dau' | 'xong' | 'loi'; ten: string } | null };
   /** Tab đang xem là ứng dụng văn bản ⇒ đang ở giao diện Vala hay trang gốc. */
   vanban: 'vala' | 'goc' | null;
   /** Cửa sổ đang phóng to (nút □ thành "Thu về"). */
@@ -358,7 +358,7 @@ interface ValaTabsApi {
     display($('dl'), s.signedIn && (s.downloads.has || s.downloads.dang_tai > 0));
     setIf($('dl'), 'title', s.t.downloads);
     setIf($('dl'), 'aria-label', s.t.downloads);
-    setText($('dl-pct'), s.downloads.dang_tai ? (s.downloads.phan_tram !== null ? `${s.downloads.phan_tram}%` : `${s.downloads.dang_tai}…`) : '');
+    renderDownload(s);
     // Ứng dụng văn bản: nút chuyển Giao diện Vala / Trang gốc.
     display($('vb-toggle'), s.signedIn && !!s.vanban);
     setIf($('vb-toggle'), 'title', s.t.vbTitle);
@@ -419,6 +419,53 @@ interface ValaTabsApi {
   $('reload').addEventListener('click', () => void api.nav('reload'));
   $('vb-vala').addEventListener('click', () => void api.vanban('vala'));
   // Khung Tải xuống neo dưới nút (nút đang ẩn ⇒ dưới nút cửa sổ ─).
+  /**
+   * Nút Tải xuống trên header: vòng tiến độ quanh biểu tượng khi đang tải (không biết dung lượng ⇒ vòng quay), vừa bắt đầu
+   * ⇒ nháy + chữ "Đang tải", xong ⇒ dấu ✓ + "Đã tải xong", lỗi ⇒ chữ đỏ — để người dùng biết đã / đang tải.
+   */
+  const RING = 62.83;
+  let dlSo: number | null = null;
+  let dlFlash: { loai: 'bat_dau' | 'xong' | 'loi'; until: number } | null = null;
+  let dlTimer: ReturnType<typeof setTimeout> | null = null;
+  let lastState: TabsState | null = null;
+  function renderDownload(s: TabsState) {
+    lastState = s;
+    const d = s.downloads;
+    const ev = d.su_kien;
+    // Lần vẽ đầu (mở app) không làm hiệu ứng cho sự kiện cũ.
+    if (dlSo === null) dlSo = ev?.so ?? 0;
+    else if (ev && ev.so > dlSo) {
+      dlSo = ev.so;
+      dlFlash = { loai: ev.loai, until: Date.now() + (ev.loai === 'bat_dau' ? 2200 : 4000) };
+      if (ev.loai === 'bat_dau') {
+        const ping = $('dl-ping');
+        ping.hidden = false;
+        ping.classList.remove('animate-ping');
+        void ping.offsetWidth;
+        ping.classList.add('animate-ping');
+        setTimeout(() => { ping.hidden = true; ping.classList.remove('animate-ping'); }, 1200);
+      }
+      if (dlTimer) clearTimeout(dlTimer);
+      dlTimer = setTimeout(() => { dlFlash = null; if (lastState) renderDownload(lastState); }, dlFlash.until - Date.now());
+    }
+    const flash = dlFlash && dlFlash.until > Date.now() ? dlFlash.loai : null;
+    const busy = d.dang_tai > 0;
+    const ring = $('dl-ring') as unknown as SVGElement;
+    ring.toggleAttribute('hidden', !busy);
+    ring.classList.toggle('animate-spin', busy && d.phan_tram === null);
+    const arc = $('dl-arc');
+    arc.setAttribute('stroke-dasharray', busy && d.phan_tram === null ? '16 47' : String(RING));
+    arc.setAttribute('stroke-dashoffset', busy && d.phan_tram !== null ? String(RING * (1 - d.phan_tram / 100)) : busy ? '0' : String(RING));
+    const done = flash === 'xong' && !busy;
+    $('dl-done').toggleAttribute('hidden', !done);
+    $('dl-icon').toggleAttribute('hidden', done);
+    const pct = $('dl-pct');
+    pct.className = `whitespace-nowrap text-[11px] font-semibold tabular-nums ${flash === 'loi' ? 'text-red-600 dark:text-red-400' : flash === 'xong' && !busy ? 'text-emerald-700 dark:text-emerald-400' : 'text-blue-700 dark:text-blue-300'}`;
+    setText(pct, flash === 'bat_dau' ? s.t.dlStarted
+      : busy ? (d.phan_tram !== null ? `${d.phan_tram}%` : `${d.dang_tai}…`)
+        : flash === 'xong' ? s.t.dlDone : flash === 'loi' ? s.t.dlFailed : '');
+  }
+
   const openDownloads = () => void api.overlay('downloads', rect($('dl').style.display === 'none' ? $('win-min') : $('dl')));
   $('dl').addEventListener('click', openDownloads);
   api.onOpenDownloads(openDownloads);

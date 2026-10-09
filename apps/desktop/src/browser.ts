@@ -44,7 +44,7 @@ const M = messages({
   search: 'Tìm kiếm', minimize: 'Thu nhỏ', maximize: 'Phóng to', restore: 'Thu về', closeWindow: 'Đóng (ẩn xuống khay)',
   close: 'Đóng tab (Ctrl+W)', menu: 'Hệ thống nguồn',
   signIn: 'Đăng nhập', signInTitle: 'Đăng nhập Vala Desktop', account: 'Tài khoản', admin: 'Quản trị',
-  lightMode: 'Chế độ sáng', darkMode: 'Chế độ tối', recording: 'đang ghi thao tác', downloads: 'Tải xuống (Ctrl+J)',
+  lightMode: 'Chế độ sáng', darkMode: 'Chế độ tối', recording: 'đang ghi thao tác', downloads: 'Tải xuống (Ctrl+J)', dlStarted: 'Đang tải', dlDone: 'Đã tải xong', dlFailed: 'Tải lỗi',
   vbVala: 'Giao diện Vala', vbGoc: 'Trang gốc', vbTitle: 'Chuyển giữa giao diện Văn bản của Vala và trang gốc của hệ thống',
   updateTitle: 'Cài bản mới: ứng dụng đóng lại, cài xong tự mở lại',
   updateLabel: (v: string) => `Đã có bản ${v} — Cập nhật`,
@@ -56,7 +56,7 @@ const M = messages({
   search: 'Search', minimize: 'Minimize', maximize: 'Maximize', restore: 'Restore', closeWindow: 'Close (hide to tray)',
   close: 'Close tab (Ctrl+W)', menu: 'Source systems',
   signIn: 'Sign in', signInTitle: 'Sign in to Vala Desktop', account: 'Account', admin: 'Administration',
-  lightMode: 'Light mode', darkMode: 'Dark mode', recording: 'recording actions', downloads: 'Downloads (Ctrl+J)',
+  lightMode: 'Light mode', darkMode: 'Dark mode', recording: 'recording actions', downloads: 'Downloads (Ctrl+J)', dlStarted: 'Downloading', dlDone: 'Downloaded', dlFailed: 'Download failed',
   vbVala: 'Vala view', vbGoc: 'Original page', vbTitle: "Switch between Vala's documents view and the system's original page",
   updateTitle: 'Install the new version: the app closes, installs and reopens',
   updateLabel: (v: string) => `Version ${v} available — Update`,
@@ -112,6 +112,13 @@ interface Tab {
    */
   ui?: WebContentsView;
   goc?: boolean;
+  /**
+   * Tab mở từ link, đang nạp NGẦM: chưa hiện trên thanh bên / chưa chuyển sang cho tới khi trang hiện ra (commit). Link hoá
+   * ra là tệp tải về ⇒ tab đóng luôn, người dùng không thấy tab trắng (downloads.ts 'started').
+   */
+  hidden?: boolean;
+  /** Tab đã mở ra tab này (link) ⇒ đóng tab tải về thì quay lại đó. */
+  opener?: string;
 }
 
 /** Lệnh từ menu hồ sơ (khung nổi) do main.ts xử lý. */
@@ -451,10 +458,16 @@ function createView(t: Tab): WebContentsView {
   wc.setWindowOpenHandler((d: HandlerDetails) => {
     // Trang đang mở trong tab này: link sang tên miền gốc khác ⇒ trình duyệt mặc định (tabs-model.ts openTarget).
     const target = openTarget({ url: d.url, disposition: d.disposition, hasPostBody: !!d.postBody, openerUrl: wc.getURL() }, insideDomains());
-    if (target.kind === 'window') return { action: 'allow', overrideBrowserWindowOptions: { icon: ICON, autoHideMenuBar: true } };
+    // Cửa sổ popup: tạo ẨN, trang hiện ra mới hiện cửa sổ (link tải tệp ⇒ đóng luôn — closeDownloadOnly).
+    if (target.kind === 'window') return { action: 'allow', overrideBrowserWindowOptions: { icon: ICON, autoHideMenuBar: true, show: false } };
     if (target.kind === 'external') void shell.openExternal(d.url);
     if (target.kind === 'tab') openTab(d.url, target.foreground, t.key);
     return { action: 'deny' };
+  });
+  wc.on('did-create-window', (child) => {
+    const show = () => { if (!child.isDestroyed() && !child.isVisible()) child.show(); };
+    child.webContents.once('did-navigate', show);
+    setTimeout(show, 4000);
   });
   const push = () => pushState();
   // Chỉ vẽ lại thanh dọc khi tiêu đề đổi / trang chính điều hướng (nút Back/Forward) — không theo sự kiện tải khung con
@@ -696,18 +709,54 @@ export function backgroundSourceTab(src: SourceFull): WebContents {
 export function openTab(url: string, foreground = true, after?: string): string {
   ensureWindow();
   const key = `t:${nextId++}`;
-  tabs.set(key, { key, pinned: false, url, view: null });
+  // Mở từ link của một tab ⇒ nạp ngầm, trang hiện ra mới chuyển sang (link tải tệp thì tab tự đóng — xem Tab.hidden).
+  const t: Tab = { key, pinned: false, url, view: null, opener: after, hidden: !!after };
+  tabs.set(key, t);
   // Như Edge: tab mở từ một tab thường nằm ngay sau tab đó; còn lại thêm cuối.
   const i = after ? order.indexOf(after) : -1;
   if (i >= 0) order.splice(i + 1, 0, key); else order.push(key);
-  if (foreground) showTab(key);
-  else { createView(tabs.get(key)!); pushState(); }
+  if (!t.hidden) {
+    if (foreground) showTab(key);
+    else { createView(t); pushState(); }
+    return key;
+  }
+  createView(t);
+  const wc = t.view!.webContents;
+  const reveal = () => {
+    if (!t.hidden || tabs.get(key) !== t) return;
+    t.hidden = false;
+    if (foreground) showTab(key); else pushState();
+  };
+  wc.once('did-navigate', reveal);
+  // Trang chậm: sau 4 giây vẫn hiện tab (đang tải) cho người dùng thấy.
+  setTimeout(reveal, 4000);
   return key;
 }
 
+/** Lượt tải bắt đầu từ một trang chưa hiện gì (link mở tab / cửa sổ mới chỉ để tải) ⇒ đóng nó, về lại tab đã mở ra nó. */
+function closeDownloadOnly(wc: WebContents): void {
+  if (wc.isDestroyed() || committed.has(wc.id)) return;
+  for (const t of tabs.values()) {
+    if (t.view?.webContents !== wc || !t.key.startsWith('t:')) continue;
+    const back = t.opener && tabs.has(t.opener) ? t.opener : null;
+    const wasActive = active === t.key;
+    destroyTab(t.key);
+    if (wasActive) showTab(back ?? CHAT); else pushState();
+    return;
+  }
+  const w = BrowserWindow.fromWebContents(wc);
+  if (w && w !== win && !w.isDestroyed()) w.close();
+}
+
+/** Trang đã hiện ra ít nhất một lần (commit) — phân biệt tab tải tệp với trang thật. */
+const committed = new Set<number>();
+
+/** Ứng dụng đang ghim trên thanh bên — không đóng được (kể cả tab mở trước rồi mới ghim). */
+const isPinnedTab = (key: string) => !!tabs.get(key)?.pinned || pinnedKeys().includes(key);
+
 export function closeTab(key: string): void {
   const t = tabs.get(key);
-  if (!t || t.pinned) return;
+  if (!t || isPinnedTab(key)) return;
   const keys = visibleKeys();
   const idx = keys.indexOf(key);
   const wasActive = active === key;
@@ -930,13 +979,13 @@ function pushState(): void {
     chat: itemOf(CHAT, t.assistant, t, false),
     // Ứng dụng mặc định của đơn vị luôn đứng đầu nhóm ⇒ không kéo được.
     apps: sec.apps.map((k) => ({ ...itemOf(k, labels.get(k), t, false), fixed: k === defKey })),
-    open: sec.open.filter((k) => tabs.has(k)).map((k) => itemOf(k, labels.get(k), t, !tabs.get(k)!.pinned)),
+    open: sec.open.filter((k) => tabs.has(k) && !tabs.get(k)!.hidden).map((k) => itemOf(k, labels.get(k), t, !tabs.get(k)!.pinned)),
     // Nút "Thêm" cuối nhóm Ứng dụng (như Lark): mở nhanh ứng dụng chưa ghim.
     // Nút "Thêm" cuối nhóm Ứng dụng: khung Tất cả ứng dụng (ghim + chưa ghim, trạng thái đăng nhập) — có ứng dụng là hiện.
     more: appDefs().length,
     nav: { back: !!h?.canGoBack(), forward: !!h?.canGoForward(), reload: canReload() },
     // Nút Tải xuống trên header: hiện khi có lịch sử; đang tải ⇒ phần trăm.
-    downloads: (() => { const d = downloadsState(); return { has: d.list.length > 0, dang_tai: d.dang_tai, phan_tram: d.phan_tram }; })(),
+    downloads: (() => { const d = downloadsState(); return { has: d.list.length > 0, dang_tai: d.dang_tai, phan_tram: d.phan_tram, su_kien: d.su_kien }; })(),
     // Ứng dụng văn bản đang xem ⇒ nút chuyển Giao diện Vala / Trang gốc trên header.
     vanban: active && tabs.get(active)?.ui ? (tabs.get(active)!.goc ? 'goc' : 'vala') : null,
     maximized: win.isMaximized(),
@@ -1176,7 +1225,7 @@ function openContextMenu(key: string, url: string, at: { x: number; y: number },
     const pinned = pinnedKeys().includes(key);
     add(pinned ? t.ctxUnpin : t.ctxPin, () => setPinned(key, !pinned), { icon: 'pin' });
   }
-  if (tab && !tab.pinned && key !== CHAT) add(t.ctxClose, () => closeTab(key), { icon: 'quit', hint: 'Ctrl+W' });
+  if (tab && !isPinnedTab(key) && key !== CHAT) add(t.ctxClose, () => closeTab(key), { icon: 'quit', hint: 'Ctrl+W' });
   const native = hooks.tabMenu(key, url);
   if (native) {
     sep();
@@ -1317,6 +1366,12 @@ function themeChanged(): void {
 
 export function initBrowser(h: BrowserHooks): void {
   hooks = h;
+  app.on('web-contents-created', (_e, c) => {
+    const id = c.id;
+    c.on('did-navigate', () => committed.add(id));
+    c.once('destroyed', () => committed.delete(id));
+  });
+  downloadEvents.on('started', (wc: WebContents) => closeDownloadOnly(wc));
   let dark = nativeTheme.shouldUseDarkColors;
   nativeTheme.on('updated', () => {
     if (nativeTheme.shouldUseDarkColors === dark) return;

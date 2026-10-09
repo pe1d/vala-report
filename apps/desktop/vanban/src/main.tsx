@@ -36,6 +36,8 @@ const M = messages({
   fLoai: 'Loại văn bản', fDoKhan: 'Độ khẩn', fNoiNhan: 'Nơi nhận', more: 'Thông tin khác',
   content: 'Nội dung', files: 'Tệp đính kèm', history: 'Quá trình xử lý', save: 'Tải về', open: 'Mở', saved: (p: string) => `Đã lưu ${p}`,
   downloading: 'Đang tải — xem tiến độ ở nút Tải xuống trên cùng (Ctrl+J).',
+  preparing: 'Đang lấy tệp từ hệ thống…', opening: 'Đang mở…',
+  fileFailed: 'Không tải được tệp này. Bấm thử lại; vẫn lỗi thì bấm "Trang gốc" để tải trên hệ thống.',
   overdue: (n: number) => `Quá hạn ${n} ngày`, dueToday: 'Hạn hôm nay', dueIn: (n: number) => `Còn ${n} ngày`, unread: 'Chưa đọc',
   cancel: 'Huỷ', confirm: 'Xác nhận', required: (f: string) => `Chưa điền ${f}`, tooBig: (f: string) => `${f}: tệp quá lớn (tối đa 25 MB mỗi lần gửi)`,
   filter: 'Lọc', none: 'Chưa chọn', all: 'Tất cả',
@@ -53,6 +55,8 @@ const M = messages({
   fLoai: 'Type', fDoKhan: 'Urgency', fNoiNhan: 'Recipients', more: 'Other details',
   content: 'Content', files: 'Attachments', history: 'Processing history', save: 'Download', open: 'Open', saved: (p: string) => `Saved ${p}`,
   downloading: 'Downloading — see progress on the Downloads button at the top (Ctrl+J).',
+  preparing: 'Getting the file from the system…', opening: 'Opening…',
+  fileFailed: 'Could not download this file. Try again; if it still fails, click "Original page" and download it there.',
   overdue: (n: number) => `${n} days overdue`, dueToday: 'Due today', dueIn: (n: number) => `${n} days left`, unread: 'Unread',
   cancel: 'Cancel', confirm: 'Confirm', required: (f: string) => `${f} is required`, tooBig: (f: string) => `${f}: files too large (25 MB per send)`,
   filter: 'Filter', none: 'Nothing selected', all: 'All',
@@ -308,9 +312,15 @@ function Detail({ id, system, onClose, onChanged, flash, t, lang }: { id: string
   const [note, setNote] = useState(flash);
   const load = useCallback(() => { setErr(null); setCt(null); call<ChiTiet>('vb_chi_tiet', { id }).then(setCt, setErr); }, [id]);
   useEffect(() => { setNote(flash); load(); }, [load, flash]);
+  /** Trạng thái tải của từng tệp, hiện ngay dòng tệp đó: đang lấy (vòng xoay) / đã bắt đầu tải / đã lưu / lỗi. */
+  const [fileSt, setFileSt] = useState<Record<string, { kind: 'busy' | 'ok' | 'err'; text: string; detail?: string }>>({});
   const file = async (tep: string, mo: boolean) => {
+    if (fileSt[tep]?.kind === 'busy') return;
+    setFileSt((m) => ({ ...m, [tep]: { kind: 'busy', text: mo ? t.opening : t.preparing } }));
     const r = await bridge.run<never>('vb_tep', { id, tep, mo }) as { ok: boolean; error?: string; saved?: string; dang_tai?: boolean };
-    setNote(r.ok ? (r.dang_tai ? t.downloading : r.saved ? t.saved(r.saved) : '') : r.error ? `${t.failed}: ${r.error}` : '');
+    setFileSt((m) => ({ ...m, [tep]: r.ok
+      ? { kind: 'ok', text: r.dang_tai ? t.downloading : r.saved ? t.saved(r.saved) : '' }
+      : { kind: 'err', text: t.fileFailed, detail: r.error } }));
   };
   const h = ct && !finished(ct.trang_thai) ? due(ct.han_xu_ly, t) : null;
   return (
@@ -360,17 +370,30 @@ function Detail({ id, system, onClose, onChanged, flash, t, lang }: { id: string
               <>
                 <h2 className="mt-7 text-sm font-semibold text-slate-900 dark:text-white">{t.files}</h2>
                 <ul className="mt-2 space-y-1">
-                  {ct.tep.map((f, i) => (
-                    <li key={f.id ?? i} className="flex items-center gap-3 rounded-lg border border-slate-200 px-3 py-2 text-sm dark:border-slate-800">
-                      <span className="shrink-0 text-slate-500"><Icon d={I.file} /></span>
-                      <span className="min-w-0 flex-1 truncate">{f.ten}</span>
-                      {f.kich_thuoc && <span className="text-[12px] text-slate-500">{f.kich_thuoc}</span>}
-                      {f.id && <>
-                        <button type="button" onClick={() => void file(f.id!, true)} className="text-[13px] font-medium text-blue-700 hover:underline dark:text-blue-400">{t.open}</button>
-                        <button type="button" onClick={() => void file(f.id!, false)} className="text-[13px] font-medium text-blue-700 hover:underline dark:text-blue-400">{t.save}</button>
-                      </>}
-                    </li>
-                  ))}
+                  {ct.tep.map((f, i) => {
+                    const st = f.id ? fileSt[f.id] : undefined;
+                    const busy = st?.kind === 'busy';
+                    return (
+                      <li key={f.id ?? i} className={`rounded-lg border px-3 py-2 text-sm ${st?.kind === 'err' ? 'border-red-200 dark:border-red-900' : 'border-slate-200 dark:border-slate-800'}`}>
+                        <div className="flex items-center gap-3">
+                          <span className="shrink-0 text-slate-500"><Icon d={I.file} /></span>
+                          <span className="min-w-0 flex-1 truncate">{f.ten}</span>
+                          {f.kich_thuoc && <span className="text-[12px] text-slate-500">{f.kich_thuoc}</span>}
+                          {f.id && <>
+                            <button type="button" disabled={busy} onClick={() => void file(f.id!, true)} className="text-[13px] font-medium text-blue-700 hover:underline disabled:opacity-40 dark:text-blue-400">{t.open}</button>
+                            <button type="button" disabled={busy} onClick={() => void file(f.id!, false)} className="text-[13px] font-medium text-blue-700 hover:underline disabled:opacity-40 dark:text-blue-400">{t.save}</button>
+                          </>}
+                        </div>
+                        {st?.text && (
+                          <div role="status" title={st.detail} className={`mt-1.5 flex items-center gap-2 pl-8 text-[12px] ${st.kind === 'err' ? 'text-red-700 dark:text-red-400' : st.kind === 'busy' ? 'text-slate-500 dark:text-slate-400' : 'text-blue-700 dark:text-blue-300'}`}>
+                            {busy && <span className="h-3.5 w-3.5 shrink-0 animate-spin rounded-full border-2 border-current border-t-transparent" aria-hidden="true" />}
+                            {st.kind === 'ok' && <span className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-current" aria-hidden="true" />}
+                            <span>{st.text}{st.kind === 'err' && st.detail ? <span className="ml-1 text-slate-500 dark:text-slate-400">({st.detail})</span> : null}</span>
+                          </div>
+                        )}
+                      </li>
+                    );
+                  })}
                 </ul>
               </>
             )}

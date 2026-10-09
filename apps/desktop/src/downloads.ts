@@ -19,6 +19,9 @@ const load = (): TaiVe[] => {
 };
 const save = () => { try { writeFileSync(file(), JSON.stringify(load()), { mode: 0o600 }); } catch { /* giữ trong phiên */ } };
 const items = new Map<string, DownloadItem>();
+/** Sự kiện gần nhất (header làm hiệu ứng: bắt đầu ⇒ nảy + vòng tiến độ, xong ⇒ ✓, lỗi ⇒ đỏ). `so` tăng mỗi sự kiện. */
+let suKien: { so: number; loai: 'bat_dau' | 'xong' | 'loi'; ten: string } | null = null;
+const mark = (loai: 'bat_dau' | 'xong' | 'loi', ten: string) => { suKien = { so: (suKien?.so ?? 0) + 1, loai, ten }; };
 
 // Báo thay đổi thưa (tiến độ cập nhật liên tục): tối đa ~3 lần / giây.
 let timer: ReturnType<typeof setTimeout> | null = null;
@@ -56,7 +59,10 @@ export function initDownloads(): void {
     const it: TaiVe = { id, ten, duong_dan, tong: item.getTotalBytes(), da_tai: 0, trang_thai: 'dang_tai', luc: Date.now(), nguon: hostOf(wc && !wc.isDestroyed() ? wc.getURL() : item.getURL()) };
     list = addItem(load(), it);
     items.set(id, item);
+    mark('bat_dau', ten);
     changed(true);
+    // Trang mở ra CHỈ để tải (link mở tab / cửa sổ mới, chưa hiện trang nào) ⇒ browser.ts đóng nó, về lại tab cũ.
+    if (wc && !wc.isDestroyed()) downloadEvents.emit('started', wc);
     item.on('updated', (_ev, state) => {
       it.da_tai = item.getReceivedBytes();
       it.tong = item.getTotalBytes();
@@ -67,6 +73,7 @@ export function initDownloads(): void {
       items.delete(id);
       it.da_tai = item.getReceivedBytes();
       it.trang_thai = state === 'completed' ? 'xong' : state === 'cancelled' ? 'huy' : 'loi';
+      if (state !== 'cancelled') mark(state === 'completed' ? 'xong' : 'loi', ten);
       save();
       changed(true);
       if (state === 'completed' && p?.mo) void shell.openPath(duong_dan);
@@ -77,6 +84,7 @@ export function initDownloads(): void {
 /** Tệp đã lưu bằng cách khác (vb_tep dạng base64 cũ) ⇒ vẫn vào lịch sử. */
 export function recordSaved(duong_dan: string, nguon: string, bytes: number): void {
   list = addItem(load(), { id: `${Date.now().toString(36)}s`, ten: basename(duong_dan), duong_dan, tong: bytes, da_tai: bytes, trang_thai: 'xong', luc: Date.now(), nguon });
+  mark('xong', basename(duong_dan));
   save();
   changed(true);
 }
@@ -85,6 +93,7 @@ export function recordSaved(duong_dan: string, nguon: string, bytes: number): vo
 export const downloadsState = () => ({
   list: load().map((x) => ({ ...x, mat: x.trang_thai === 'xong' && !existsSync(x.duong_dan) })),
   ...overall(load()),
+  su_kien: suKien,
 });
 
 /** Thao tác trên một mục (khung Tải xuống). */
