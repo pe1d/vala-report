@@ -8,4 +8,7 @@ contextBridge.exposeInMainWorld('valaChat', {
   save: (c: unknown) => ipcRenderer.invoke('chat:save', c),
   take: () => ipcRenderer.invoke('chat:take'),
   onChanged: (cb: () => void) => { ipcRenderer.on('chat:changed', () => cb()); },
+  // Cửa sổ Trợ lý AI (cột / nổi — chat.html#panel): đổi chế độ, mở toàn trang, đóng, kéo; bối cảnh đang xem.
+  panel: (act: string, kind?: string) => ipcRenderer.invoke('chat:panel-cmd', { act, kind }),
+  onPanel: (cb: (p: unknown) => void) => { ipcRenderer.on('chat:panel', (_e, p) => cb(p)); },
 });

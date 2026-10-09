@@ -25,6 +25,8 @@ export interface Settings {
   autostart?: boolean;
   /** Tự cài bản mới (tải ngầm, cài lúc rảnh / khi thoát rồi mở lại). Không đặt ⇒ bật (người dùng chốt 08/10/2026). */
   autoUpdate?: boolean;
+  /** Cửa sổ Trợ lý AI (browser.ts): cột bên phải (độ rộng CSS px) hoặc cửa sổ nổi (vị trí, cỡ — điểm ảnh cửa sổ). */
+  aiPanel?: { mode: 'cot' | 'noi'; w: number; rect: { x: number; y: number; width: number; height: number } | null };
   /** Tự lưu mật khẩu khi người dùng đăng nhập một hệ thống / SSO (autofill.ts), không hỏi. Không đặt ⇒ bật (09/10/2026). */
   autoSavePasswords?: boolean;
   /** Hộp Tải xuống mỗi lần tải tệp: Mở / Tải về / Lưu thành… (downloads.ts). Không đặt ⇒ bật (09/10/2026); tắt ⇒ tải thẳng. */

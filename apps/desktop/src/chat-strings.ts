@@ -1,6 +1,7 @@
 /** Chữ hiển thị của trang Trợ lý AI (chat-page.ts). Bản tiếng Anh phải đủ khoá như tiếng Việt. */
 const vi = {
   title: 'Trợ lý AI', newChat: 'Cuộc trò chuyện mới',
+  panelSeeing: 'Đang xem', panelFloat: 'Thả nổi (kéo đi được)', panelDock: 'Ghim thành cột bên phải', panelFull: 'Mở toàn trang', panelClose: 'Đóng', panelMove: 'Kéo để di chuyển',
   placeholder: 'Hỏi Trợ lý Vala… (gõ / để chạy thao tác của các hệ thống)',
   send: 'Gửi', hint: 'Enter để gửi · Shift+Enter xuống dòng · / chạy thao tác',
   you: 'Bạn', assistant: 'Trợ lý Vala',
@@ -13,6 +14,7 @@ const vi = {
 };
 const en: typeof vi = {
   title: 'AI assistant', newChat: 'New chat',
+  panelSeeing: 'Viewing', panelFloat: 'Float (drag to move)', panelDock: 'Pin as a right column', panelFull: 'Open full page', panelClose: 'Close', panelMove: 'Drag to move',
   placeholder: 'Ask the Vala assistant… (type / to run a system action)',
   send: 'Send', hint: 'Enter to send · Shift+Enter for a new line · / runs an action',
   you: 'You', assistant: 'Vala assistant',

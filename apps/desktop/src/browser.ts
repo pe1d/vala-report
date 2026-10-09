@@ -46,7 +46,7 @@ const M = messages({
   search: 'Tìm kiếm', minimize: 'Thu nhỏ', maximize: 'Phóng to', restore: 'Thu về', closeWindow: 'Đóng (ẩn xuống khay)',
   close: 'Đóng tab (Ctrl+W)', menu: 'Hệ thống nguồn',
   signIn: 'Đăng nhập', signInTitle: 'Đăng nhập Vala Desktop', account: 'Tài khoản', admin: 'Quản trị',
-  lightMode: 'Chế độ sáng', darkMode: 'Chế độ tối', recording: 'đang ghi thao tác', notifTitle: 'Thông báo', notifPending: 'chờ xử lý', notifCenter: 'Trung tâm thông báo', downloads: 'Tải xuống (Ctrl+J)', dlStarted: 'Đang tải', dlDone: 'Đã tải xong', dlFailed: 'Tải lỗi',
+  lightMode: 'Chế độ sáng', darkMode: 'Chế độ tối', recording: 'đang ghi thao tác', aiTitle: 'Trợ lý AI — mở bên cạnh trang đang xem', notifTitle: 'Thông báo', notifPending: 'chờ xử lý', notifCenter: 'Trung tâm thông báo', downloads: 'Tải xuống (Ctrl+J)', dlStarted: 'Đang tải', dlDone: 'Đã tải xong', dlFailed: 'Tải lỗi',
   vbVala: 'Giao diện Vala', vbGoc: 'Trang gốc', vbTitle: 'Chuyển giữa giao diện Văn bản của Vala và trang gốc của hệ thống',
   updateTitle: 'Cài bản mới: ứng dụng đóng lại, cài xong tự mở lại',
   updateLabel: (v: string) => `Đã có bản ${v} — Cập nhật`,
@@ -58,7 +58,7 @@ const M = messages({
   search: 'Search', minimize: 'Minimize', maximize: 'Maximize', restore: 'Restore', closeWindow: 'Close (hide to tray)',
   close: 'Close tab (Ctrl+W)', menu: 'Source systems',
   signIn: 'Sign in', signInTitle: 'Sign in to Vala Desktop', account: 'Account', admin: 'Administration',
-  lightMode: 'Light mode', darkMode: 'Dark mode', recording: 'recording actions', notifTitle: 'Notifications', notifPending: 'pending', notifCenter: 'Notification center', downloads: 'Downloads (Ctrl+J)', dlStarted: 'Downloading', dlDone: 'Downloaded', dlFailed: 'Download failed',
+  lightMode: 'Light mode', darkMode: 'Dark mode', recording: 'recording actions', aiTitle: 'AI assistant — open next to the current page', notifTitle: 'Notifications', notifPending: 'pending', notifCenter: 'Notification center', downloads: 'Downloads (Ctrl+J)', dlStarted: 'Downloading', dlDone: 'Downloaded', dlFailed: 'Download failed',
   vbVala: 'Vala view', vbGoc: 'Original page', vbTitle: "Switch between Vala's documents view and the system's original page",
   updateTitle: 'Install the new version: the app closes, installs and reopens',
   updateLabel: (v: string) => `Version ${v} available — Update`,
@@ -172,6 +172,8 @@ const sourceOf = (key: string): SourceFull | null =>
  * đóng (tab hệ thống nguồn giữ: Trợ lý AI có thể đang chạy thao tác ngầm trong đó).
  */
 function syncPinned(): void {
+  // Đăng xuất ⇒ đóng cửa sổ Trợ lý AI (hội thoại của người trước).
+  if (!signedIn() && aiOpen) { aiOpen = false; if (aiView && win && !win.isDestroyed()) win.contentView.removeChildView(aiView); }
   const defs = pinnedDefs();
   const keep = new Set(defs.map((d) => d.key));
   const loaded = catalog().apps.length > 0;
@@ -239,8 +241,114 @@ let corners: WebContentsView[] = [];
 function raiseChrome(): void {
   if (!win || win.isDestroyed()) return;
   for (const c of corners) win.contentView.addChildView(c);
+  // Trợ lý AI (cột / nổi) trên trang đang xem, dưới thanh xem nhanh và khung nổi.
+  if (aiView && aiOpen) win.contentView.addChildView(aiView);
   if (peek && peekOpen) win.contentView.addChildView(peek);
   if (overlay && overlayOpen) win.contentView.addChildView(overlay);
+}
+
+// ---- Trợ lý AI dạng cột bên phải / cửa sổ nổi (yêu cầu "Tích hợp Trợ lý AI" 09/10/2026) ----
+// Icon ✦ góc phải header ⇒ trang Trợ lý (chat.html#panel — cùng hội thoại, lệnh "/") trong một view riêng: cột bên phải
+// (trang đang xem co lại) hoặc cửa sổ nổi kéo đi được. Vị trí / cỡ nhớ trong settings.aiPanel.
+let aiView: WebContentsView | null = null;
+let aiOpen = false;
+type AiMode = 'cot' | 'noi';
+type Rect = { x: number; y: number; width: number; height: number };
+/** Trong lúc kéo: vị trí / cỡ tạm (chưa ghi đĩa); thả chuột ⇒ ghi một lần. */
+let aiLive: Partial<{ w: number; rect: Rect }> = {};
+const aiPrefs = () => {
+  const p = { ...getSettings().aiPanel, ...aiLive };
+  return { mode: (p?.mode === 'noi' ? 'noi' : 'cot') as AiMode, w: Math.min(720, Math.max(320, p?.w ?? 400)), rect: p?.rect ?? null };
+};
+/** Chỗ cột Trợ lý AI chiếm bên phải (gồm lề với trang); không mở / đang nổi ⇒ 0. */
+function aiColumnW(): number {
+  return aiOpen && signedIn() && aiPrefs().mode === 'cot' ? z(aiPrefs().w) + GAP() : 0;
+}
+function aiBounds(): Rect {
+  const [width, height] = win!.getContentSize();
+  const p = aiPrefs();
+  if (p.mode === 'cot') return { x: width! - GAP() - z(p.w), y: HEADER_H(), width: z(p.w), height: Math.max(0, height! - HEADER_H() - GAP()) };
+  // Nổi: vị trí đã nhớ (giữ trong cửa sổ), chưa có ⇒ góc dưới phải.
+  const w = Math.min(p.rect?.width ?? z(420), width! - 16);
+  const h = Math.min(p.rect?.height ?? Math.min(z(600), height! - HEADER_H() - 48), height! - HEADER_H() - 8);
+  const x = Math.min(Math.max(8, p.rect?.x ?? width! - w - 24), width! - w - 8);
+  const y = Math.min(Math.max(HEADER_H(), p.rect?.y ?? height! - h - 24), height! - h - 8);
+  return { x, y, width: Math.max(280, w), height: Math.max(240, h) };
+}
+const saveAi = (patch: Partial<{ mode: AiMode; w: number; rect: Rect | null }>) => setSettings({ aiPanel: { ...aiPrefs(), ...patch } });
+
+function ensureAiView(): WebContentsView {
+  if (aiView && !aiView.webContents.isDestroyed()) return aiView;
+  const v = new WebContentsView({ webPreferences: { preload: join(__dirname, 'chat-preload.js') } });
+  v.setBackgroundColor('#00000000');
+  const wc = v.webContents;
+  autoRecover(wc);
+  trackZoom(wc);
+  wc.setWindowOpenHandler(() => ({ action: 'deny' }));
+  wc.on('will-navigate', (e) => e.preventDefault());
+  wc.on('before-input-event', (e, input) => { if (shortcut(input)) e.preventDefault(); });
+  void wc.loadFile(join(__dirname, '../resources/chat.html'), { hash: 'panel' });
+  aiView = v;
+  return v;
+}
+
+/** Bật / tắt cửa sổ Trợ lý AI. */
+export function toggleAiPanel(open = !aiOpen): void {
+  if (!win || win.isDestroyed() || !signedIn()) return;
+  aiOpen = open;
+  if (open) {
+    const v = ensureAiView();
+    win.contentView.addChildView(v);
+    raiseChrome();
+    v.webContents.focus();
+    pushAiContext();
+  } else if (aiView) {
+    win.contentView.removeChildView(aiView);
+    const at = tabs.get(active ?? '');
+    if (at) face(at)?.webContents.focus();
+  }
+  layout();
+  pushState();
+}
+
+/** Bối cảnh cho Trợ lý AI: ứng dụng / trang người dùng đang xem (AI theo ngữ cảnh — kịch bản sau). */
+function aiContext(): { key: string; label: string; host: string } | null {
+  if (!active || active === CHAT) return null;
+  const t = tabs.get(active);
+  const wc = t?.view?.webContents;
+  let host = '';
+  try { host = wc && !wc.isDestroyed() ? new URL(wc.getURL()).host : ''; } catch { /* trang cục bộ */ }
+  const label = appDefs().find((a) => a.key === active)?.label ?? (active === NOTIF_CENTER ? M[getSettings().lang].notifCenter : '') ?? '';
+  return { key: active, label: label || (wc && !wc.isDestroyed() ? wc.getTitle() : '') || host, host };
+}
+function pushAiContext(): void {
+  if (aiView && aiOpen && !aiView.webContents.isDestroyed()) aiView.webContents.send('chat:panel', { mode: aiPrefs().mode, context: aiContext() });
+}
+
+/** Kéo thanh tiêu đề (di chuyển, chế độ nổi) / kéo mép, góc (đổi cỡ): bám theo con trỏ tới khi thả chuột. */
+let aiDrag: { timer: NodeJS.Timeout; until: number } | null = null;
+function aiDragStart(kind: 'move' | 'resize' | 'width'): void {
+  if (!win || !aiView) return;
+  aiDragEnd();
+  const start = screen.getCursorScreenPoint();
+  const b0 = aiView.getBounds();
+  const w0 = aiPrefs().w;
+  aiDrag = {
+    until: Date.now() + 60_000,
+    timer: setInterval(() => {
+      if (!win || win.isDestroyed() || !aiView || Date.now() > aiDrag!.until) { aiDragEnd(); return; }
+      const p = screen.getCursorScreenPoint();
+      const dx = p.x - start.x;
+      const dy = p.y - start.y;
+      if (kind === 'width') { aiLive = { ...aiLive, w: Math.round(Math.min(720, Math.max(320, w0 - dx / zoomFactor()))) }; layout(); return; }
+      aiLive = { ...aiLive, rect: kind === 'move' ? { ...b0, x: b0.x + dx, y: b0.y + dy } : { ...b0, width: Math.max(280, b0.width + dx), height: Math.max(240, b0.height + dy) } };
+      aiView.setBounds(aiBounds());
+    }, 16),
+  };
+}
+function aiDragEnd(): void {
+  if (aiDrag) { clearInterval(aiDrag.timer); aiDrag = null; }
+  if (Object.keys(aiLive).length) { const live = aiLive; aiLive = {}; saveAi({ ...live, ...(live.rect ? { rect: aiView?.getBounds() ?? live.rect } : {}) }); }
 }
 
 // ---- thanh dọc "xem nhanh" (như Edge): thanh đang thu gọn, rê chuột vào ⇒ thanh đầy đủ ĐÈ lên trang web, rời chuột ⇒ ẩn ----
@@ -323,6 +431,7 @@ function layout(): void {
   [[bounds.x, bounds.y], [right, bounds.y], [bounds.x, bottom], [right, bottom]].forEach(([x, y], i) => corners[i]?.setBounds({ x: x!, y: y!, width: r, height: r }));
   if (overlay && overlayOpen) overlay.setBounds({ x: 0, y: 0, width: width!, height: height! });
   if (peek && peekOpen) peek.setBounds(peekBounds());
+  if (aiView && aiOpen) aiView.setBounds(aiBounds());
   layoutSso();
 }
 
@@ -335,7 +444,8 @@ export function contentBounds(): { x: number; y: number; width: number; height: 
   const [width, height] = win.getContentSize();
   // Không có thanh ứng dụng (màn hình đăng nhập) ⇒ lề trái bằng lề phải.
   const w = sidebarWidth() || GAP();
-  return { x: w, y: HEADER_H(), width: Math.max(0, width! - w - GAP()), height: Math.max(0, height! - HEADER_H() - GAP()) };
+  // Trợ lý AI dạng cột bên phải ⇒ trang co lại nhường chỗ.
+  return { x: w, y: HEADER_H(), width: Math.max(0, width! - w - GAP() - aiColumnW()), height: Math.max(0, height! - HEADER_H() - GAP()) };
 }
 
 // ---- tab trang cục bộ: Cài đặt (như chrome://settings), Bản ghi thao tác — preload riêng, không điều hướng đi đâu ----
@@ -427,7 +537,8 @@ export function openRecordingTab(): void {
 }
 
 export const isRecordingContents = (wc: WebContents): boolean => tabs.get(RECORDING)?.view?.webContents === wc;
-export const isChatContents = (wc: WebContents): boolean => tabs.get(CHAT)?.view?.webContents === wc;
+export const isChatContents = (wc: WebContents): boolean => tabs.get(CHAT)?.view?.webContents === wc || (!!aiView && aiView.webContents === wc);
+const isAiPanel = (wc: WebContents): boolean => !!aiView && aiView.webContents === wc;
 export const thongBaoContents = (): WebContents | null => tabs.get(NOTIF_CENTER)?.view?.webContents ?? null;
 export const isThongBaoContents = (wc: WebContents): boolean => thongBaoContents() === wc;
 export const isLoginContents = (wc: WebContents): boolean => tabs.get(LOGIN)?.view?.webContents === wc;
@@ -447,6 +558,7 @@ export function showLogin(): void {
 export function pushChat(): void {
   const wc = tabs.get(CHAT)?.view?.webContents;
   if (wc && !wc.isDestroyed()) wc.send('chat:changed');
+  if (aiView && !aiView.webContents.isDestroyed()) aiView.webContents.send('chat:changed');
 }
 
 /** Báo tab Bản ghi (nếu đang mở) vẽ lại; thanh dọc vẽ lại chấm "đang ghi". */
@@ -1012,6 +1124,7 @@ function itemOf(key: string, label: string | undefined, t: (typeof M)['vi'], clo
 
 function pushState(): void {
   if (!win || win.isDestroyed()) return;
+  pushAiContext();
   const s = getSettings();
   const t = M[s.lang];
   const labels = new Map(appDefs().map((a) => [a.key, a.label]));
@@ -1038,6 +1151,8 @@ function pushState(): void {
     nav: { back: !!h?.canGoBack(), forward: !!h?.canGoForward(), reload: canReload() },
     // Nút Tải xuống trên header: hiện khi có lịch sử; đang tải ⇒ phần trăm.
     downloads: (() => { const d = downloadsState(); return { has: d.list.length > 0, dang_tai: d.dang_tai, phan_tram: d.phan_tram, su_kien: d.su_kien }; })(),
+    // Trợ lý AI (icon ✦ góc phải header): đang mở?
+    ai: { open: aiOpen },
     // Chuông thông báo trên header: số chưa đọc (chờ xử lý).
     thongBao: (() => { const d = notificationsState().dem; return { chua_doc: d.chua_doc, cho: d.cho_xu_ly }; })(),
     // Ứng dụng văn bản đang xem ⇒ nút chuyển Giao diện Vala / Trang gốc trên header.
@@ -1098,6 +1213,18 @@ function registerIpc(): void {
   ipcMain.handle('tabs:peek', (e, on: unknown) => { own(e); if (on === true) showPeek(); else hidePeek(); });
   ipcMain.handle('tabs:activate', (e, key: unknown) => { own(e); if (typeof key === 'string') activate(key); });
   ipcMain.handle('tabs:close', (e, key: unknown) => { own(e); if (typeof key === 'string') closeTab(key); });
+  ipcMain.handle('tabs:ai', (e) => { own(e); toggleAiPanel(); });
+  // Lệnh từ cửa sổ Trợ lý AI (chat.html#panel) — chỉ nhận từ đúng view đó.
+  ipcMain.handle('chat:panel-cmd', (e, a: { act?: unknown; kind?: unknown }) => {
+    if (!isAiPanel(e.sender)) throw new Error('forbidden');
+    if (a?.act === 'state') return { mode: aiPrefs().mode, context: aiContext() };
+    if (a?.act === 'mode') { saveAi({ mode: aiPrefs().mode === 'cot' ? 'noi' : 'cot' }); layout(); raiseChrome(); pushAiContext(); }
+    else if (a?.act === 'full') { toggleAiPanel(false); activate(CHAT); }
+    else if (a?.act === 'close') toggleAiPanel(false);
+    else if (a?.act === 'drag-start' && (a.kind === 'move' || a.kind === 'resize' || a.kind === 'width')) aiDragStart(a.kind);
+    else if (a?.act === 'drag-end') aiDragEnd();
+    return { mode: aiPrefs().mode, context: aiContext() };
+  });
   ipcMain.handle('tabs:vanban', (e, mode: unknown) => { own(e); if (active && (mode === 'goc' || mode === 'vala')) setVanbanGoc(active, mode === 'goc'); });
   ipcMain.handle('tabs:reorder', (e, a: { group?: unknown; keys?: unknown }) => { own(e); reorderGroup(a?.group, a?.keys); });
   ipcMain.handle('tabs:nav', (e, cmd: unknown) => {

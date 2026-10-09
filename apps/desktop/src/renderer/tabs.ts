@@ -38,6 +38,7 @@ interface TabsState {
   nav: { back: boolean; forward: boolean; reload: boolean };
   /** Nút Tải xuống: có lịch sử ⇒ hiện; đang tải ⇒ phần trăm (null nếu chưa biết tổng). */
   thongBao: { chua_doc: number; cho: number };
+  ai: { open: boolean };
   downloads: { has: boolean; dang_tai: number; phan_tram: number | null; su_kien: { so: number; loai: 'bat_dau' | 'xong' | 'loi'; ten: string } | null };
   /** Tab đang xem là ứng dụng văn bản ⇒ đang ở giao diện Vala hay trang gốc. */
   vanban: 'vala' | 'goc' | null;
@@ -59,6 +60,7 @@ interface ValaTabsApi {
   reorder(group: 'apps' | 'open', keys: string[]): Promise<void>;
   nav(cmd: 'back' | 'forward' | 'reload'): Promise<void>;
   vanban(mode: 'vala' | 'goc'): Promise<void>;
+  ai(): Promise<void>;
   collapse(): Promise<void>;
   peek(on: boolean): Promise<void>;
   onPeekSlide(cb: (open: boolean) => void): void;
@@ -375,6 +377,11 @@ interface ValaTabsApi {
     display($('dl'), s.signedIn && (s.downloads.has || s.downloads.dang_tai > 0));
     setIf($('dl'), 'aria-label', s.t.downloads);
     renderDownload(s);
+    // Trợ lý AI (góc phải header): mở / đóng cửa sổ bên cạnh.
+    display($('ai'), s.signedIn);
+    setIf($('ai'), 'aria-pressed', String(s.ai.open));
+    setIf($('ai'), 'title', s.t.aiTitle);
+    setIf($('ai'), 'aria-label', s.t.aiTitle);
     // Chuông thông báo: số chưa đọc (chờ xử lý); 99+ khi nhiều.
     display($('bell'), s.signedIn);
     const nb = s.thongBao.chua_doc;
@@ -500,6 +507,7 @@ interface ValaTabsApi {
 
   const openDownloads = () => void api.overlay('downloads', rect($('dl').style.display === 'none' ? $('win-min') : $('dl')));
   $('dl').addEventListener('click', openDownloads);
+  $('ai').addEventListener('click', () => void api.ai());
   $('bell').addEventListener('click', () => void api.overlay('notifications', rect($('bell'))));
   api.onOpenDownloads(openDownloads);
   $('vb-goc').addEventListener('click', () => void api.vanban('goc'));

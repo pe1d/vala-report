@@ -25,7 +25,11 @@ interface ValaChatApi {
   save(c: { id: string; title: string; msgs: ChatMsg[] }): Promise<void>;
   take(): Promise<ChatCommand | null>;
   onChanged(cb: () => void): void;
+  panel(act: string, kind?: string): Promise<ChatPanelState>;
+  onPanel(cb: (p: ChatPanelState) => void): void;
 }
+/** Cửa sổ Trợ lý AI (chat.html#panel): chế độ cột / nổi + ứng dụng người dùng đang xem. */
+interface ChatPanelState { mode: 'cot' | 'noi'; context: { key: string; label: string; host: string } | null }
 
 (() => {
   const api = (window as unknown as { valaChat: ValaChatApi }).valaChat;
@@ -354,9 +358,88 @@ interface ValaChatApi {
     drawPicker();
   }
 
+  // ---- Cửa sổ Trợ lý AI (#panel — icon ✦ trên header): cột bên phải / cửa sổ nổi bên cạnh trang đang xem ----
+  const PANEL = location.hash === '#panel';
+  let panelSt: ChatPanelState | null = null;
+  function svgIcon(paths: string[]): SVGSVGElement {
+    const NS = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(NS, 'svg');
+    for (const [k, v] of [['viewBox', '0 0 24 24'], ['fill', 'none'], ['stroke', 'currentColor'], ['stroke-width', '2'], ['stroke-linecap', 'round'], ['stroke-linejoin', 'round'], ['class', 'h-4 w-4']]) svg.setAttribute(k!, v!);
+    for (const d of paths) { const p = document.createElementNS(NS, 'path'); p.setAttribute('d', d); svg.append(p); }
+    return svg;
+  }
+  /** Kéo (di chuyển / đổi cỡ): tiến trình chính bám theo con trỏ tới khi thả chuột. */
+  const dragOn = (target: HTMLElement, kind: 'move' | 'resize' | 'width', when: () => boolean) => {
+    target.addEventListener('mousedown', (e) => {
+      if (e.button !== 0 || !when() || (e.target as HTMLElement).closest('button')) return;
+      e.preventDefault();
+      void api.panel('drag-start', kind);
+      const up = () => { void api.panel('drag-end'); window.removeEventListener('mouseup', up); window.removeEventListener('blur', up); };
+      window.addEventListener('mouseup', up);
+      window.addEventListener('blur', up);
+    });
+  };
+  function renderPanel() {
+    if (!PANEL || !panelSt) return;
+    const noi = panelSt.mode === 'noi';
+    const ctx = $('ctx');
+    ctx.classList.toggle('hidden', !panelSt.context);
+    ctx.textContent = panelSt.context ? `${T('panelSeeing')}: ${panelSt.context.label}` : '';
+    ctx.title = panelSt.context?.host ?? '';
+    const head = $('head');
+    head.style.cursor = noi ? 'move' : '';
+    head.title = noi ? T('panelMove') : '';
+    const btns = $('panel-btns');
+    btns.replaceChildren();
+    const b = (label: string, paths: string[], act: string) => {
+      const x = el('button', 'flex h-7 w-7 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-800 dark:hover:bg-slate-800 dark:hover:text-white');
+      x.type = 'button';
+      x.title = label;
+      x.setAttribute('aria-label', label);
+      x.append(svgIcon(paths));
+      x.addEventListener('click', () => void api.panel(act).then((p) => { panelSt = p; renderPanel(); }));
+      return x;
+    };
+    btns.append(
+      noi ? b(T('panelDock'), ['M3 4h18v16H3z', 'M15 4v16'], 'mode') : b(T('panelFloat'), ['M8 8h12v12H8z', 'M4 16V4h12'], 'mode'),
+      b(T('panelFull'), ['M15 3h6v6', 'M9 21H3v-6', 'M21 3l-7 7', 'M3 21l7-7'], 'full'),
+      b(T('panelClose'), ['M18 6L6 18', 'M6 6l12 12'], 'close'),
+    );
+    $('grip-w').style.display = noi ? 'none' : '';
+    $('grip-r').style.display = noi ? '' : 'none';
+    document.body.classList.toggle('shadow-2xl', noi);
+  }
+  if (PANEL) {
+    // Khung bo góc trên nền trong suốt (view nền trong suốt); lề gọn cho cột hẹp.
+    document.documentElement.style.background = 'transparent';
+    document.body.classList.add('rounded-xl', 'border', 'border-slate-200', 'dark:border-slate-800');
+    $('head').className = 'flex h-11 shrink-0 select-none items-center gap-2 border-b border-slate-200 px-3 dark:border-slate-800';
+    $('new-chat').className = 'rounded-lg px-2 py-1 text-xs text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800';
+    $('panel-btns').classList.replace('hidden', 'flex');
+    $('thread').classList.replace('px-6', 'px-4');
+    $('dock').classList.replace('px-6', 'px-3');
+    $('empty').classList.replace('px-6', 'px-4');
+    $('greeting').classList.replace('text-3xl', 'text-2xl');
+    // Cột hẹp: gợi ý trong ô nhập dài ⇒ 2 dòng (không hiện thanh cuộn).
+    input.rows = 2;
+    // Kéo mép trái (cột) đổi độ rộng; kéo góc dưới phải (nổi) đổi cỡ; kéo thanh tiêu đề (nổi) di chuyển.
+    const gw = el('div', 'absolute inset-y-0 left-0 z-20 w-1.5 cursor-ew-resize hover:bg-blue-400/40');
+    gw.id = 'grip-w';
+    const gr = el('div', 'absolute bottom-0 right-0 z-20 h-4 w-4 cursor-nwse-resize');
+    gr.id = 'grip-r';
+    document.body.style.position = 'relative';
+    document.body.append(gw, gr);
+    dragOn(gw, 'width', () => panelSt?.mode === 'cot');
+    dragOn(gr, 'resize', () => panelSt?.mode === 'noi');
+    dragOn($('head'), 'move', () => panelSt?.mode === 'noi');
+    api.onPanel((p) => { panelSt = p; renderPanel(); });
+    void api.panel('state').then((p) => { panelSt = p; renderPanel(); });
+  }
+
   display(picker, false);
   layout();
-  const load = () => void api.state().then((s) => { st = s; render(); void takeCommand(); });
+  // Cửa sổ Trợ lý không lấy lệnh của ô tìm kiếm (lệnh dành cho trang Trợ lý toàn trang).
+  const load = () => void api.state().then((s) => { st = s; render(); renderPanel(); if (!PANEL) void takeCommand(); });
   api.onChanged(load);
   load();
   input.focus();
