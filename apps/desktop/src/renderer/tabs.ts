@@ -464,6 +464,9 @@ interface ValaTabsApi {
     const arc = $('dl-arc');
     arc.setAttribute('stroke-dasharray', busy && d.phan_tram === null ? '16 47' : String(RING));
     arc.setAttribute('stroke-dashoffset', full ? '0' : busy && d.phan_tram !== null ? String(RING * (1 - d.phan_tram / 100)) : busy ? '0' : String(RING));
+    // Có vòng ⇒ mũi tên thu nhỏ cho có khoảng thở trong vòng; không ⇒ cỡ như các nút bên cạnh.
+    for (const c of ['h-3', 'w-3']) $('dl-icon').classList.toggle(c, busy || full);
+    for (const c of ['h-3.5', 'w-3.5']) $('dl-icon').classList.toggle(c, !(busy || full));
     $('dl-icon').classList.toggle('text-blue-600', busy || full);
     $('dl-icon').classList.toggle('dark:text-blue-400', busy || full);
     $('dl-err').toggleAttribute('hidden', flash !== 'loi');
