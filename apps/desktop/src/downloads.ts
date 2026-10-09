@@ -58,7 +58,8 @@ export const previewDir = () => join(app.getPath('temp'), 'vala-xem');
 const askDir = () => join(app.getPath('temp'), 'vala-tai');
 
 /**
- * HỘP TẢI XUỐNG (người dùng 09/10/2026): mỗi lần tải ⇒ hỏi Mở / Tải về / Lưu thành… / Huỷ (khung nổi, browser.ts). Tệp tải
+ * HỎI CÁCH LƯU (người dùng 09/10/2026): mỗi lần tải ⇒ khung Tải xuống dưới nút header tự xổ ra, dòng tệp có Mở / Tải về /
+ * Lưu thành… / Huỷ (overlay.ts). Tệp tải
  * NGẦM vào thư mục tạm ngay lúc hỏi; chọn xong (và tải xong) ⇒ chuyển tới nơi đã chọn. Cài đặt "Hỏi trước khi tải" tắt ⇒
  * tải thẳng vào thư mục Tải về như trước.
  */
@@ -100,14 +101,8 @@ function finalize(a: Ask): void {
   if (a.choice.kind === 'mo') void shell.openPath(target);
 }
 
-/** Tệp đang được hỏi (đầu hàng đợi) — khung nổi hiện. */
-export function askState(): { id: string; ten: string; nguon: string; tong: number; da_tai: number; xong: boolean; xem_duoc: boolean; con: number } | null {
-  const id = askQueue[0];
-  const a = id ? asks.get(id) : undefined;
-  const it = id ? load().find((x) => x.id === id) : undefined;
-  if (!a || !it) return null;
-  return { id, ten: a.ten, nguon: a.nguon, tong: it.tong, da_tai: it.da_tai, xong: a.done && a.ok, xem_duoc: viewableInApp(a.ten), con: askQueue.length - 1 };
-}
+/** Còn tệp chờ người dùng chọn cách lưu (khung Tải xuống tự xổ ra). */
+export const hasPendingAsk = (): boolean => askQueue.length > 0;
 
 const dropAsk = (id: string) => { const i = askQueue.indexOf(id); if (i >= 0) askQueue.splice(i, 1); downloadEvents.emit('ask'); };
 
@@ -229,7 +224,6 @@ export function initDownloads(): void {
         it.trang_thai = 'cho_chon';
         save();
         changed(true);
-        downloadEvents.emit('ask');
         return;
       }
       it.trang_thai = state === 'completed' ? 'xong' : state === 'cancelled' ? 'huy' : 'loi';
@@ -251,7 +245,11 @@ export function recordSaved(duong_dan: string, nguon: string, bytes: number): vo
 
 /** Trạng thái cho khung Tải xuống; `mat`: đã tải xong nhưng tệp không còn ở chỗ cũ (người dùng xoá / chuyển đi). */
 export const downloadsState = () => ({
-  list: load().map((x) => ({ ...x, mat: x.trang_thai === 'xong' && !existsSync(x.duong_dan) })),
+  list: load().map((x) => ({
+    ...x, mat: x.trang_thai === 'xong' && !existsSync(x.duong_dan),
+    // Đang chờ chọn cách lưu ⇒ khung Tải xuống hiện Mở / Tải về / Lưu thành… / Huỷ ngay trên dòng tệp.
+    hoi: !!asks.get(x.id) && !asks.get(x.id)!.choice, xem_duoc: viewableInApp(x.ten),
+  })),
   ...overall(load()),
   su_kien: suKien,
 });
@@ -286,12 +284,6 @@ export function saveCopyToDownloads(path: string, ten: string, nguon: string): s
   copyFileSync(path, to);
   recordSaved(to, nguon, statSync(to).size);
   return to;
-}
-
-/** Khung Tải xuống: "Lưu vào chỗ khác…" của một tệp đã tải. */
-export async function downloadSaveAs(id: string): Promise<void> {
-  const it = load().find((x) => x.id === id);
-  if (it && it.trang_thai === 'xong') await saveCopyAs(it.duong_dan, it.ten, it.nguon);
 }
 
 /** Đăng xuất ⇒ quên lịch sử tải (tệp trên đĩa giữ nguyên); huỷ lượt đang tải. */

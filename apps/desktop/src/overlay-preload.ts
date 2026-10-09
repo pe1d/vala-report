@@ -14,9 +14,7 @@ contextBridge.exposeInMainWorld('valaOverlay', {
   contextRun: (id: string) => ipcRenderer.invoke('overlay:context-run', id),
   changePassword: (current: string, next: string) => ipcRenderer.invoke('overlay:change-password', { current, next }),
   download: (id: string, act: string) => ipcRenderer.invoke('overlay:download', { id, act }),
-  downloadSaveAs: (id: string) => ipcRenderer.invoke('overlay:download-save-as', id),
   downloadChoose: (id: string, choice: string, khongHoi: boolean) => ipcRenderer.invoke('overlay:download-choose', { id, choice, khongHoi }),
-  downloadAsk: (id: string) => ipcRenderer.invoke('overlay:download-ask', id),
   onOpen: (cb: () => void) => { ipcRenderer.on('overlay:open', () => cb()); },
   onRefresh: (cb: () => void) => { ipcRenderer.on('overlay:refresh', () => cb()); },
 });

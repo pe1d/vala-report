@@ -472,9 +472,12 @@ interface ValaTabsApi {
     $('dl-icon').toggleAttribute('hidden', done);
     const pct = $('dl-pct');
     pct.className = `whitespace-nowrap text-[11px] font-semibold tabular-nums ${flash === 'loi' ? 'text-red-600 dark:text-red-400' : flash === 'xong' && !busy ? 'text-emerald-700 dark:text-emerald-400' : 'text-blue-700 dark:text-blue-300'}`;
-    setText(pct, flash === 'bat_dau' ? s.t.dlStarted
+    const text = flash === 'bat_dau' ? s.t.dlStarted
       : busy ? (d.phan_tram !== null ? `${d.phan_tram}%` : `${d.dang_tai}…`)
-        : flash === 'xong' ? s.t.dlDone : flash === 'loi' ? s.t.dlFailed : '');
+        : flash === 'xong' ? s.t.dlDone : flash === 'loi' ? s.t.dlFailed : '';
+    setText(pct, text);
+    // Không có chữ ⇒ ẩn hẳn (không chiếm chỗ) ⇒ nút vuông như các nút bên cạnh, biểu tượng nằm giữa khi rê chuột.
+    display(pct, !!text);
   }
 
   const openDownloads = () => void api.overlay('downloads', rect($('dl').style.display === 'none' ? $('win-min') : $('dl')));

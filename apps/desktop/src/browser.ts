@@ -22,7 +22,7 @@ import { messages, normLang } from './i18n';
 import { attachAutofill } from './autofill';
 import { attachSsoAuto } from './sso-auto';
 import { attachPackages, injectAll, listActions, packageEvents, packages } from './scripts';
-import { askState, chooseDownload, downloadAction, downloadEvents, downloadSaveAs, downloadsState, saveCopyAs, saveCopyToDownloads } from './downloads';
+import { chooseDownload, hasPendingAsk, downloadAction, downloadEvents, downloadsState, saveCopyAs, saveCopyToDownloads } from './downloads';
 import { recordActions, recordAppVisit } from './local-data';
 import { portalApi } from './account';
 import { appByKey, appKey, canAdmin, catalog, insideDomains, pinnedKeys as catalogPinnedKeys, setAppPinned, setPinnedOrder } from './apps';
@@ -739,13 +739,11 @@ export function openTab(url: string, foreground = true, after?: string): string 
   return key;
 }
 
-/** Hộp Tải xuống (downloads.ts askState): có tệp chờ hỏi ⇒ mở / vẽ lại; hết ⇒ đóng. */
+/** Có tệp mới chờ chọn cách lưu ⇒ khung Tải xuống dưới nút header tự xổ ra (đang mở ⇒ vẽ lại). */
 function showDownloadAsk(): void {
   if (!win || win.isDestroyed()) return;
-  if (!askState()) { if (overlayOpen && overlayKind === 'download-ask') closeOverlay(); return; }
-  if (overlayOpen && overlayKind === 'download-ask') { overlay?.webContents.send('overlay:refresh'); return; }
-  const [width, height] = win.getContentSize();
-  openOverlay('download-ask', { x: Math.round(width! / 2), y: Math.round(height! / 3), w: 0, h: 0 });
+  if (overlayOpen && overlayKind === 'downloads') { overlay?.webContents.send('overlay:refresh'); return; }
+  if (hasPendingAsk()) win.webContents.send('tabs:open-downloads');
 }
 
 /** Mở tab xem trước một tệp đã tải vào thư mục tạm (downloads.ts 'xem'). */
@@ -1134,7 +1132,7 @@ function registerIpc(): void {
 // ---- khung nổi (menu hồ sơ, khung ⊞ Tất cả ứng dụng): lớp trong suốt trên cùng, chỉ hiện khi mở ----
 let overlay: WebContentsView | null = null;
 let overlayOpen = false;
-type OverlayKind = 'profile' | 'search' | 'password' | 'more' | 'context' | 'downloads' | 'download-ask';
+type OverlayKind = 'profile' | 'search' | 'password' | 'more' | 'context' | 'downloads';
 let overlayKind: OverlayKind = 'profile';
 let overlayAnchor = { x: 0, y: 0, w: 0, h: 0 };
 /** Khung nổi mở từ bản xem nhanh (thanh hiện đầy đủ) ⇒ neo như thanh mở rộng dù cài đặt đang thu gọn. */
@@ -1292,7 +1290,6 @@ function overlayState() {
     isAdmin: canAdmin(),
     context: overlayKind === 'context' ? contextMenu : null,
     downloads: overlayKind === 'downloads' ? downloadsState() : null,
-    ask: overlayKind === 'download-ask' ? askState() : null,
     t: { ...plain, version: version(app.getVersion()), installUpdate: up ? installUpdate(up.version) : '' },
     profile: s.deviceToken && name ? { name, email: s.user?.email ?? '', initials: initialsOf(name) } : null,
     // Đổi mật khẩu: có mật khẩu Vala ⇒ form ngay trong app; chỉ SSO ⇒ trang đổi mật khẩu của SSO đơn vị (nếu có).
@@ -1322,13 +1319,6 @@ function registerOverlayIpc(): void {
     if (!choice || typeof a?.id !== 'string') return overlayState();
     await chooseDownload(a.id, choice, a.khongHoi === true);
     return overlayState();
-  });
-  ipcMain.handle('overlay:download-ask', (e, id: unknown) => { own(e); if (typeof id === 'string') showDownloadAsk(); });
-  ipcMain.handle('overlay:download-save-as', async (e, id: unknown) => {
-    own(e);
-    // Hộp chọn nơi lưu phải nằm trên khung nổi ⇒ đóng khung trước.
-    closeOverlay();
-    if (typeof id === 'string') await downloadSaveAs(id);
   });
   ipcMain.handle('overlay:close', (e) => { own(e); closeOverlay(); });
   ipcMain.handle('overlay:command', (e, cmd: unknown) => {
@@ -1377,8 +1367,8 @@ const O = messages({
   loginSrc: { ok: 'Đã kết nối', warn: 'Cần đăng nhập lại', off: 'Chưa kết nối' } as Record<TabStatus, string>,
   loginWeb: { ok: 'Đã đăng nhập', warn: 'Chưa đăng nhập', off: 'Chưa đăng nhập', none: 'Chưa mở' } as Record<AppLoginTone, string>,
   dlTitle: 'Tải xuống', dlEmpty: 'Chưa tải tệp nào.', dlOpen: 'Mở', dlFolder: 'Mở thư mục', dlCancel: 'Huỷ', dlRemove: 'Xoá khỏi danh sách',
-  dlSaveAs: 'Lưu thành…', dlSaveAsTitle: 'Lưu một bản sao vào thư mục khác', dlWaiting: 'Chờ bạn chọn cách lưu', dlChoose: 'Chọn…', dlClear: 'Xoá lịch sử',
-  askTitle: 'Tải xuống tệp', askFrom: 'từ', askBusy: 'Đang tải ngầm…', askReady: 'Đã tải xong — chọn cách lưu', askOpen: 'Mở', askOpenView: 'Xem ngay trong Vala Desktop', askOpenApp: 'Mở bằng ứng dụng của máy', askSave: 'Tải về', askSaveHint: 'Lưu vào thư mục Tải về', askSaveAs: 'Lưu thành…', askSaveAsHint: 'Chọn thư mục và tên tệp', askCancel: 'Huỷ', askNoAsk: 'Lần sau không hỏi — tải thẳng vào thư mục Tải về', askMore: 'tệp khác đang chờ', dlPaused: 'Tạm dừng', dlDone: 'Đã tải', dlGone: 'Tệp đã bị xoá hoặc chuyển đi', dlCancelled: 'Đã huỷ', dlFailed: 'Lỗi — tải lại từ trang gốc', dlHint: 'Tệp lưu ở thư mục Tải về. Lịch sử chỉ ở máy này, đăng xuất là xoá.',
+  dlWaiting: 'Đã tải xong — chọn cách lưu', dlClear: 'Xoá lịch sử',
+  askOpen: 'Mở', askOpenView: 'Xem ngay trong Vala Desktop', askOpenApp: 'Mở bằng ứng dụng của máy', askSave: 'Tải về', askSaveHint: 'Lưu vào thư mục Tải về', askSaveAs: 'Lưu thành…', askSaveAsHint: 'Chọn thư mục và tên tệp', askCancel: 'Huỷ', askCancelHint: 'Huỷ tải, xoá tệp', askNoAsk: 'Lần sau không hỏi — tải thẳng vào thư mục Tải về', dlPaused: 'Tạm dừng', dlDone: 'Đã tải', dlGone: 'Tệp đã bị xoá hoặc chuyển đi', dlCancelled: 'Đã huỷ', dlFailed: 'Lỗi — tải lại từ trang gốc', dlHint: 'Tệp lưu ở thư mục Tải về. Lịch sử chỉ ở máy này, đăng xuất là xoá.',
   ctxPin: 'Ghim lên thanh bên', ctxUnpin: 'Bỏ ghim khỏi thanh bên', ctxClose: 'Đóng tab', ctxOpen: 'Mở',
   version: (v: string) => `Phiên bản ${v}`, installUpdate: (v: string) => `Cập nhật lên bản ${v}`,
 }, {
@@ -1399,8 +1389,8 @@ const O = messages({
   loginSrc: { ok: 'Connected', warn: 'Needs signing in again', off: 'Not connected' } as Record<TabStatus, string>,
   loginWeb: { ok: 'Signed in', warn: 'Not signed in', off: 'Not signed in', none: 'Not opened yet' } as Record<AppLoginTone, string>,
   dlTitle: 'Downloads', dlEmpty: 'No downloads yet.', dlOpen: 'Open', dlFolder: 'Show in folder', dlCancel: 'Cancel', dlRemove: 'Remove from list',
-  dlSaveAs: 'Save as…', dlSaveAsTitle: 'Save a copy to another folder', dlWaiting: 'Waiting for you to choose', dlChoose: 'Choose…', dlClear: 'Clear history',
-  askTitle: 'Download file', askFrom: 'from', askBusy: 'Downloading in the background…', askReady: 'Downloaded — choose how to save it', askOpen: 'Open', askOpenView: 'View right in Vala Desktop', askOpenApp: 'Open with an app on this computer', askSave: 'Download', askSaveHint: 'Save to your Downloads folder', askSaveAs: 'Save as…', askSaveAsHint: 'Choose a folder and file name', askCancel: 'Cancel', askNoAsk: "Don't ask next time — save straight to Downloads", askMore: 'more files waiting', dlPaused: 'Paused', dlDone: 'Downloaded', dlGone: 'File was deleted or moved', dlCancelled: 'Cancelled', dlFailed: 'Failed — download again from the original page', dlHint: 'Files are saved to your Downloads folder. History stays on this computer and is cleared when you sign out.',
+  dlWaiting: 'Downloaded — choose how to save it', dlClear: 'Clear history',
+  askOpen: 'Open', askOpenView: 'View right in Vala Desktop', askOpenApp: 'Open with an app on this computer', askSave: 'Download', askSaveHint: 'Save to your Downloads folder', askSaveAs: 'Save as…', askSaveAsHint: 'Choose a folder and file name', askCancel: 'Cancel', askCancelHint: 'Cancel and delete the file', askNoAsk: "Don't ask next time — save straight to Downloads", dlPaused: 'Paused', dlDone: 'Downloaded', dlGone: 'File was deleted or moved', dlCancelled: 'Cancelled', dlFailed: 'Failed — download again from the original page', dlHint: 'Files are saved to your Downloads folder. History stays on this computer and is cleared when you sign out.',
   ctxPin: 'Pin to sidebar', ctxUnpin: 'Unpin from sidebar', ctxClose: 'Close tab', ctxOpen: 'Open',
   version: (v: string) => `Version ${v}`, installUpdate: (v: string) => `Update to version ${v}`,
 });
@@ -1439,7 +1429,7 @@ export function initBrowser(h: BrowserHooks): void {
   // Tiến độ tải đổi ⇒ nút trên header; khung Tải xuống đang mở ⇒ vẽ lại.
   downloadEvents.on('changed', () => {
     pushState();
-    if (overlay && overlayOpen && (overlayKind === 'downloads' || overlayKind === 'download-ask') && !overlay.webContents.isDestroyed()) overlay.webContents.send('overlay:refresh');
+    if (overlay && overlayOpen && overlayKind === 'downloads' && !overlay.webContents.isDestroyed()) overlay.webContents.send('overlay:refresh');
   });
   events.on('status', refreshBrowser);
   // Biểu tượng phần mềm của ứng dụng vừa lấy xong ⇒ thanh bên; khung Tất cả ứng dụng đang mở ⇒ vẽ lại.
