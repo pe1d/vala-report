@@ -33,6 +33,7 @@ import { applySubsetOrder, cookieMatchesHost, openTarget, reordered, sidebarSect
 import { ssoHosts } from './sso-session';
 import { siteIcon, siteIconEvents } from './site-icons';
 import { changeZoom, trackZoom, zoomEvents, zoomFactor, zoomPercent } from './zoom';
+import { clearNotifications, createSampleNotifications, markNotifications, notificationEvents, notificationsState, openNotification, refreshNotifications, setNotificationFilter } from './notifications';
 import { vanBanKeys } from './vanban-model';
 import { pendingUpdate, promptInstall } from './updater';
 import { recordingKey } from './recorder';
@@ -45,7 +46,7 @@ const M = messages({
   search: 'Tìm kiếm', minimize: 'Thu nhỏ', maximize: 'Phóng to', restore: 'Thu về', closeWindow: 'Đóng (ẩn xuống khay)',
   close: 'Đóng tab (Ctrl+W)', menu: 'Hệ thống nguồn',
   signIn: 'Đăng nhập', signInTitle: 'Đăng nhập Vala Desktop', account: 'Tài khoản', admin: 'Quản trị',
-  lightMode: 'Chế độ sáng', darkMode: 'Chế độ tối', recording: 'đang ghi thao tác', downloads: 'Tải xuống (Ctrl+J)', dlStarted: 'Đang tải', dlDone: 'Đã tải xong', dlFailed: 'Tải lỗi',
+  lightMode: 'Chế độ sáng', darkMode: 'Chế độ tối', recording: 'đang ghi thao tác', notifTitle: 'Thông báo', notifPending: 'chờ xử lý', notifCenter: 'Trung tâm thông báo', downloads: 'Tải xuống (Ctrl+J)', dlStarted: 'Đang tải', dlDone: 'Đã tải xong', dlFailed: 'Tải lỗi',
   vbVala: 'Giao diện Vala', vbGoc: 'Trang gốc', vbTitle: 'Chuyển giữa giao diện Văn bản của Vala và trang gốc của hệ thống',
   updateTitle: 'Cài bản mới: ứng dụng đóng lại, cài xong tự mở lại',
   updateLabel: (v: string) => `Đã có bản ${v} — Cập nhật`,
@@ -57,7 +58,7 @@ const M = messages({
   search: 'Search', minimize: 'Minimize', maximize: 'Maximize', restore: 'Restore', closeWindow: 'Close (hide to tray)',
   close: 'Close tab (Ctrl+W)', menu: 'Source systems',
   signIn: 'Sign in', signInTitle: 'Sign in to Vala Desktop', account: 'Account', admin: 'Administration',
-  lightMode: 'Light mode', darkMode: 'Dark mode', recording: 'recording actions', downloads: 'Downloads (Ctrl+J)', dlStarted: 'Downloading', dlDone: 'Downloaded', dlFailed: 'Download failed',
+  lightMode: 'Light mode', darkMode: 'Dark mode', recording: 'recording actions', notifTitle: 'Notifications', notifPending: 'pending', notifCenter: 'Notification center', downloads: 'Downloads (Ctrl+J)', dlStarted: 'Downloading', dlDone: 'Downloaded', dlFailed: 'Download failed',
   vbVala: 'Vala view', vbGoc: 'Original page', vbTitle: "Switch between Vala's documents view and the system's original page",
   updateTitle: 'Install the new version: the app closes, installs and reopens',
   updateLabel: (v: string) => `Version ${v} available — Update`,
@@ -150,9 +151,10 @@ app.on('before-quit', () => { quitting = true; });
 
 export const sourceTabKey = (code: string) => `src:${code}`;
 
-/** Mục cố định: chỉ Trợ lý AI. Mọi ứng dụng khác lấy từ danh mục của đơn vị (apps.ts). */
+/** Mục cố định: Trợ lý AI, Trung tâm thông báo. Mọi ứng dụng khác lấy từ danh mục của đơn vị (apps.ts). */
 function pinnedDefs(): PinnedDef[] {
-  return [{ key: CHAT, label: M[getSettings().lang].assistant, url: '' }];
+  const t = M[getSettings().lang];
+  return [{ key: CHAT, label: t.assistant, url: '' }, { key: NOTIF_CENTER, label: t.notifCenter, url: '' }];
 }
 
 /** Báo cáo (ứng dụng `reports` của danh mục): giao diện cổng chạy từ bản trong máy khi đã tải được (ui-cache.ts). */
@@ -201,6 +203,8 @@ function ensureWindow(): BrowserWindow {
   // Tiêu đề cửa sổ luôn là tên ứng dụng (bản dev: "Vala Desktop (dev)"), không theo tiêu đề trang thanh dọc.
   w.on('page-title-updated', (e) => e.preventDefault());
   w.once('ready-to-show', () => w.show());
+  // Quay lại cửa sổ ⇒ làm mới thông báo (không chờ nhịp 1 phút).
+  w.on('focus', () => void refreshNotifications());
   // Đóng cửa sổ chỉ ẩn xuống khay hệ thống (các tab, phiên vẫn giữ); "Thoát" mới đóng thật.
   w.on('close', (e) => { if (!quitting) { e.preventDefault(); w.hide(); } });
   w.on('closed', () => { win = null; tabs.clear(); order = []; active = null; corners = []; peek = null; peekOpen = false; });
@@ -339,6 +343,8 @@ const SETTINGS = 'settings';
 const RECORDING = 'recording';
 /** Trợ lý AI — mục cố định đầu thanh dọc, mặc định khi mở app (chat-page.ts). */
 export const CHAT = 'chat';
+/** Trung tâm thông báo — trang riêng, mục cố định trên thanh dọc (thongbao-page.ts). */
+export const NOTIF_CENTER = 'thong-bao';
 /** Màn hình đăng nhập (login-page.ts) — trang duy nhất khi chưa đăng nhập. */
 export const LOGIN = 'login';
 /** Quản trị đơn vị (admin-page.ts; giao diện admin/ build ra dist/admin) — chỉ quản trị đơn vị. */
@@ -350,6 +356,7 @@ const LOCAL: Record<string, { preload: string; html: string }> = {
   [SETTINGS]: { preload: 'settings-preload.js', html: 'settings.html' },
   [RECORDING]: { preload: 'recording-preload.js', html: 'recording.html' },
   [CHAT]: { preload: 'chat-preload.js', html: 'chat.html' },
+  [NOTIF_CENTER]: { preload: 'thongbao-preload.js', html: '../dist/thongbao/index.html' },
   [LOGIN]: { preload: 'login-preload.js', html: 'login.html' },
   // Trang React build bằng Vite (admin/) — đường dẫn tính từ resources/.
   [ADMIN]: { preload: 'admin-preload.js', html: '../dist/admin/index.html' },
@@ -421,6 +428,8 @@ export function openRecordingTab(): void {
 
 export const isRecordingContents = (wc: WebContents): boolean => tabs.get(RECORDING)?.view?.webContents === wc;
 export const isChatContents = (wc: WebContents): boolean => tabs.get(CHAT)?.view?.webContents === wc;
+export const thongBaoContents = (): WebContents | null => tabs.get(NOTIF_CENTER)?.view?.webContents ?? null;
+export const isThongBaoContents = (wc: WebContents): boolean => thongBaoContents() === wc;
 export const isLoginContents = (wc: WebContents): boolean => tabs.get(LOGIN)?.view?.webContents === wc;
 
 /** Báo màn hình đăng nhập (nếu đang mở) vẽ lại. */
@@ -877,7 +886,7 @@ export function showDefaultApp(): void {
   if (def) activate(def.key); else showDefault();
 }
 /** Thứ tự trên thanh dọc (phím Ctrl+Tab, Ctrl+1…9): Trợ lý AI, ứng dụng, đang mở. */
-const visibleKeys = () => { const sec = sections(); return [CHAT, ...sec.apps, ...sec.open.filter((k) => order.includes(k) || tabs.has(k))]; };
+const visibleKeys = () => { const sec = sections(); return [CHAT, NOTIF_CENTER, ...sec.apps, ...sec.open.filter((k) => order.includes(k) || tabs.has(k))]; };
 /** Trang web đang xem (nút ◀ ▶ ⟳) — trang cục bộ, giao diện Văn bản ⇒ không có. */
 const activeWc = () => { const t = active && !LOCAL[active] ? tabs.get(active) : undefined; return t && face(t) === t.view ? t.view?.webContents : undefined; };
 
@@ -900,6 +909,25 @@ function reloadActive(): void {
 const canReload = () => { const t = active && !LOCAL[active] ? tabs.get(active) : undefined; return !!t?.view && !t.view.webContents.isDestroyed(); };
 
 /** Bấm một mục: đã có tab ⇒ chọn; ứng dụng chưa mở ⇒ mở tab của nó. */
+/**
+ * Mở chi tiết một thông báo (Trung tâm thông báo — link callback): link thuộc ứng dụng trong danh mục ⇒ mở trong đúng tab
+ * ứng dụng đó (giữ phiên); không có link ⇒ mở ứng dụng; ứng dụng không còn trong danh mục ⇒ tab mới.
+ */
+export function openAppLink(ma: string, link: string | null): void {
+  const a = catalog().apps.find((x) => x.ma === ma);
+  const key = a ? appKey(a) : null;
+  if (key && (tabs.has(key) || ensureAppTab(key))) {
+    const t = tabs.get(key)!;
+    if (!link) { showTab(key); return; }
+    // Ứng dụng văn bản (giao diện Vala đè trang gốc) ⇒ chuyển sang trang gốc, mở đúng địa chỉ (cùng hệ thống).
+    if (t.ui) { showTab(key); setVanbanGoc(key, true, link); return; }
+    if (!t.view) { showTab(key); void t.view!.webContents.loadURL(link); return; }
+    showTab(key, { reloadTo: link });
+    return;
+  }
+  if (link) openTab(link);
+}
+
 export function activate(key: string): void {
   if (tabs.has(key)) { showTab(key); return; }
   if (ensureAppTab(key)) showTab(key);
@@ -976,7 +1004,9 @@ function itemOf(key: string, label: string | undefined, t: (typeof M)['vi'], clo
     opened: !!tab?.view,
     closable,
     // Biểu tượng riêng của mục cố định (thanh dọc vẽ sẵn) — mục khác dùng favicon / chữ cái đầu.
-    glyph: key === CHAT ? 'chat' : key === SETTINGS || key === ADMIN ? 'settings' : key === RECORDING ? 'recording' : null,
+    glyph: key === CHAT ? 'chat' : key === NOTIF_CENTER ? 'bell' : key === SETTINGS || key === ADMIN ? 'settings' : key === RECORDING ? 'recording' : null,
+    // Trung tâm thông báo: số chưa đọc (chờ xử lý).
+    badge: key === NOTIF_CENTER ? notificationsState().dem.chua_doc : 0,
   };
 }
 
@@ -998,6 +1028,7 @@ function pushState(): void {
   const state = {
     lang: s.lang, t: plain, active, dev: IS_DEV, collapsed: !!s.sidebarCollapsed, signedIn: signedIn(),
     chat: itemOf(CHAT, t.assistant, t, false),
+    notif: itemOf(NOTIF_CENTER, t.notifCenter, t, false),
     // Ứng dụng mặc định của đơn vị luôn đứng đầu nhóm ⇒ không kéo được.
     apps: sec.apps.map((k) => ({ ...itemOf(k, labels.get(k), t, false), fixed: k === defKey })),
     open: sec.open.filter((k) => tabs.has(k) && !tabs.get(k)!.hidden).map((k) => itemOf(k, labels.get(k), t, !tabs.get(k)!.pinned)),
@@ -1007,6 +1038,8 @@ function pushState(): void {
     nav: { back: !!h?.canGoBack(), forward: !!h?.canGoForward(), reload: canReload() },
     // Nút Tải xuống trên header: hiện khi có lịch sử; đang tải ⇒ phần trăm.
     downloads: (() => { const d = downloadsState(); return { has: d.list.length > 0, dang_tai: d.dang_tai, phan_tram: d.phan_tram, su_kien: d.su_kien }; })(),
+    // Chuông thông báo trên header: số chưa đọc (chờ xử lý).
+    thongBao: (() => { const d = notificationsState().dem; return { chua_doc: d.chua_doc, cho: d.cho_xu_ly }; })(),
     // Ứng dụng văn bản đang xem ⇒ nút chuyển Giao diện Vala / Trang gốc trên header.
     vanban: active && tabs.get(active)?.ui ? (tabs.get(active)!.goc ? 'goc' : 'vala') : null,
     maximized: win.isMaximized(),
@@ -1093,7 +1126,7 @@ function registerIpc(): void {
   });
   ipcMain.handle('tabs:overlay', (e, a: { kind?: unknown; x?: unknown; y?: unknown; w?: unknown; h?: unknown }) => {
     own(e);
-    if (a?.kind !== 'profile' && a?.kind !== 'search' && a?.kind !== 'more' && a?.kind !== 'downloads') return;
+    if (a?.kind !== 'profile' && a?.kind !== 'search' && a?.kind !== 'more' && a?.kind !== 'downloads' && a?.kind !== 'notifications') return;
     const n = (v: unknown) => Math.round(Number(v) || 0);
     const o = offset(e);
     // Mở từ bản xem nhanh ⇒ neo như thanh mở rộng; bản xem nhanh nhường chỗ cho khung nổi.
@@ -1126,7 +1159,7 @@ function registerIpc(): void {
 // ---- khung nổi (menu hồ sơ, khung ⊞ Tất cả ứng dụng): lớp trong suốt trên cùng, chỉ hiện khi mở ----
 let overlay: WebContentsView | null = null;
 let overlayOpen = false;
-type OverlayKind = 'profile' | 'search' | 'password' | 'more' | 'context' | 'downloads';
+type OverlayKind = 'profile' | 'search' | 'password' | 'more' | 'context' | 'downloads' | 'notifications';
 let overlayKind: OverlayKind = 'profile';
 let overlayAnchor = { x: 0, y: 0, w: 0, h: 0 };
 /** Khung nổi mở từ bản xem nhanh (thanh hiện đầy đủ) ⇒ neo như thanh mở rộng dù cài đặt đang thu gọn. */
@@ -1255,7 +1288,7 @@ function openContextMenu(key: string, url: string, at: { x: number; y: number },
     const pinned = pinnedKeys().includes(key);
     add(pinned ? t.ctxUnpin : t.ctxPin, () => setPinned(key, !pinned), { icon: 'pin' });
   }
-  if (tab && !isPinnedTab(key) && key !== CHAT) add(t.ctxClose, () => closeTab(key), { icon: 'quit', hint: 'Ctrl+W' });
+  if (tab && !isPinnedTab(key) && key !== CHAT && key !== NOTIF_CENTER) add(t.ctxClose, () => closeTab(key), { icon: 'quit', hint: 'Ctrl+W' });
   const native = hooks.tabMenu(key, url);
   if (native) {
     sep();
@@ -1285,6 +1318,7 @@ function overlayState() {
     isAdmin: canAdmin(),
     context: overlayKind === 'context' ? contextMenu : null,
     downloads: overlayKind === 'downloads' ? downloadsState() : null,
+    notifications: overlayKind === 'notifications' ? notificationsState() : null,
     t: { ...plain, version: version(app.getVersion()), installUpdate: up ? installUpdate(up.version) : '' },
     profile: s.deviceToken && name ? { name, email: s.user?.email ?? '', initials: initialsOf(name) } : null,
     // Đổi mật khẩu: có mật khẩu Vala ⇒ form ngay trong app; chỉ SSO ⇒ trang đổi mật khẩu của SSO đơn vị (nếu có).
@@ -1306,6 +1340,23 @@ function registerOverlayIpc(): void {
     const acts = ['open', 'folder', 'cancel', 'remove', 'clear'] as const;
     const act = acts.find((x) => x === a?.act);
     if (act && typeof a?.id === 'string') downloadAction(a.id, act);
+    return overlayState();
+  });
+  ipcMain.handle('overlay:notif', async (e, a: { act?: unknown; ids?: unknown; trang_thai?: unknown; ung_dung?: unknown }) => {
+    own(e);
+    const ids = Array.isArray(a?.ids) ? a.ids.filter((x): x is string => typeof x === 'string' && /^\d{1,18}$/.test(x)).slice(0, 500) : [];
+    if (a?.act === 'open' && ids[0]) { closeOverlay(); openNotification(ids[0]); return overlayState(); }
+    if (a?.act === 'xu_ly') await markNotifications(ids, { da_xu_ly: true });
+    else if (a?.act === 'chua_xu_ly') await markNotifications(ids, { da_xu_ly: false });
+    else if (a?.act === 'doc') await markNotifications(ids, { da_doc: true });
+    else if (a?.act === 'xoa') await clearNotifications({ ids });
+    else if (a?.act === 'xoa_da_xu_ly') await clearNotifications({ da_xu_ly: true });
+    else if (a?.act === 'loc') await setNotificationFilter({
+      ...(a.trang_thai === 'cho_xu_ly' || a.trang_thai === 'tat_ca' ? { trang_thai: a.trang_thai } : {}),
+      ...(a.ung_dung === null || (typeof a.ung_dung === 'string' && /^[a-z][a-z0-9_]{1,39}$/.test(a.ung_dung)) ? { ung_dung: a.ung_dung as string | null } : {}),
+    });
+    else if (a?.act === 'mau' && IS_DEV) await createSampleNotifications();
+    else if (a?.act === 'trung_tam') { closeOverlay(); activate(NOTIF_CENTER); return overlayState(); }
     return overlayState();
   });
   ipcMain.handle('overlay:download-choose', async (e, a: { id?: unknown; choice?: unknown; khongHoi?: unknown }) => {
@@ -1357,7 +1408,8 @@ const O = messages({
   secApps: 'Ứng dụng', secActions: 'Thao tác', secChatsFound: 'Hội thoại', noResults: 'Không tìm thấy kết quả',
   searchEmpty: 'Chưa có lịch sử. Các ứng dụng bạn mở và hội thoại với Trợ lý AI sẽ hiện ở đây.',
   clearHistory: 'Xoá lịch sử', searchHint: '↑ ↓ chọn · Enter mở · Esc đóng',
-  pin: 'Ghim lên thanh bên', unpin: 'Bỏ ghim', noApps: 'Đơn vị chưa khai ứng dụng nào. Liên hệ quản trị của đơn vị.',
+  pin: 'Ghim lên thanh bên', unpin: 'Bỏ ghim',
+  nTitle: 'Thông báo', nPending: 'Chờ xử lý', nAll: 'Tất cả', nAllApps: 'Tất cả', nEmptyPending: 'Không còn thông báo nào chờ xử lý.', nEmpty: 'Chưa có thông báo.', nOpen: 'Mở chi tiết', nImportant: 'Quan trọng', nDone: 'Đã xử lý', nMarkDone: 'Đánh dấu đã xử lý', nUndo: 'Đưa lại chờ xử lý', nRemove: 'Xoá', nClearDone: 'Xoá đã xử lý', nCenter: 'Mở Trung tâm thông báo', nSample: 'Tạo thông báo mẫu', nJustNow: 'vừa xong', nMinutes: 'phút trước', nHours: 'giờ trước', nYesterday: 'hôm qua', noApps: 'Đơn vị chưa khai ứng dụng nào. Liên hệ quản trị của đơn vị.',
   moreTitle: 'Tất cả ứng dụng', moreHint: 'Bấm để mở. Ghim để luôn hiện trên thanh bên.', groupPinned: 'Đã ghim', groupOther: 'Chưa ghim',
   notSignedIn: 'chưa đăng nhập', onlyNotSignedIn: 'Chỉ hiện chưa đăng nhập', showAll: 'Hiện tất cả',
   loginSrc: { ok: 'Đã kết nối', warn: 'Cần đăng nhập lại', off: 'Chưa kết nối' } as Record<TabStatus, string>,
@@ -1379,7 +1431,8 @@ const O = messages({
   secApps: 'Apps', secActions: 'Actions', secChatsFound: 'Conversations', noResults: 'No results',
   searchEmpty: 'No history yet. Apps you open and conversations with the AI assistant will show up here.',
   clearHistory: 'Clear history', searchHint: '↑ ↓ select · Enter open · Esc close',
-  pin: 'Pin to sidebar', unpin: 'Unpin', noApps: "Your organization hasn't set up any apps yet. Contact your administrator.",
+  pin: 'Pin to sidebar', unpin: 'Unpin',
+  nTitle: 'Notifications', nPending: 'Pending', nAll: 'All', nAllApps: 'All', nEmptyPending: 'Nothing pending.', nEmpty: 'No notifications yet.', nOpen: 'Open details', nImportant: 'Important', nDone: 'Done', nMarkDone: 'Mark as done', nUndo: 'Mark as pending', nRemove: 'Remove', nClearDone: 'Clear done', nCenter: 'Open Notification center', nSample: 'Create sample notifications', nJustNow: 'just now', nMinutes: 'min ago', nHours: 'h ago', nYesterday: 'yesterday', noApps: "Your organization hasn't set up any apps yet. Contact your administrator.",
   moreTitle: 'All apps', moreHint: 'Click to open. Pin to keep it on the sidebar.', groupPinned: 'Pinned', groupOther: 'Not pinned',
   notSignedIn: 'not signed in', onlyNotSignedIn: 'Show only not signed in', showAll: 'Show all',
   loginSrc: { ok: 'Connected', warn: 'Needs signing in again', off: 'Not connected' } as Record<TabStatus, string>,
@@ -1414,6 +1467,11 @@ export function initBrowser(h: BrowserHooks): void {
   downloadEvents.on('started', (wc: WebContents) => closeDownloadOnly(wc));
   downloadEvents.on('ask', () => showDownloadAsk());
   // Cỡ chữ đổi ⇒ kích thước khung (thanh bên, header, lề, góc) theo tỉ lệ mới; khung nổi đang mở ⇒ vẽ lại.
+  // Thông báo đổi ⇒ chuông trên header; khung thông báo đang mở ⇒ vẽ lại.
+  notificationEvents.on('changed', () => {
+    pushState();
+    if (overlay && overlayOpen && overlayKind === 'notifications' && !overlay.webContents.isDestroyed()) overlay.webContents.send('overlay:refresh');
+  });
   zoomEvents.on('changed', () => {
     hidePeek(true);
     layout();

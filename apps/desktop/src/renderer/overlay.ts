@@ -7,7 +7,7 @@
 type LoginTone = 'ok' | 'warn' | 'off' | 'none';
 interface OverlayApp { key: string; label: string; desc: string | null; favicon: string | null; pinned: boolean; status: 'ok' | 'warn' | 'off' | null; login: { tone: LoginTone; text: string } }
 interface OverlayState {
-  kind: 'profile' | 'search' | 'password' | 'more' | 'context' | 'downloads';
+  kind: 'profile' | 'search' | 'password' | 'more' | 'context' | 'downloads' | 'notifications';
   anchor: { x: number; y: number; w: number; h: number };
   collapsed: boolean;
   lang: 'vi' | 'en';
@@ -26,6 +26,14 @@ interface OverlayState {
   context: { title: string; items: Array<{ id: string; label: string; enabled: boolean; checked?: boolean; sep?: boolean; icon?: string; hint?: string }> } | null;
   /** Khung Tải xuống (downloads.ts): lịch sử mới nhất trước. */
   downloads: { list: OverlayDownload[]; dang_tai: number; phan_tram: number | null } | null;
+  notifications: OverlayNotifs | null;
+}
+interface OverlayNotif { id: string; ung_dung: string; tieu_de: string; noi_dung: string | null; link: string | null; quan_trong: boolean; da_doc: boolean; da_xu_ly: boolean; luc: string }
+interface OverlayNotifs {
+  items: OverlayNotif[];
+  dem: { cho_xu_ly: number; chua_doc: number; da_xu_ly: number; theo_ung_dung: Record<string, { cho: number; chua_doc: number }> };
+  loc: { trang_thai: 'cho_xu_ly' | 'tat_ca'; ung_dung: string | null };
+  apps: Record<string, { ten: string; icon: string | null }>;
 }
 interface OverlayDownload { id: string; ten: string; duong_dan: string; tong: number; da_tai: number; trang_thai: 'dang_tai' | 'tam_dung' | 'cho_chon' | 'xong' | 'huy' | 'loi'; luc: number; nguon: string; mat?: boolean; hoi?: boolean }
 type OverlayItem = { kind: 'app' | 'action' | 'chat'; title: string; sub: string; ref: Record<string, string> };
@@ -44,6 +52,7 @@ interface ValaOverlayApi {
   contextRun(id: string): Promise<void>;
   changePassword(current: string, next: string): Promise<{ ok: boolean; type?: string; title?: string; detail?: string }>;
   download(id: string, act: string): Promise<OverlayState>;
+  notif(a: { act: string; ids?: string[]; trang_thai?: string; ung_dung?: string | null }): Promise<OverlayState>;
   downloadChoose(id: string, choice: 'tai' | 'luu_thanh' | 'huy', khongHoi: boolean): Promise<OverlayState>;
   onOpen(cb: () => void): void;
   onRefresh(cb: () => void): void;
@@ -239,6 +248,124 @@ interface ValaOverlayApi {
 
   /** "Lần sau không hỏi" (khung Tải xuống, tệp đang chờ chọn cách lưu). */
   let askNoAsk = false;
+
+  /**
+   * Khung THÔNG BÁO (chuông trên header — Trung tâm thông báo): mặc định "Chờ xử lý"; lọc theo ứng dụng (biểu tượng + số
+   * chờ); bấm thông báo ⇒ mở chi tiết trong đúng ứng dụng; ✓ đã xử lý, ✕ xoá; "Xoá đã xử lý"; mở trang Trung tâm thông báo.
+   */
+  function ago(iso: string, t: OverlayState['t']): string {
+    const d = new Date(iso);
+    const m = Math.round((Date.now() - d.getTime()) / 60_000);
+    if (m < 1) return t.nJustNow;
+    if (m < 60) return `${m} ${t.nMinutes}`;
+    if (m < 24 * 60) return `${Math.floor(m / 60)} ${t.nHours}`;
+    if (m < 48 * 60) return t.nYesterday;
+    const p = (n: number) => String(n).padStart(2, '0');
+    return `${p(d.getDate())}/${p(d.getMonth() + 1)}`;
+  }
+  function appBadge(n: OverlayNotifs, ma: string, size: string): HTMLElement {
+    const a = n.apps[ma];
+    const box = el('span', `flex ${size} shrink-0 items-center justify-center rounded-[22%] bg-slate-400 text-[11px] font-semibold text-white`, ((a?.ten ?? ma).trim()[0] ?? '•').toUpperCase());
+    if (a?.icon) {
+      const img = el('img', `${size} rounded-[22%]`);
+      img.alt = '';
+      img.addEventListener('load', () => { if (img.naturalWidth > 1) box.replaceWith(img); });
+      img.src = a.icon;
+    }
+    return box;
+  }
+  function notificationsPanel(s: OverlayState): HTMLElement[] {
+    const t = s.t;
+    const n = s.notifications;
+    if (!n) return [];
+    const run = (a: { act: string; ids?: string[]; trang_thai?: string; ung_dung?: string | null }) => void api.notif(a).then(render);
+    const head = el('div', 'flex items-center gap-2 px-2.5 pb-2 pt-1');
+    head.append(el('div', 'flex-1 text-base font-semibold', t.nTitle));
+    const seg = el('div', 'flex overflow-hidden rounded-lg bg-slate-100 p-0.5 text-xs dark:bg-slate-700');
+    for (const [v, label] of [['cho_xu_ly', `${t.nPending}${n.dem.cho_xu_ly ? ` · ${n.dem.cho_xu_ly}` : ''}`], ['tat_ca', t.nAll]] as const) {
+      const b = el('button', `rounded-md px-2.5 py-1 ${n.loc.trang_thai === v ? 'bg-white font-medium text-slate-900 shadow-sm dark:bg-slate-600 dark:text-white' : 'text-slate-600 hover:text-slate-900 dark:text-slate-300'}`, label);
+      b.type = 'button';
+      b.addEventListener('click', () => run({ act: 'loc', trang_thai: v }));
+      seg.append(b);
+    }
+    head.append(seg);
+    const out: HTMLElement[] = [head];
+
+    // Lọc theo ứng dụng: chỉ hiện ứng dụng có thông báo (hoặc đang chọn).
+    const withNotif = Object.entries(n.dem.theo_ung_dung).filter(([ma, c]) => (n.loc.trang_thai === 'cho_xu_ly' ? c.cho : 1) > 0 || ma === n.loc.ung_dung);
+    if (withNotif.length) {
+      const chips = el('div', 'flex flex-wrap gap-1.5 px-2.5 pb-2');
+      const chip = (ma: string | null, label: string, count: number) => {
+        const on = n.loc.ung_dung === ma;
+        const b = el('button', `flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs ${on ? 'border-blue-600 bg-blue-50 text-blue-800 dark:border-blue-400 dark:bg-slate-700 dark:text-blue-200' : 'border-slate-200 text-slate-600 hover:bg-slate-100 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700'}`);
+        b.type = 'button';
+        if (ma) b.append(appBadge(n, ma, 'h-4 w-4'));
+        b.append(el('span', '', label));
+        if (count) b.append(el('span', 'tabular-nums text-slate-400', String(count)));
+        b.addEventListener('click', () => run({ act: 'loc', ung_dung: ma }));
+        return b;
+      };
+      chips.append(chip(null, t.nAllApps, 0));
+      for (const [ma, c] of withNotif) chips.append(chip(ma, n.apps[ma]?.ten ?? ma, c.cho));
+      out.push(chips);
+    }
+
+    if (!n.items.length) out.push(el('div', 'px-2.5 py-8 text-center text-sm text-slate-500 dark:text-slate-400', n.loc.trang_thai === 'cho_xu_ly' ? t.nEmptyPending : t.nEmpty));
+    for (const x of n.items) {
+      const row = el('div', `group relative flex gap-3 rounded-xl px-2.5 py-2.5 hover:bg-slate-100 dark:hover:bg-slate-700 ${x.da_xu_ly ? 'opacity-60' : ''}`);
+      const main = el('button', 'flex min-w-0 flex-1 gap-3 text-left');
+      main.type = 'button';
+      main.title = x.link ? t.nOpen : '';
+      main.append(appBadge(n, x.ung_dung, 'h-8 w-8'));
+      const text = el('span', 'min-w-0 flex-1');
+      const title = el('span', `line-clamp-2 text-[13px] ${x.da_doc ? 'text-slate-700 dark:text-slate-300' : 'font-semibold text-slate-900 dark:text-white'}`, x.tieu_de);
+      text.append(title);
+      if (x.noi_dung) text.append(el('span', 'mt-0.5 line-clamp-2 text-[12px] text-slate-500 dark:text-slate-400', x.noi_dung));
+      const meta = el('span', 'mt-1 flex items-center gap-1.5 text-[11px] text-slate-400');
+      if (x.quan_trong) meta.append(el('span', 'rounded bg-red-100 px-1 font-medium text-red-700 dark:bg-red-950 dark:text-red-300', t.nImportant));
+      meta.append(el('span', '', [n.apps[x.ung_dung]?.ten ?? x.ung_dung, ago(x.luc, t), x.da_xu_ly ? t.nDone : ''].filter(Boolean).join(' · ')));
+      text.append(meta);
+      main.append(text);
+      main.addEventListener('click', () => run({ act: 'open', ids: [x.id] }));
+      row.append(main);
+      if (!x.da_doc) row.append(el('span', 'absolute right-2.5 top-3.5 h-2 w-2 rounded-full bg-blue-600 group-hover:hidden dark:bg-blue-400'));
+      const acts = el('div', 'hidden shrink-0 items-start gap-0.5 group-hover:flex');
+      const ib = (label: string, path: string, act: string) => {
+        const b = el('button', 'flex h-7 w-7 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-200 hover:text-slate-800 dark:hover:bg-slate-600 dark:hover:text-white');
+        b.type = 'button';
+        b.title = label;
+        b.setAttribute('aria-label', label);
+        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        svg.setAttribute('viewBox', '0 0 24 24');
+        svg.setAttribute('class', 'h-4 w-4');
+        svg.setAttribute('fill', 'none'); svg.setAttribute('stroke', 'currentColor'); svg.setAttribute('stroke-width', '2');
+        svg.setAttribute('stroke-linecap', 'round'); svg.setAttribute('stroke-linejoin', 'round');
+        const p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        p.setAttribute('d', path);
+        svg.append(p);
+        b.append(svg);
+        b.addEventListener('click', () => run({ act, ids: [x.id] }));
+        return b;
+      };
+      acts.append(x.da_xu_ly ? ib(t.nUndo, 'M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5', 'chua_xu_ly') : ib(t.nMarkDone, 'M20 6 9 17l-5-5', 'xu_ly'), ib(t.nRemove, 'M18 6 6 18M6 6l12 12', 'xoa'));
+      row.append(acts);
+      out.push(row);
+    }
+
+    const foot = el('div', 'mt-1 flex flex-wrap items-center gap-2 border-t border-slate-200 px-2.5 pt-2 text-xs dark:border-slate-700');
+    const link = (label: string, act: string, cls = 'text-blue-700 hover:underline dark:text-blue-300') => {
+      const b = el('button', cls, label);
+      b.type = 'button';
+      b.addEventListener('click', () => run({ act }));
+      return b;
+    };
+    foot.append(link(t.nCenter, 'trung_tam'));
+    foot.append(el('span', 'flex-1'));
+    if (s.dev) foot.append(link(t.nSample, 'mau', 'text-slate-500 hover:underline dark:text-slate-400'));
+    if (n.dem.da_xu_ly) foot.append(link(`${t.nClearDone} (${n.dem.da_xu_ly})`, 'xoa_da_xu_ly', 'text-slate-500 hover:text-red-600 hover:underline dark:text-slate-400'));
+    out.push(foot);
+    return out;
+  }
 
   /** Khung Tải xuống: mỗi tệp một dòng (tên, tiến độ / trạng thái, dung lượng, nguồn, giờ) + Mở / Mở thư mục / Huỷ / Xoá. */
   const size = (n: number) => (n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
@@ -528,6 +655,17 @@ interface ValaOverlayApi {
     }
     panel.classList.add('p-1.5', 'overflow-y-auto');
     panel.classList.remove('overflow-hidden');
+    if (s.kind === 'notifications') {
+      // Ngay dưới chuông, mép phải thẳng mép phải nút; cao tối đa gần hết cửa sổ (cuộn).
+      panel.replaceChildren(...notificationsPanel(s));
+      const w = Math.min(window.innerWidth - 16, 440);
+      panel.style.width = `${w}px`;
+      panel.style.left = `${Math.max(8, Math.min(window.innerWidth - w - 8, s.anchor.x + s.anchor.w - w))}px`;
+      panel.style.top = `${s.anchor.y + s.anchor.h + 6}px`;
+      panel.style.bottom = '';
+      panel.style.maxHeight = `${Math.max(200, window.innerHeight - s.anchor.y - s.anchor.h - 20)}px`;
+      return;
+    }
     if (s.kind === 'downloads') {
       // Ngay dưới nút Tải xuống, mép phải thẳng mép phải nút; cao tối đa gần hết cửa sổ (cuộn).
       panel.replaceChildren(...downloadsPanel(s));

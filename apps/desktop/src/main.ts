@@ -10,10 +10,12 @@ import { accountEvents, clearWebSession, logoutDevice } from './account';
 import { registerSettingsPage } from './settings-page';
 import { registerRecordingPage } from './recording-page';
 import { registerVanbanPage } from './vanban-page';
+import { registerThongBaoPage } from './thongbao-page';
 import { offerPin } from './pin';
 import { checkAdminAlerts } from './admin-alert';
 import { clearDownloads, initDownloads } from './downloads';
 import { initZoom } from './zoom';
+import { clearNotificationCache, initNotifications, refreshNotifications } from './notifications';
 import { initErrorReport, refreshCrashIdentity, startCrashReporter } from './error-report';
 import { registerChatPage } from './chat-page';
 import { registerLoginPage } from './login-page';
@@ -27,7 +29,7 @@ import { applyTheme, prefsEvents } from './prefs';
 import { registerAutofill } from './autofill';
 import { lockCredentials } from './credentials';
 import { installUiProtocol, refreshUi, registerUiScheme } from './ui-cache';
-import { changePassword, contentBounds, browserWindow, isAdminContents, openAdminTab, sendToAdmin, preloadDefaultApp, showDefaultApp, initBrowser, isLoginContents, pushLogin, showLogin, showDefault, isChatContents, isRecordingContents, pushChat, isSettingsContents, openRecordingTab, openSettingsTab, pushRecording, pushSettings, refreshBrowser, revealWindow } from './browser';
+import { changePassword, contentBounds, browserWindow, openAppLink, thongBaoContents, isThongBaoContents, isAdminContents, openAdminTab, sendToAdmin, preloadDefaultApp, showDefaultApp, initBrowser, isLoginContents, pushLogin, showLogin, showDefault, isChatContents, isRecordingContents, pushChat, isSettingsContents, openRecordingTab, openSettingsTab, pushRecording, pushSettings, refreshBrowser, revealWindow } from './browser';
 import { setNotifyReveal } from './notify';
 import { createMenus, refreshMenus, tabContextMenu } from './menu';
 import { appsEvents, clearApps, refreshApps } from './apps';
@@ -74,9 +76,9 @@ async function signOut() {
 }
 
 // Đăng nhập cổng ở tab Báo cáo ⇒ cổng cấp token thiết bị qua cầu nối (account.ts) ⇒ bắt đầu giữ/gửi phiên.
-accountEvents.on('login', () => { refreshAll(); startSync(); });
+accountEvents.on('login', () => { refreshAll(); startSync(); void refreshNotifications(); });
 // Đăng xuất ⇒ xoá cả lịch sử trang, hội thoại Trợ lý, danh mục thao tác trên máy (có dữ liệu của các hệ thống nguồn).
-accountEvents.on('logout', () => { forgetPackages(); lockCredentials(); clearLocalData(); clearApps(); clearDownloads(); refreshAll(); refreshCrashIdentity(); });
+accountEvents.on('logout', () => { forgetPackages(); lockCredentials(); clearLocalData(); clearApps(); clearDownloads(); clearNotificationCache(); refreshAll(); refreshCrashIdentity(); });
 accountEvents.on('login', refreshCrashIdentity);
 appsEvents.on('changed', refreshAll);
 // Đổi ngôn ngữ / sáng-tối ở bất kỳ đâu ⇒ menu, khay, thanh dọc theo (browser.ts tự báo cổng).
@@ -119,12 +121,15 @@ if (!app.requestSingleInstanceLock()) {
     });
     registerRecordingPage({ isRecording: (e) => isRecordingContents(e.sender), push: pushRecording, open: openRecordingTab });
     registerVanbanPage();
+    registerThongBaoPage({ page: thongBaoContents, isPage: (e) => isThongBaoContents(e.sender) });
     registerChatPage({ isChat: (e) => isChatContents(e.sender), push: pushChat });
     registerAdminPage({ isAdmin: (e) => isAdminContents(e.sender), send: sendToAdmin });
     registerLoginPage({ isLogin: (e) => isLoginContents(e.sender), push: pushLogin, win: browserWindow, pageBounds: contentBounds });
     registerSearch();
     watchCookies();
     createMenus({ showMain: showDefaultApp, showDefault, showPortal, signIn: showLogin, openSettings, signOut: () => void signOut(), changePassword });
+    // Trung tâm thông báo: làm mới định kỳ; bấm thông báo ⇒ mở chi tiết trong đúng tab ứng dụng.
+    initNotifications((n) => openAppLink(n.ung_dung, n.link));
     initBrowser({
       onLeave: onTabLeave, signIn: showLogin, tabMenu: tabContextMenu,
       // Menu hồ sơ ở cuối thanh dọc (khung nổi).

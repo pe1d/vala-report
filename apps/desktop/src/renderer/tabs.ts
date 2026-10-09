@@ -18,7 +18,9 @@ interface TabView {
   /** Đã nạp trang (ứng dụng ghim chưa mở thì chữ nhạt hơn). */
   opened: boolean;
   closable: boolean;
-  glyph: 'chat' | 'settings' | 'recording' | null;
+  glyph: 'chat' | 'bell' | 'settings' | 'recording' | null;
+  /** Số đếm (Trung tâm thông báo: chưa đọc). */
+  badge?: number;
   /** Không kéo đổi chỗ được (ứng dụng mặc định của đơn vị — luôn đứng đầu nhóm Ứng dụng). */
   fixed?: boolean;
 }
@@ -28,12 +30,14 @@ interface TabsState {
   active: string | null;
   collapsed: boolean;
   chat: TabView;
+  notif: TabView;
   apps: TabView[];
   open: TabView[];
   /** Số ứng dụng chưa ghim ⇒ nút "Thêm" cuối nhóm Ứng dụng (mở nhanh, như Lark). */
   more: number;
   nav: { back: boolean; forward: boolean; reload: boolean };
   /** Nút Tải xuống: có lịch sử ⇒ hiện; đang tải ⇒ phần trăm (null nếu chưa biết tổng). */
+  thongBao: { chua_doc: number; cho: number };
   downloads: { has: boolean; dang_tai: number; phan_tram: number | null; su_kien: { so: number; loai: 'bat_dau' | 'xong' | 'loi'; ten: string } | null };
   /** Tab đang xem là ứng dụng văn bản ⇒ đang ở giao diện Vala hay trang gốc. */
   vanban: 'vala' | 'goc' | null;
@@ -58,7 +62,7 @@ interface ValaTabsApi {
   collapse(): Promise<void>;
   peek(on: boolean): Promise<void>;
   onPeekSlide(cb: (open: boolean) => void): void;
-  overlay(kind: 'profile' | 'search' | 'more' | 'downloads', r: { x: number; y: number; w: number; h: number }): Promise<void>;
+  overlay(kind: 'profile' | 'search' | 'more' | 'downloads' | 'notifications', r: { x: number; y: number; w: number; h: number }): Promise<void>;
   onOpenDownloads(cb: () => void): void;
   win(cmd: 'minimize' | 'maximize' | 'close'): Promise<void>;
   onOpenSearch(cb: () => void): void;
@@ -84,7 +88,8 @@ interface ValaTabsApi {
     ok: 'bg-emerald-500', warn: 'bg-amber-500', off: 'bg-slate-400 dark:bg-slate-500',
   };
   const SVG = 'http://www.w3.org/2000/svg';
-  const PATHS: Record<'chat' | 'settings' | 'recording' | 'close' | 'more', string[]> = {
+  const PATHS: Record<'chat' | 'bell' | 'settings' | 'recording' | 'close' | 'more', string[]> = {
+    bell: ['M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9', 'M10.3 21a1.94 1.94 0 0 0 3.4 0'],
     more: ['M5 13a1 1 0 1 0 0-2 1 1 0 0 0 0 2z', 'M12 13a1 1 0 1 0 0-2 1 1 0 0 0 0 2z', 'M19 13a1 1 0 1 0 0-2 1 1 0 0 0 0 2z'],
     chat: ['M12 3l1.9 4.6L18.5 9.5l-4.6 1.9L12 16l-1.9-4.6L5.5 9.5l4.6-1.9z', 'M19 15l.9 2.1L22 18l-2.1.9L19 21l-.9-2.1L16 18l2.1-.9z'],
     settings: ['M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z', 'M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z'],
@@ -106,7 +111,7 @@ interface ValaTabsApi {
   const setText = (el: Element, text: string) => { if (el.textContent !== text) el.textContent = text; };
 
   /** Phần tử của một mục: tạo một lần, cập nhật tại chỗ (ảnh favicon không nháy). */
-  interface ItemNode { el: HTMLElement; icon: HTMLImageElement; letter: HTMLElement; glyphBox: HTMLElement; label: HTMLElement; dot: HTMLElement; close: HTMLElement; glyphKind: string | null }
+  interface ItemNode { el: HTMLElement; icon: HTMLImageElement; letter: HTMLElement; glyphBox: HTMLElement; label: HTMLElement; dot: HTMLElement; close: HTMLElement; glyphKind: string | null; pip: HTMLElement }
   const nodes = new Map<string, ItemNode>();
 
   function createNode(key: string): ItemNode {
@@ -120,7 +125,7 @@ interface ValaTabsApi {
     // Chuột phải ⇒ menu của mục (mật khẩu, ghi thao tác — tiến trình chính quyết định mục nào có menu).
     el.addEventListener('contextmenu', (e) => { e.preventDefault(); void api.tabMenu(key, e.clientX, e.clientY); });
     const box = document.createElement('span');
-    box.className = 'flex h-5 w-5 shrink-0 items-center justify-center';
+    box.className = 'relative flex h-5 w-5 shrink-0 items-center justify-center';
     // Chưa có favicon dùng được ⇒ chữ cái đầu của tên trong ô màu (không để ô trống).
     const letter = document.createElement('span');
     letter.className = 'flex h-5 w-5 items-center justify-center rounded-md bg-blue-600 text-[11px] font-semibold leading-none text-white dark:bg-blue-500';
@@ -136,7 +141,11 @@ interface ValaTabsApi {
     icon.addEventListener('error', () => showIcon(false));
     // Ảnh 1×1 (favicon rỗng/trong suốt) coi như không có.
     icon.addEventListener('load', () => showIcon(icon.naturalWidth > 1 && icon.naturalHeight > 1));
-    box.append(letter, icon, glyphBox);
+    // Chấm đỏ trên biểu tượng (thanh thu gọn) khi có số đếm.
+    const pip = document.createElement('span');
+    pip.className = 'pointer-events-none absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-red-500 ring-2 ring-slate-100 dark:ring-slate-900';
+    display(pip, false);
+    box.append(letter, icon, glyphBox, pip);
     const label = document.createElement('span');
     label.className = 'min-w-0 flex-1 truncate';
     const dot = document.createElement('span');
@@ -148,7 +157,7 @@ interface ValaTabsApi {
     close.append(glyph('close'));
     close.addEventListener('click', (e) => { e.stopPropagation(); void api.close(key); });
     el.append(box, label, dot, close);
-    return { el, icon, letter, glyphBox, label, dot, close, glyphKind: null };
+    return { el, icon, letter, glyphBox, label, dot, close, glyphKind: null, pip };
   }
 
   function updateNode(n: ItemNode, tab: TabView, isActive: boolean, s: TabsState) {
@@ -173,8 +182,15 @@ interface ValaTabsApi {
     }
     setText(n.label, tab.label);
     display(n.label, !s.collapsed);
-    display(n.dot, (!!tab.status || tab.recording) && !s.collapsed);
-    if (tab.recording) {
+    const badge = tab.badge ?? 0;
+    display(n.pip, badge > 0 && s.collapsed);
+    display(n.dot, (!!tab.status || tab.recording || badge > 0) && !s.collapsed);
+    if (badge > 0) {
+      setIf(n.dot, 'class', 'min-w-[18px] shrink-0 rounded-full bg-red-500 px-1.5 text-center text-[10px] font-semibold leading-[18px] text-white');
+      setText(n.dot, badge > 99 ? '99+' : String(badge));
+      setIf(n.dot, 'aria-label', String(badge));
+    } else setText(n.dot, '');
+    if (badge > 0) { /* đã vẽ số đếm */ } else if (tab.recording) {
       setIf(n.dot, 'class', 'h-2 w-2 shrink-0 animate-pulse rounded-full bg-red-500');
       setIf(n.dot, 'aria-label', s.t.recording);
     } else if (tab.status) {
@@ -334,7 +350,7 @@ interface ValaTabsApi {
     display($('profile-text'), !c);
     display($('profile-chev'), !c);
 
-    renderList($('chat-slot'), [s.chat], s);
+    renderList($('chat-slot'), [s.chat, s.notif], s);
     sectionTitle($('apps-title'), s.t.appsSection, c, s.apps.length > 0 || s.more > 0);
     sectionTitle($('open-title'), s.t.openSection, c, s.open.length > 0);
     setText(moreLabel, s.t.more);
@@ -359,6 +375,13 @@ interface ValaTabsApi {
     display($('dl'), s.signedIn && (s.downloads.has || s.downloads.dang_tai > 0));
     setIf($('dl'), 'aria-label', s.t.downloads);
     renderDownload(s);
+    // Chuông thông báo: số chưa đọc (chờ xử lý); 99+ khi nhiều.
+    display($('bell'), s.signedIn);
+    const nb = s.thongBao.chua_doc;
+    $('bell-badge').hidden = !nb;
+    setText($('bell-badge'), nb > 99 ? '99+' : String(nb));
+    setIf($('bell'), 'title', s.t.notifTitle + (s.thongBao.cho ? ` — ${s.thongBao.cho} ${s.t.notifPending}` : ''));
+    setIf($('bell'), 'aria-label', s.t.notifTitle);
     // Ứng dụng văn bản: nút chuyển Giao diện Vala / Trang gốc.
     display($('vb-toggle'), s.signedIn && !!s.vanban);
     setIf($('vb-toggle'), 'title', s.t.vbTitle);
@@ -477,6 +500,7 @@ interface ValaTabsApi {
 
   const openDownloads = () => void api.overlay('downloads', rect($('dl').style.display === 'none' ? $('win-min') : $('dl')));
   $('dl').addEventListener('click', openDownloads);
+  $('bell').addEventListener('click', () => void api.overlay('notifications', rect($('bell'))));
   api.onOpenDownloads(openDownloads);
   $('vb-goc').addEventListener('click', () => void api.vanban('goc'));
   $('collapse').addEventListener('click', () => void api.collapse());
